@@ -10,6 +10,37 @@ if(NOT TARGET pico_pio_usb OR NOT TARGET tinyusb_host)
     )
 endif()
 
+# Keyboard layouts implemented in usb_hid_keymap.cpp. Adding a new layout:
+# implement it under a '#if PICO_TOOLSET_USB_HID_KEYMAP_<NAME>' block in
+# usb_hid_keymap.cpp AND register the name here so its entry appears in the
+# runtime registry (kKeymaps) and can be picked via the CMake lists below.
+set(PICO_TOOLSET_USB_HID_KEYMAP_IMPL us fr)
+
+# Semicolon-separated list of the keymaps to compile in (a subset of
+# PICO_TOOLSET_USB_HID_KEYMAP_IMPL). Default "us;fr" ships both layouts; a
+# lean build can pick just one (e.g. -DPICO_TOOLSET_USB_HID_KEYMAPS=us).
+set(PICO_TOOLSET_USB_HID_KEYMAPS "us;fr" CACHE STRING
+    "Semicolon-separated keyboard layouts to compile in (one of: ${PICO_TOOLSET_USB_HID_KEYMAP_IMPL})")
+
+set(PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP "us" CACHE STRING
+    "Layout used by default (must be in PICO_TOOLSET_USB_HID_KEYMAPS)")
+
+foreach(k IN LISTS PICO_TOOLSET_USB_HID_KEYMAPS)
+    if(NOT k IN_LIST PICO_TOOLSET_USB_HID_KEYMAP_IMPL)
+        message(FATAL_ERROR
+            "Unknown USB HID keymap '${k}' in PICO_TOOLSET_USB_HID_KEYMAPS. "
+            "Supported: ${PICO_TOOLSET_USB_HID_KEYMAP_IMPL}.")
+    endif()
+endforeach()
+if(NOT PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP IN_LIST PICO_TOOLSET_USB_HID_KEYMAPS)
+    message(FATAL_ERROR
+        "PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP (${PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP}) "
+        "must be listed in PICO_TOOLSET_USB_HID_KEYMAPS (${PICO_TOOLSET_USB_HID_KEYMAPS}).")
+endif()
+
+list(LENGTH PICO_TOOLSET_USB_HID_KEYMAPS usb_hid_keymap_count)
+list(FIND PICO_TOOLSET_USB_HID_KEYMAPS ${PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP} usb_hid_default_keymap_index)
+
 add_library(pico_toolset_usb_hid STATIC
     src/usb_hid_host.cpp
     src/usb_hid_keymap.cpp
@@ -30,6 +61,19 @@ target_link_libraries(pico_toolset_usb_hid PRIVATE
     pico_multicore
 )
 target_compile_features(pico_toolset_usb_hid PUBLIC cxx_std_20)
+
+# Compile in the selected keymaps and their runtime registry metadata. PUBLIC
+# so consumers (and the example) can read kKeymaps/kDefaultKeymapIndex from
+# usb_hid_keymap.h.
+foreach(k IN LISTS PICO_TOOLSET_USB_HID_KEYMAPS)
+    string(TOUPPER ${k} k_upper)
+    target_compile_definitions(pico_toolset_usb_hid PUBLIC
+        PICO_TOOLSET_USB_HID_KEYMAP_${k_upper}=1)
+endforeach()
+target_compile_definitions(pico_toolset_usb_hid PUBLIC
+    PICO_TOOLSET_USB_HID_KEYMAP_COUNT=${usb_hid_keymap_count}
+    PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP_INDEX=${usb_hid_default_keymap_index}
+)
 
 add_executable(usb_hid_example example/usb_hid_example.cpp)
 target_include_directories(usb_hid_example PRIVATE

@@ -5,12 +5,21 @@
 
 #include <cstdio>
 
+using pico_toolset::Keymap;
 using pico_toolset::UsbHidConfig;
 using pico_toolset::UsbHidHost;
+using pico_toolset::kDefaultKeymapIndex;
+using pico_toolset::kKeymapCount;
+using pico_toolset::kKeymaps;
+using pico_toolset::keymap_by_name;
 
 int main() {
     stdio_init_all();
     sleep_ms(2000);
+
+    printf("keymaps compiled in (%u):\n", kKeymapCount);
+    for (uint8_t i = 0; i < kKeymapCount; ++i)
+        printf("  [%u] %s%s\n", i, kKeymaps[i].name, i == kDefaultKeymapIndex ? " (default)" : "");
 
     UsbHidConfig cfg;
     cfg.pin_dp = 28;          // default Pico-PIO-USB D+ pin (D- is pin 29)
@@ -20,8 +29,16 @@ int main() {
     cfg.enable_gamepad = true;
     cfg.enable_xinput = true;
 
+    // Keyboard layout for the typed-ASCII queue. The default is the build-time
+    // PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP; switch to another compiled-in layout
+    // at runtime by name (nullptr when not compiled in -- see
+    // PICO_TOOLSET_USB_HID_KEYMAPS).
+    cfg.keymap_index = kDefaultKeymapIndex;
+    if (const Keymap* fr = keymap_by_name("fr"))
+        cfg.keymap_index = static_cast<uint8_t>(fr - kKeymaps);
+    printf("USB HID host starting (keymap #%u: %s)...\n",
+           cfg.keymap_index, kKeymaps[cfg.keymap_index].name);
     UsbHidHost usb;
-    printf("USB HID host starting...\n");
     usb.init(cfg);
 
     while (true) {
@@ -29,7 +46,7 @@ int main() {
         // the double-buffered state. No tuh_task() needed here.
 
         if (usb.connected_keyboard_count() > 0) {
-            // Edge-triggered typed characters (US layout).
+            // Edge-triggered typed characters, in cfg.keymap_index's layout.
             uint8_t ch;
             while ((ch = usb.consume_typed_ascii_char()) != 0)
                 putchar(ch);

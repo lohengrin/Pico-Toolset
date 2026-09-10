@@ -4,6 +4,7 @@
 #include <cstddef>
 
 #include "usb_hid_gamepad.h"
+#include "usb_hid_keymap.h"
 
 #include "pico/stdlib.h"
 
@@ -23,6 +24,10 @@ struct UsbHidConfig {
     bool     enable_gamepad = true;   // HID gamepads
     bool     enable_xinput = true;    // XInput pads (merged into GamepadState)
     uint8_t  max_gamepads = 4;        // Gamepad slots
+    // Layout used by consume_typed_ascii_char(): an index into kKeymaps.
+    // kDefaultKeymapIndex (PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP) by default;
+    // pick any compiled-in layout at runtime, e.g. with keymap_by_name().
+    uint8_t keymap_index = kDefaultKeymapIndex;
 };
 
 // USB HID host over a Pico-PIO-USB port. Runs the TinyUSB host stack on a
@@ -55,7 +60,8 @@ public:
 
     // Edge-triggered: true once per physical press/release edge.
     bool consume_key_press(uint8_t hid_usage_id);
-    // One typed ASCII character per physical press (US layout), 0 if none.
+    // One typed ASCII character per physical press, in the config's keymap
+    // layout (UsbHidConfig::keymap_index, see usb_hid_keymap.h); 0 if none.
     uint8_t consume_typed_ascii_char();
 
     // --- Mouse ---

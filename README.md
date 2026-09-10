@@ -66,6 +66,8 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_ILI9486` | ON | Build ILI9486 driver + example |
 | `PICO_TOOLSET_BUILD_PSRAM`   | ON | Build PSRAM driver + example (RP2350 only) |
 | `PICO_TOOLSET_BUILD_USB_HID` | ON | Build PIO-USB HID host + example |
+| `PICO_TOOLSET_USB_HID_KEYMAPS` | `us;fr` | Semicolon-separated keyboard layouts to compile in (implemented: `us`, `fr`) |
+| `PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP` | `us` | Layout used by default (must be listed in `PICO_TOOLSET_USB_HID_KEYMAPS`) |
 | `PICO_TOOLSET_BUILD_SCREEN`  | ON | Build screen abstraction + example |
 | `PICO_TOOLSET_SCREEN_PIMORONI` | OFF | Compile the Pimoroni PicoGraphics backend adaptor |
 
@@ -172,6 +174,25 @@ while (true) {
     auto m = usb.mouse_state();
 }
 ```
+
+The typed-ASCII queue (`consume_typed_ascii_char()`) interprets each physical
+key with a compile-time-selected *keymap*. Layouts are registered in
+`kKeymaps` (see `pico_toolset/usb_hid_keymap.h`); which ones ship is chosen by
+`PICO_TOOLSET_USB_HID_KEYMAPS`, and the runtime selection lives in
+`UsbHidConfig::keymap_index`:
+
+```cpp
+cfg.keymap_index = pico_toolset::kDefaultKeymapIndex;   // build default
+if (auto* fr = pico_toolset::keymap_by_name("fr"))      // switch at runtime
+    cfg.keymap_index = static_cast<uint8_t>(fr - pico_toolset::kKeymaps);
+```
+
+Each layout covers a full PC 105 keyboard (letter/digit rows, all punctuation,
+the ISO extra key, and the layout-independent keypad). US is QWERTY; FR is the
+standard AZERTY layout, where Shift is also what produces the digits. Adding a
+new layout = implement it under a `#if PICO_TOOLSET_USB_HID_KEYMAP_*` guard in
+`usb_hid_keymap.cpp` and register its name in the component's
+`PICO_TOOLSET_USB_HID_KEYMAP_IMPL` list.
 
 ### Screen (widget composition)
 

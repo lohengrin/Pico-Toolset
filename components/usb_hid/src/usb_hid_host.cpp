@@ -349,7 +349,7 @@ void UsbHidHost::on_keyboard_report(const uint8_t* report, uint16_t len) {
         for (uint8_t j = 0; j < 6; ++j)
             if (m_prev_keycode[j] == k) { was_down = true; break; }
         if (!was_down) {
-            uint8_t ch = hid_usage_to_ascii(k, modifier);
+            uint8_t ch = hid_usage_to_ascii(k, modifier, m_config.keymap_index);
             if (ch) push_typed_ascii(ch);
         }
     }
