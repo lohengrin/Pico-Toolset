@@ -1,6 +1,7 @@
 #include "pico_toolset/usb_hid_host.h"
 #include "pico_toolset/usb_hid_keymap.h"
 
+#include "hardware/dma.h"
 #include "hardware/sync.h"
 #include "pico/multicore.h"
 #include "pio_usb.h"
@@ -74,6 +75,47 @@ inline void set_bit(uint8_t* bits, const uint8_t* usages, uint8_t n) {
     for (uint8_t i = 0; i < n; ++i) {
         if (usages[i] < UsbHidHost::kMaxKeyUsages) bits[usages[i] >> 3] |= 1u << (usages[i] & 7);
     }
+}
+
+// Sony's DualSense (PS5 controller) is a genuine USB HID gamepad, but its
+// report descriptor doesn't reliably pass looks_like_joystick_report_descriptor()
+// on real hardware (TOM6809 finding) -- detected by VID/PID instead. Its
+// report layout is nothing like the generic byte0=X/byte1=Y/byte2-bit0=fire
+// fallback: reports are report-ID-prefixed, the D-pad is a 4-bit hat switch,
+// and face buttons sit in specific bit positions -- cross-checked against
+// Linux's hid-playstation.c and community reverse-engineering of the
+// DualSense USB format.
+constexpr uint16_t kSonyVid = 0x054C;
+constexpr uint16_t kDualSenseProductId = 0x0CE6;     // DualSense (PS5 controller)
+constexpr uint16_t kDualSenseEdgeProductId = 0x0DF2; // DualSense Edge
+
+bool is_dualsense_vid_pid(uint16_t vid, uint16_t pid) {
+    return vid == kSonyVid && (pid == kDualSenseProductId || pid == kDualSenseEdgeProductId);
+}
+
+// Parses one DualSense USB input report (report ID 0x01, included since the
+// device is a numbered-report HID collection) into the same GamepadState
+// shape the generic/XInput paths produce. Byte offsets cross-checked against
+// Linux's hid-playstation.c: byte1=left X, byte2=left Y (both 0-255, centered
+// ~128), byte8 low nibble=D-pad hat (0=N,1=NE,2=E,3=SE,4=S,5=SW,6=W,7=NW,
+// 8=released), byte8 bit5=Cross (mapped to kBtA -- the primary face button).
+GamepadState parse_dualsense_report(const uint8_t* report, uint16_t len) {
+    GamepadState s;
+    if (len < 9) return s; // too short to contain even the D-pad/Cross byte
+    s.present = true;
+
+    s.lx = report[1];
+    s.ly = report[2];
+    uint8_t dpad = report[8] & 0x0F;
+    bool cross_pressed = (report[8] & 0x20) != 0;
+
+    if (dpad == 0 || dpad == 1 || dpad == 7) s.buttons |= kBtUp;
+    if (dpad == 1 || dpad == 2 || dpad == 3) s.buttons |= kBtRight;
+    if (dpad == 3 || dpad == 4 || dpad == 5) s.buttons |= kBtDown;
+    if (dpad == 5 || dpad == 6 || dpad == 7) s.buttons |= kBtLeft;
+    if (cross_pressed) s.buttons |= kBtA;
+
+    return s;
 }
 
 // --- XInput vendor-class driver ---
@@ -207,10 +249,18 @@ UsbHidHost* UsbHidHost::s_instance = nullptr;
 extern "C" void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report,
                                  uint16_t desc_len) {
     bool is_keyboard = tuh_hid_get_protocol(dev_addr, instance) == HID_ITF_PROTOCOL_KEYBOARD;
-    bool is_joystick = looks_like_joystick_report_descriptor(desc_report, desc_len);
+    // DualSense identified by VID/PID first, independent of the descriptor
+    // heuristic below: its descriptor doesn't reliably trip
+    // looks_like_joystick_report_descriptor() (TOM6809 real-hardware
+    // finding), even though it's a known, specific device identifiable
+    // another way. No false-positive risk: only two exact (vid,pid) pairs
+    // match.
+    uint16_t vid = 0, pid = 0;
+    bool is_dualsense = tuh_vid_pid_get(dev_addr, &vid, &pid) && is_dualsense_vid_pid(vid, pid);
+    bool is_joystick = is_dualsense || looks_like_joystick_report_descriptor(desc_report, desc_len);
     bool is_mouse = looks_like_mouse_report_descriptor(desc_report, desc_len);
     if (auto* self = UsbHidHost::instance())
-        self->on_mount(dev_addr, instance, is_keyboard, is_joystick, is_mouse);
+        self->on_mount(dev_addr, instance, is_keyboard, is_joystick, is_mouse, is_dualsense);
 }
 
 extern "C" void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
@@ -261,6 +311,25 @@ void UsbHidHost::host_stack_setup() {
     // Current Pico-PIO-USB uses one PIO (block) for both TX and RX halves.
     pio_cfg.pio_tx_num = self->m_config.pio_num;
     pio_cfg.pio_rx_num = self->m_config.pio_num;
+
+    // PIO_USB_DEFAULT_CONFIG's tx_ch defaults to a *hardcoded* DMA channel
+    // index (0, see pio_usb_configuration.h's PIO_USB_DMA_TX_DEFAULT), and
+    // pio_usb.c's pio_usb_bus_init() claims it via dma_claim_mask(1<<tx_ch)
+    // -- panics ("DMA channel N is already claimed") if another driver
+    // already claimed it before this runs (TOM6809 real-hardware finding:
+    // hit this against both a DVI/HDMI video driver's own DMA channels and
+    // an LCD driver's DMA-backed pixel writes, depending on which else was
+    // active). dma_claim_unused_channel(true) alone still panics identically
+    // -- it *claims* the channel itself, and pio_usb_bus_init()'s own
+    // dma_claim_mask() then tries to claim the same already-ours channel
+    // again. Fix: unclaim it immediately after finding it (a peek-then-
+    // release, not a hold) so it's genuinely free again when
+    // pio_usb_bus_init() claims it for real. A TOCTOU race exists in theory,
+    // but nothing else claims a DMA channel during this single-threaded
+    // boot-time window in practice.
+    pio_cfg.tx_ch = static_cast<uint8_t>(dma_claim_unused_channel(true));
+    dma_channel_unclaim(pio_cfg.tx_ch);
+
     tuh_configure(kTuhRhport, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
     tuh_init(kTuhRhport);
     self->m_initialized = true;
@@ -274,7 +343,8 @@ void UsbHidHost::task() { tuh_task(); }
 
 // --- Keyboard ---
 
-void UsbHidHost::on_mount(uint8_t dev_addr, uint8_t instance, bool is_keyboard, bool is_joystick, bool is_mouse) {
+void UsbHidHost::on_mount(uint8_t dev_addr, uint8_t instance, bool is_keyboard, bool is_joystick, bool is_mouse,
+                          bool is_dualsense) {
     if (m_config.enable_keyboard && is_keyboard) {
         if (register_keyboard(dev_addr)) {
             __atomic_fetch_add(&m_keyboard_count, 1, __ATOMIC_RELAXED);
@@ -286,7 +356,7 @@ void UsbHidHost::on_mount(uint8_t dev_addr, uint8_t instance, bool is_keyboard, 
         m_mouse.present = true;
         tuh_hid_receive_report(dev_addr, instance);
     } else if (m_config.enable_gamepad && is_joystick) {
-        allocate_gamepad_slot(dev_addr, instance, false);
+        allocate_gamepad_slot(dev_addr, instance, false, is_dualsense);
         tuh_hid_receive_report(dev_addr, instance);
     } else if (m_config.enable_keyboard || m_config.enable_mouse || m_config.enable_gamepad) {
         // Unrelated HID interface (e.g. a media-key collection) -- ignore.
@@ -406,13 +476,14 @@ UsbHidHost::MouseState UsbHidHost::mouse_state() const { return m_mouse; }
 
 // --- Gamepad ---
 
-int UsbHidHost::allocate_gamepad_slot(uint8_t dev_addr, uint8_t instance, bool is_xinput) {
+int UsbHidHost::allocate_gamepad_slot(uint8_t dev_addr, uint8_t instance, bool is_xinput, bool is_dualsense) {
     for (size_t i = 0; i < m_config.max_gamepads; ++i) {
         if (m_gamepads[i].in_use) continue;
         GamepadSlot& slot = m_gamepads[i];
         slot = GamepadSlot{};
         slot.in_use = true;
         slot.is_xinput = is_xinput;
+        slot.is_dualsense = is_dualsense;
         slot.dev_addr = dev_addr;
         slot.instance = instance;
         slot.mapped_index = m_gamepad_count;
@@ -431,6 +502,11 @@ void UsbHidHost::on_gamepad_report(const uint8_t* report, uint16_t len, uint8_t 
     for (auto& slot : m_gamepads) {
         if (!slot.in_use || slot.is_xinput || slot.dev_addr != dev_addr || slot.instance != instance)
             continue;
+
+        if (slot.is_dualsense) {
+            slot.state = parse_dualsense_report(report, len);
+            return;
+        }
 
         GamepadState& s = slot.state;
         s.present = true;

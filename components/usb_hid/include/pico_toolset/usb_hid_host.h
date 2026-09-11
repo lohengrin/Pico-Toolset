@@ -83,7 +83,8 @@ public:
     // Internal -- called by the free TinyUSB callbacks in the .cpp. Runs on
     // the core owning the stack.
     static UsbHidHost* instance() { return s_instance; }
-    void on_mount(uint8_t dev_addr, uint8_t instance, bool is_keyboard, bool is_joystick_like, bool is_mouse);
+    void on_mount(uint8_t dev_addr, uint8_t instance, bool is_keyboard, bool is_joystick_like, bool is_mouse,
+                  bool is_dualsense = false);
     void on_hid_unmount(uint8_t dev_addr, uint8_t instance, bool is_keyboard);
     void on_keyboard_report(const uint8_t* report, uint16_t len);
     void on_mouse_report(const uint8_t* report, uint16_t len);
@@ -101,6 +102,7 @@ private:
     struct GamepadSlot {
         bool in_use = false;
         bool is_xinput = false;
+        bool is_dualsense = false;
         uint8_t dev_addr = 0;
         uint8_t instance = 0;
         HidLayout layout{};
@@ -108,10 +110,9 @@ private:
         size_t mapped_index = 0; // index into gamepad_state()
     };
 
-    int allocate_gamepad_slot(uint8_t dev_addr, uint8_t instance, bool is_xinput);
+    int allocate_gamepad_slot(uint8_t dev_addr, uint8_t instance, bool is_xinput, bool is_dualsense = false);
     bool matches_mouse(uint8_t dev_addr, uint8_t instance) const;
 
-    void push_diag(const char* msg);
     void push_typed_ascii(uint8_t ch);
 
     static void host_stack_setup();
@@ -146,13 +147,6 @@ private:
 
     GamepadSlot m_gamepads[4]{};
     uint8_t m_gamepad_count = 0;
-
-    static constexpr uint8_t kDiagQueueSize = 8;
-    static constexpr uint8_t kDiagMsgLen = 96;
-    char m_diag_queue[kDiagQueueSize][kDiagMsgLen]{};
-    volatile uint8_t m_diag_head = 0;
-    volatile uint8_t m_diag_tail = 0;
-    bool m_diag_pending = false;
 };
 
 } // namespace pico_toolset

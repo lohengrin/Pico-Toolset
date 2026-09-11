@@ -58,6 +58,7 @@ target_link_libraries(pico_toolset_usb_hid PUBLIC
 target_link_libraries(pico_toolset_usb_hid PRIVATE
     pico_stdlib
     hardware_sync
+    hardware_dma
     pico_multicore
 )
 target_compile_features(pico_toolset_usb_hid PUBLIC cxx_std_20)

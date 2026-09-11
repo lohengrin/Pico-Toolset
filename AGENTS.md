@@ -80,6 +80,9 @@ manual smoke tests of the examples on hardware.
   `consume_pending_watchdog_tag()` pair -- the Thomson-model-tag mapping
   stays in TOM6809).
 - USB HID: TOM6809 `PicoUsbHidInput` (+ pico-infonesPlus descriptor parsers).
+  DualSense parsing and the DMA-channel-claim fix in `host_stack_setup()`
+  ported from TOM6809's own copy after real-hardware testing found the
+  toolset's version missing both.
 - Screen: PiCoMonitor.new `Screen`/`Widget` (Pimoroni PicoGraphics default).
 
 Credit upstream in headers when adapting code.

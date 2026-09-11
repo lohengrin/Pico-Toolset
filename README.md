@@ -15,7 +15,7 @@ independently.
 | ILI9486   | `pico_toolset_ili9486`  | 480x320 SPI TFT driver for Waveshare-style boards where the panel sits behind a 16-bit shift register; DMA-backed pixel streaming, backlight PWM. |
 | XPT2046   | `pico_toolset_xpt2046`  | Resistive touch controller sharing an SPI bus with a display driver (e.g. ILI9486); raw ADC reads + a linear calibration helper. |
 | PSRAM     | `pico_toolset_psram`    | RP2350-only external PSRAM bring-up (QMI CS1), self-test, free-list allocator, `std::pmr` adapter. No-op on RP2040. |
-| USB HID   | `pico_toolset_usb_hid`  | PIO-USB TinyUSB host: keyboard/mouse/HID-gamepad + XInput, double-buffered cross-core state, unified `GamepadState`. |
+| USB HID   | `pico_toolset_usb_hid`  | PIO-USB TinyUSB host: keyboard/mouse/HID-gamepad + XInput + DualSense (VID/PID-detected), double-buffered cross-core state, unified `GamepadState`. |
 | I2S audio | `pico_toolset_i2s_audio` | Float-sample I2S DAC output (e.g. PCM5100A) via pico-extras' `pico_audio_i2s`; non-blocking queue, config-driven pins/DMA channel/PIO SM. OFF by default -- needs pico-extras set up by the consumer (see below). |
 | SD card   | `pico_toolset_sdcard`   | FatFs R0.15 (elehobica/pico_fatfs) over native or PIO-bit-banged SPI; config-driven pins/PIO/gpio_base, `list_files()`/`read_file()`/`read_file_pmr()`. |
 | Reset buttons | `pico_toolset_reset_buttons` | N debounced, active-HIGH momentary buttons + a generic tagged-watchdog-reboot pair (`watchdog_reboot_with_tag()`/`consume_pending_watchdog_tag()`), reusable for any "boot straight into mode X" use case. |
