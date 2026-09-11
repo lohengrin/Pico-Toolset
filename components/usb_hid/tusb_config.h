@@ -3,6 +3,26 @@
 // rhport 0 = the native Pico USB controller (kept in DEVICE role so the board
 // can also be a USB device, e.g. a serial console); rhport 1 = the PIO-USB
 // root hub in HOST role. This is the standard Pico-PIO-USB host layout.
+//
+// DANGER -- must be the ONLY tusb_config.h reachable anywhere in the final
+// build, not just on pico_toolset_usb_hid's own include path: pico-sdk's
+// tinyusb_host is an INTERFACE library, so its core sources (usbh.c, hub.c,
+// hcd_pio_usb.c, tusb.c...) get compiled fresh into *every* target that
+// links it, including transitively into the final executable itself (not
+// just into this component's own .a archive) -- and the linker silently
+// prefers whichever copy was compiled directly into the executable over the
+// one inside a linked static library, with no duplicate-symbol error either
+// way. If the final executable also supplies its own, different
+// tusb_config.h (e.g. a leftover from before adopting this component), that
+// copy wins for TinyUSB's actual core implementation while this component's
+// own .cpp sources stay compiled against this file -- a real ABI mismatch
+// (CFG_TUH_HUB, CFG_TUH_DEVICE_MAX, and friends all affect internal struct
+// layout) that manifests as USB devices silently not working at all, not a
+// build error. Confirmed on real hardware as the direct cause of a
+// keyboard+mouse combo dongle failing completely after this exact mistake.
+// If your project has its own tusb_config.h, delete it and rely on this one
+// instead (override individual macros via target_compile_definitions if you
+// need different values, not a competing header).
 #ifndef TUSB_CONFIG_H_
 #define TUSB_CONFIG_H_
 
@@ -46,8 +66,17 @@ extern "C" {
 #ifndef CFG_TUH_DEVICE_MAX
 #define CFG_TUH_DEVICE_MAX 4
 #endif
+// Hub support ON by default: the common real-world topology for a PIO-USB
+// host is a keyboard+mouse combo dongle or a physical hub, both of which
+// enumerate as a hub with devices behind it -- with this off, nothing behind
+// a hub is ever seen at all (TOM6809 real-hardware finding: this was the
+// root cause of a keyboard+mouse combo failing completely, not a narrow
+// single-device edge case).
 #ifndef CFG_TUH_HUB
-#define CFG_TUH_HUB 0
+#define CFG_TUH_HUB 1
+#endif
+#ifndef CFG_TUH_ENUMERATION_BUFSIZE
+#define CFG_TUH_ENUMERATION_BUFSIZE 256
 #endif
 #ifndef CFG_TUH_HID
 #define CFG_TUH_HID 4
