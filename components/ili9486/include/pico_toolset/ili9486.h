@@ -22,6 +22,18 @@ struct Ili9486Config {
     uint32_t    spi_freq_hz  = 8000000;   // Command/parameter clock
     uint32_t    pixel_freq_hz = 25000000; // Pixel-streaming clock
     bool        use_dma      = true;   // DMA-backed pixel streaming when available
+    // Which DMA channel write_pixels() uses when use_dma is true. -1 (the
+    // default) auto-claims any free channel via dma_claim_unused_channel(),
+    // same as this driver has always done. Set to a specific channel (0-11)
+    // to take control over channel assignment instead -- e.g. a consumer
+    // whose own code elsewhere claims a *specific* DMA channel by hardcoded
+    // number before this driver initializes (some vendored libraries do,
+    // rather than auto-detecting) needs a way to keep this driver off of it,
+    // since "first free channel" can otherwise collide with that hardcoded
+    // assumption depending on init order. This driver claims the channel
+    // itself either way (via dma_channel_claim() in the explicit case) --
+    // callers should not also claim `dma_channel` themselves.
+    int         dma_channel  = -1;
 };
 
 // Driver for the ILI9486 480x320 RGB565 TFT LCD over SPI.

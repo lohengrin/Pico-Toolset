@@ -94,7 +94,12 @@ bool Ili9486::init(const Ili9486Config& config) {
     }
 
     if (m_use_dma) {
-        m_dma_chan = dma_claim_unused_channel(true);
+        if (config.dma_channel >= 0) {
+            dma_channel_claim(static_cast<uint>(config.dma_channel));
+            m_dma_chan = config.dma_channel;
+        } else {
+            m_dma_chan = dma_claim_unused_channel(true);
+        }
     }
 
     // Hardware reset with the vendor reference's generous 500 ms timings.
