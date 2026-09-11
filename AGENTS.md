@@ -27,8 +27,8 @@ component ships an `example/` program that doubles as a smoke test.
   reads from another. State visible across cores must be double-buffered or
   otherwise atomically swapped (`volatile` swap pointers -- do not introduce
   mutexes/locks on the host core's time-critical path).
-- **No dependencies beyond pico-sdk** unless declared: SSD1306/ILI9486/PSRAM/
-  Screen use pico-sdk only. USB HID uses Pico-PIO-USB (fetched via
+- **No dependencies beyond pico-sdk** unless declared: SSD1306/ILI9486/
+  XPT2046/PSRAM/Screen use pico-sdk only. USB HID uses Pico-PIO-USB (fetched via
   `cmake/pico_pio_usb.cmake` or `PICO_PIO_USB_DIR`); Pimoroni backend is
   optional and only compiled under `PICO_TOOLSET_SCREEN_PIMORONI`.
 
@@ -61,6 +61,8 @@ manual smoke tests of the examples on hardware.
 
 - SSD1306: David Schramm's rpi-pico-ssd1306 (MIT).
 - ILI9486: TOM6809 `Ili9486Display` + PicoDoom DMA (MIT).
+- XPT2046: TOM6809 `Xpt2046Touch`/`TouchCalibration`, real-hardware-validated
+  on the Waveshare 3.5in RPi LCD (A).
 - PSRAM: TOM6809 `Psram`/`PsramMemoryResource`.
 - USB HID: TOM6809 `PicoUsbHidInput` (+ pico-infonesPlus descriptor parsers).
 - Screen: PiCoMonitor.new `Screen`/`Widget` (Pimoroni PicoGraphics default).

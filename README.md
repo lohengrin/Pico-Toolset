@@ -13,6 +13,7 @@ independently.
 |-----------|--------|-------------|
 | SSD1306   | `pico_toolset_ssd1306`  | I2C monochrome OLED driver (128x64/128x32/...) with framebuffer, BMP blitting, basic primitives. |
 | ILI9486   | `pico_toolset_ili9486`  | 480x320 SPI TFT driver for Waveshare-style boards where the panel sits behind a 16-bit shift register; DMA-backed pixel streaming, backlight PWM. |
+| XPT2046   | `pico_toolset_xpt2046`  | Resistive touch controller sharing an SPI bus with a display driver (e.g. ILI9486); raw ADC reads + a linear calibration helper. |
 | PSRAM     | `pico_toolset_psram`    | RP2350-only external PSRAM bring-up (QMI CS1), self-test, free-list allocator, `std::pmr` adapter. No-op on RP2040. |
 | USB HID   | `pico_toolset_usb_hid`  | PIO-USB TinyUSB host: keyboard/mouse/HID-gamepad + XInput, double-buffered cross-core state, unified `GamepadState`. |
 
@@ -38,6 +39,7 @@ pico-toolset/
 ├── components/
 │   ├── ssd1306/   include/pico_toolset/ssd1306.h   src/  example/
 │   ├── ili9486/   include/pico_toolset/ili9486.h   src/  example/
+│   ├── xpt2046/   include/pico_toolset/*.h         src/  example/
 │   ├── psram/     include/pico_toolset/psram.h     src/  example/
 │   └── usb_hid/   include/pico_toolset/*.h  src/  example/  tusb_config.h
 └── libs/
@@ -64,6 +66,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 |--------|---------|---------|
 | `PICO_TOOLSET_BUILD_SSD1306` | ON | Build SSD1306 driver + example |
 | `PICO_TOOLSET_BUILD_ILI9486` | ON | Build ILI9486 driver + example |
+| `PICO_TOOLSET_BUILD_XPT2046` | ON | Build XPT2046 touch driver + example |
 | `PICO_TOOLSET_BUILD_PSRAM`   | ON | Build PSRAM driver + example (RP2350 only) |
 | `PICO_TOOLSET_BUILD_USB_HID` | ON | Build PIO-USB HID host + example |
 | `PICO_TOOLSET_USB_HID_KEYMAPS` | `us;fr` | Semicolon-separated keyboard layouts to compile in (implemented: `us`, `fr`) |
@@ -153,6 +156,25 @@ lcd.write_pixels(span_of_100x100_pixels);
 lcd.end_write();
 ```
 
+### XPT2046 touch (shares a bus with a display driver)
+
+```cpp
+pico_toolset::Ili9486Config lcd_cfg;    // spi_init()s spi1 -- must happen first
+pico_toolset::Ili9486 lcd;
+lcd.init(lcd_cfg);
+
+pico_toolset::Xpt2046Config touch_cfg;  // defaults: spi1, CS7/IRQ17, 2MHz
+pico_toolset::Xpt2046Touch touch;
+touch.init(touch_cfg);                  // does NOT call spi_init() -- shares lcd's bus
+
+auto sample = touch.read();             // {pressed, raw_x, raw_y} -- polls IRQ first, cheap when idle
+if (sample.pressed) {
+    pico_toolset::Xpt2046Calibration cal;   // measure your own panel's corners, see its doc comment
+    double x = pico_toolset::touch_calibration_linear_map(sample.raw_y, cal.raw_h_min, cal.raw_h_max, 0.0, 479.0);
+    double y = pico_toolset::touch_calibration_linear_map(sample.raw_x, cal.raw_v_min, cal.raw_v_max, 0.0, 319.0);
+}
+```
+
 ### PSRAM (RP2350)
 
 ```cpp
@@ -213,6 +235,20 @@ screen.update();
   pixel data streams as one continuous CS-low burst. `spi_set_baudrate()` is
   called *before* CS is asserted for the window so the peripheral's
   re-initialization can't glitch the shift register.
+- **ILI9486 + a shared-bus device (e.g. XPT2046)**: `write_pixels()`'s DMA
+  path (`use_dma = true`, the default) drains the SPI RX FIFO and waits out
+  the BSY flag after the DMA engine finishes, exactly matching
+  `spi_write_blocking()`'s own epilogue -- both are necessary before CS is
+  handed to another device on the same bus. Skipping either leaves stale
+  bytes in the RX FIFO for whatever reads next: confirmed on real hardware
+  as the direct cause of an XPT2046 touch controller sharing the bus
+  consistently reading back zeros instead of real ADC values, before this
+  drain was added. If you fork `write_pixels()` for a different transfer
+  mechanism, keep this epilogue.
+- **XPT2046 shares a bus, never owns it**: `Xpt2046Touch::init()` does not
+  call `spi_init()` -- `config.spi_instance` must already be brought up by
+  whatever display driver owns the bus, and `read()` must not be called
+  while that driver has an open `set_window()`/`write_pixels()` sequence.
 - **PSRAM bring-up**: `psram_init()` must run once from core0 before any
   allocation and before core1 starts. The RXDELAY clamp (max divisor) and
   `flash_devinfo_set_cs_size()` fix are baked in -- direct ports that skip
