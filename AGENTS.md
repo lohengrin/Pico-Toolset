@@ -28,7 +28,9 @@ component ships an `example/` program that doubles as a smoke test.
   otherwise atomically swapped (`volatile` swap pointers -- do not introduce
   mutexes/locks on the host core's time-critical path).
 - **No dependencies beyond pico-sdk** unless declared: SSD1306/ILI9486/
-  XPT2046/PSRAM/Screen use pico-sdk only. USB HID uses Pico-PIO-USB (fetched via
+  XPT2046/PSRAM/reset_buttons/Screen use pico-sdk only. SD card uses
+  elehobica/pico_fatfs (fetched via `cmake/pico_fatfs.cmake` or
+  `PICO_FATFS_DIR`, same shape as Pico-PIO-USB below). USB HID uses Pico-PIO-USB (fetched via
   `cmake/pico_pio_usb.cmake` or `PICO_PIO_USB_DIR`); Pimoroni backend is
   optional and only compiled under `PICO_TOOLSET_SCREEN_PIMORONI`. I2S audio
   uses pico-extras' `pico_audio_i2s`, which the *consumer* must import (its
@@ -71,6 +73,12 @@ manual smoke tests of the examples on hardware.
 - PSRAM: TOM6809 `Psram`/`PsramMemoryResource`.
 - I2S audio: TOM6809 `PicoI2sAudioOutput` (PCM5100A DAC, pico-extras'
   `pico_audio_i2s`).
+- SD card: TOM6809 `PicoSdCard` (unifies its two board-specific variants,
+  `PicoSdCard_PicoDv`/`PicoSdCard_Waveshare`, into one config-driven driver).
+- Reset buttons: TOM6809 `PicoResetButtons` (decomposed into the generic
+  `DebouncedButtons` + `watchdog_reboot_with_tag()`/
+  `consume_pending_watchdog_tag()` pair -- the Thomson-model-tag mapping
+  stays in TOM6809).
 - USB HID: TOM6809 `PicoUsbHidInput` (+ pico-infonesPlus descriptor parsers).
 - Screen: PiCoMonitor.new `Screen`/`Widget` (Pimoroni PicoGraphics default).
 

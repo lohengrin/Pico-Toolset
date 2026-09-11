@@ -17,6 +17,8 @@ independently.
 | PSRAM     | `pico_toolset_psram`    | RP2350-only external PSRAM bring-up (QMI CS1), self-test, free-list allocator, `std::pmr` adapter. No-op on RP2040. |
 | USB HID   | `pico_toolset_usb_hid`  | PIO-USB TinyUSB host: keyboard/mouse/HID-gamepad + XInput, double-buffered cross-core state, unified `GamepadState`. |
 | I2S audio | `pico_toolset_i2s_audio` | Float-sample I2S DAC output (e.g. PCM5100A) via pico-extras' `pico_audio_i2s`; non-blocking queue, config-driven pins/DMA channel/PIO SM. OFF by default -- needs pico-extras set up by the consumer (see below). |
+| SD card   | `pico_toolset_sdcard`   | FatFs R0.15 (elehobica/pico_fatfs) over native or PIO-bit-banged SPI; config-driven pins/PIO/gpio_base, `list_files()`/`read_file()`/`read_file_pmr()`. |
+| Reset buttons | `pico_toolset_reset_buttons` | N debounced, active-HIGH momentary buttons + a generic tagged-watchdog-reboot pair (`watchdog_reboot_with_tag()`/`consume_pending_watchdog_tag()`), reusable for any "boot straight into mode X" use case. |
 
 ## Libraries
 
@@ -43,6 +45,8 @@ pico-toolset/
 │   ├── xpt2046/   include/pico_toolset/*.h         src/  example/
 │   ├── psram/     include/pico_toolset/psram.h     src/  example/
 │   ├── i2s_audio/ include/pico_toolset/i2s_audio.h src/  example/
+│   ├── sdcard/    include/pico_toolset/sdcard.h    src/  example/
+│   ├── reset_buttons/ include/pico_toolset/reset_buttons.h src/ example/
 │   └── usb_hid/   include/pico_toolset/*.h  src/  example/  tusb_config.h
 └── libs/
     └── screen/    include/pico_toolset/*.h  example/
@@ -72,6 +76,8 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_PSRAM`   | ON | Build PSRAM driver + example (RP2350 only) |
 | `PICO_TOOLSET_BUILD_USB_HID` | ON | Build PIO-USB HID host + example |
 | `PICO_TOOLSET_BUILD_I2S_AUDIO` | OFF | Build I2S audio output + example (needs pico-extras, see below) |
+| `PICO_TOOLSET_BUILD_SDCARD`  | ON | Build SD card (FatFs/pico_fatfs) driver + example |
+| `PICO_TOOLSET_BUILD_RESET_BUTTONS` | ON | Build debounced-buttons + tagged-watchdog-reboot helper + example |
 | `PICO_TOOLSET_USB_HID_KEYMAPS` | `us;fr` | Semicolon-separated keyboard layouts to compile in (implemented: `us`, `fr`) |
 | `PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP` | `us` | Layout used by default (must be listed in `PICO_TOOLSET_USB_HID_KEYMAPS`) |
 | `PICO_TOOLSET_BUILD_SCREEN`  | ON | Build screen abstraction + example |
@@ -256,6 +262,39 @@ std::array<float, 882> frame;           // [-1, 1] samples, e.g. one 20ms frame 
 audio.queue_samples(frame);             // non-blocking; drops this call's audio if no buffer is free
 ```
 
+### SD card
+
+```cpp
+pico_toolset::SdCardConfig cfg;         // defaults: PIO-bit-banged SPI, pio1/sm0
+cfg.pin_miso = 19; cfg.pin_cs = 22; cfg.pin_sck = 5; cfg.pin_mosi = 18;
+// cfg.gpio_base = 16;  // only if a configured pin is >= 32, see the doc comment
+pico_toolset::SdCard sd;
+if (!sd.init(cfg)) { /* no card / mount failed -- sd.last_mount_result() has the FRESULT */ }
+for (const auto& name : sd.list_files({"txt", "bin"})) { /* ... */ }
+std::vector<uint8_t> data = sd.read_file("config.bin");
+```
+
+`pico_fatfs` is fetched via `FetchContent` by default; set `PICO_FATFS_DIR`
+to point at a local checkout instead (same pattern as `PICO_PIO_USB_DIR`
+above).
+
+### Reset buttons (debounced + tagged watchdog reboot)
+
+```cpp
+uint32_t tag = 0;
+if (pico_toolset::consume_pending_watchdog_tag(tag)) {
+    // this boot was triggered by watchdog_reboot_with_tag(tag) below
+}
+
+pico_toolset::DebouncedButtons buttons;
+buttons.init(std::array<uint8_t, 3>{14, 15, 16});  // active-HIGH, pull-down
+// ...call buttons.poll() once per frame...
+int pressed = buttons.poll();
+if (pressed >= 0) {
+    pico_toolset::watchdog_reboot_with_tag(static_cast<uint32_t>(pressed));  // never returns
+}
+```
+
 ### Screen (widget composition)
 
 ```cpp
@@ -310,6 +349,19 @@ screen.update();
   `UsbHidHost::task()` from your core0 loop. Endpoint re-arming after an
   unplug is intentionally not retried (wedge-prevention finding from
   TOM6809).
+- **SD card PIO/GPIO-base sharing**: if another PIO-based component (e.g.
+  `usb_hid`'s Pico-PIO-USB, or a DVI/HDMI serializer) is also active, give
+  `SdCardConfig::pio` a block none of them claim. If any configured SD pin
+  is >= 32, set `gpio_base` to widen that PIO block's addressing window --
+  skipping it doesn't error, it silently times out mounting (RP2350B wraps
+  the out-of-range pin number back into 0-31 instead of rejecting it).
+- **Reset buttons' watchdog tag is process-wide**: only one "pending tag"
+  fits in the watchdog scratch registers at a time -- if you also use
+  `watchdog_reboot()` directly elsewhere for something unrelated, that
+  reboot won't carry a tag `consume_pending_watchdog_tag()` recognizes (it
+  simply returns false), but make sure nothing else *also* writes
+  `watchdog_hw->scratch[0]`/`[1]` for a different purpose, or the two will
+  collide.
 - **Screen**: `Screen` does not own widgets -- keep them alive for its
   lifetime. `Ili9486Driver` needs a caller-owned RGB565 framebuffer (480x320x2
   ≈ 300KB; allocate from PSRAM).
