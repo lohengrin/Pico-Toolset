@@ -336,10 +336,16 @@ void UsbHidHost::host_stack_setup() {
 
     while (true) {
         tuh_task();
+        // TEMPORARY bring-up diagnostic -- see debug_core1_loop_count()'s own doc comment.
+        self->m_debug_loop_count++;
     }
 }
 
-void UsbHidHost::task() { tuh_task(); }
+void UsbHidHost::task() {
+    tuh_task();
+    // TEMPORARY bring-up diagnostic -- see debug_core1_loop_count()'s own doc comment.
+    if (UsbHidHost* self = instance()) self->m_debug_loop_count++;
+}
 
 // --- Keyboard ---
 

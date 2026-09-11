@@ -80,6 +80,14 @@ public:
     uint8_t connected_keyboard_count() const;
     uint8_t connected_gamepad_count() const;
 
+    // TEMPORARY bring-up diagnostic (2026-09): increments once per
+    // host_stack_setup() loop iteration (i.e. once per tuh_task() call) --
+    // read this before/after a delay to confirm the core owning the host
+    // stack is alive and looping at all, as opposed to having crashed/hung
+    // inside tuh_configure()/tuh_init() before ever reaching the loop.
+    // Remove once real-hardware testing confirms devices enumerate.
+    uint32_t debug_core1_loop_count() const { return m_debug_loop_count; }
+
     // Internal -- called by the free TinyUSB callbacks in the .cpp. Runs on
     // the core owning the stack.
     static UsbHidHost* instance() { return s_instance; }
@@ -147,6 +155,9 @@ private:
 
     GamepadSlot m_gamepads[4]{};
     uint8_t m_gamepad_count = 0;
+
+    // TEMPORARY bring-up diagnostic -- see debug_core1_loop_count()'s own doc comment.
+    volatile uint32_t m_debug_loop_count = 0;
 };
 
 } // namespace pico_toolset
