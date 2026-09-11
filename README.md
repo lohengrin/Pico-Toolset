@@ -16,6 +16,7 @@ independently.
 | XPT2046   | `pico_toolset_xpt2046`  | Resistive touch controller sharing an SPI bus with a display driver (e.g. ILI9486); raw ADC reads + a linear calibration helper. |
 | PSRAM     | `pico_toolset_psram`    | RP2350-only external PSRAM bring-up (QMI CS1), self-test, free-list allocator, `std::pmr` adapter. No-op on RP2040. |
 | USB HID   | `pico_toolset_usb_hid`  | PIO-USB TinyUSB host: keyboard/mouse/HID-gamepad + XInput, double-buffered cross-core state, unified `GamepadState`. |
+| I2S audio | `pico_toolset_i2s_audio` | Float-sample I2S DAC output (e.g. PCM5100A) via pico-extras' `pico_audio_i2s`; non-blocking queue, config-driven pins/DMA channel/PIO SM. OFF by default -- needs pico-extras set up by the consumer (see below). |
 
 ## Libraries
 
@@ -41,6 +42,7 @@ pico-toolset/
 │   ├── ili9486/   include/pico_toolset/ili9486.h   src/  example/
 │   ├── xpt2046/   include/pico_toolset/*.h         src/  example/
 │   ├── psram/     include/pico_toolset/psram.h     src/  example/
+│   ├── i2s_audio/ include/pico_toolset/i2s_audio.h src/  example/
 │   └── usb_hid/   include/pico_toolset/*.h  src/  example/  tusb_config.h
 └── libs/
     └── screen/    include/pico_toolset/*.h  example/
@@ -69,6 +71,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_XPT2046` | ON | Build XPT2046 touch driver + example |
 | `PICO_TOOLSET_BUILD_PSRAM`   | ON | Build PSRAM driver + example (RP2350 only) |
 | `PICO_TOOLSET_BUILD_USB_HID` | ON | Build PIO-USB HID host + example |
+| `PICO_TOOLSET_BUILD_I2S_AUDIO` | OFF | Build I2S audio output + example (needs pico-extras, see below) |
 | `PICO_TOOLSET_USB_HID_KEYMAPS` | `us;fr` | Semicolon-separated keyboard layouts to compile in (implemented: `us`, `fr`) |
 | `PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP` | `us` | Layout used by default (must be listed in `PICO_TOOLSET_USB_HID_KEYMAPS`) |
 | `PICO_TOOLSET_BUILD_SCREEN`  | ON | Build screen abstraction + example |
@@ -103,6 +106,32 @@ be available alongside pico-sdk:
 Note: with any USB HID build the RP2350 still uses `OPT_MCU_RP2040` internally
 (the vendored TinyUSB has no RP2350 MCU port), and rhport 0 stays a USB-CDC
 device so `pico_stdio_usb` keeps working alongside the PIO host on rhport 1.
+
+## I2S audio (pico-extras)
+
+`pico_toolset_i2s_audio` wraps pico-extras' `pico_audio_i2s`, which -- like
+pico-sdk itself -- must be imported via its own `pico_extras_import.cmake`
+**before** your project's `project()` call. This component cannot set that
+up itself (it only runs after `project()`, when the toolset is
+`add_subdirectory()`'d), so the consumer owns it:
+
+```cmake
+set(PICO_SDK_PATH /path/to/pico-sdk)
+include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+set(PICO_EXTRAS_PATH /path/to/pico-extras)   # or PICO_EXTRAS_FETCH_FROM_GIT=ON
+include(${CMAKE_CURRENT_SOURCE_DIR}/pico_extras_import.cmake)  # your own copy of pico-extras' script
+
+project(my_app C CXX ASM)
+pico_sdk_init()
+
+set(PICO_TOOLSET_BUILD_I2S_AUDIO ON CACHE BOOL "" FORCE)  # OFF by default
+add_subdirectory(third_party/pico-toolset)
+```
+
+`components/i2s_audio/CMakeLists.txt` fails loud with a clear message
+(`pico_toolset_i2s_audio requires the pico_audio_i2s target...`) if
+`pico_audio_i2s` doesn't exist by the time it's reached, rather than
+misbehaving silently.
 
 ## Using a component from your own project
 
@@ -216,6 +245,17 @@ new layout = implement it under a `#if PICO_TOOLSET_USB_HID_KEYMAP_*` guard in
 `usb_hid_keymap.cpp` and register its name in the component's
 `PICO_TOOLSET_USB_HID_KEYMAP_IMPL` list.
 
+### I2S audio (pico-extras -- see the setup section above)
+
+```cpp
+pico_toolset::I2sAudioConfig cfg;       // defaults: 44.1kHz mono, DATA26/BCK27, DMA ch.0, PIO SM0
+pico_toolset::I2sAudioOutput audio;
+if (!audio.init(cfg)) { /* handle failure */ }
+std::array<float, 882> frame;           // [-1, 1] samples, e.g. one 20ms frame at 44.1kHz
+// ...fill frame...
+audio.queue_samples(frame);             // non-blocking; drops this call's audio if no buffer is free
+```
+
 ### Screen (widget composition)
 
 ```cpp
@@ -249,6 +289,18 @@ screen.update();
   call `spi_init()` -- `config.spi_instance` must already be brought up by
   whatever display driver owns the bus, and `read()` must not be called
   while that driver has an open `set_window()`/`write_pixels()` sequence.
+- **DMA channels are always configurable, never hardcoded**: `Ili9486Config::
+  dma_channel` (default `-1`, auto-claims any free channel) and
+  `I2sAudioConfig::dma_channel` (default `0`, pico_audio_i2s claims that
+  *specific* channel -- it has no "any free channel" mode) both exist so a
+  consumer whose other drivers claim DMA channels by fixed number can keep
+  this toolset's components off of them. Getting this wrong panics at
+  startup ("DMA channel N is already claimed") -- confirmed on real
+  hardware as a real regression (an unconfigurable auto-claim collided with
+  Pico-PIO-USB's own hardcoded default channel) before `dma_channel` was
+  added. Apply the same principle to any new component: no hardcoded pin,
+  bus, clock, or resource-index value -- always a config field with a
+  sensible default.
 - **PSRAM bring-up**: `psram_init()` must run once from core0 before any
   allocation and before core1 starts. The RXDELAY clamp (max divisor) and
   `flash_devinfo_set_cs_size()` fix are baked in -- direct ports that skip

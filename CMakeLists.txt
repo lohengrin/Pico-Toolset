@@ -32,6 +32,11 @@ option(PICO_TOOLSET_BUILD_ILI9486  "Build ILI9486 SPI LCD driver"         ON)
 option(PICO_TOOLSET_BUILD_XPT2046  "Build XPT2046 resistive touch driver" ON)
 option(PICO_TOOLSET_BUILD_PSRAM    "Build PSRAM driver (RP2350 only)"     ON)
 option(PICO_TOOLSET_BUILD_USB_HID  "Build PIO-USB HID host"               ON)
+# OFF by default (unlike the other components): needs pico-extras' pico_audio_i2s
+# target to already exist, which needs pico_extras_import.cmake run before
+# project() by the consumer -- this component can't set that up itself. See
+# the README's "I2S audio (pico-extras)" section.
+option(PICO_TOOLSET_BUILD_I2S_AUDIO "Build I2S audio output (needs pico-extras)" OFF)
 option(PICO_TOOLSET_BUILD_SCREEN   "Build Screen abstraction"             ON)
 # Screen backend selector.
 option(PICO_TOOLSET_SCREEN_PIMORONI "Use Pimoroni PicoGraphics backend"   OFF)
@@ -51,6 +56,9 @@ endif()
 if(PICO_TOOLSET_BUILD_USB_HID)
     include(cmake/pico_pio_usb.cmake)
     add_subdirectory(components/usb_hid)
+endif()
+if(PICO_TOOLSET_BUILD_I2S_AUDIO)
+    add_subdirectory(components/i2s_audio)
 endif()
 if(PICO_TOOLSET_BUILD_SCREEN)
     add_subdirectory(libs/screen)

@@ -30,7 +30,12 @@ component ships an `example/` program that doubles as a smoke test.
 - **No dependencies beyond pico-sdk** unless declared: SSD1306/ILI9486/
   XPT2046/PSRAM/Screen use pico-sdk only. USB HID uses Pico-PIO-USB (fetched via
   `cmake/pico_pio_usb.cmake` or `PICO_PIO_USB_DIR`); Pimoroni backend is
-  optional and only compiled under `PICO_TOOLSET_SCREEN_PIMORONI`.
+  optional and only compiled under `PICO_TOOLSET_SCREEN_PIMORONI`. I2S audio
+  uses pico-extras' `pico_audio_i2s`, which the *consumer* must import (its
+  own `pico_extras_import.cmake` runs before `project()`, same constraint as
+  pico-sdk's) -- this component only asserts the target already exists
+  (`PICO_TOOLSET_BUILD_I2S_AUDIO` defaults OFF, unlike every other
+  component, for exactly this reason).
 
 ## Build/verify workflow
 
@@ -64,6 +69,8 @@ manual smoke tests of the examples on hardware.
 - XPT2046: TOM6809 `Xpt2046Touch`/`TouchCalibration`, real-hardware-validated
   on the Waveshare 3.5in RPi LCD (A).
 - PSRAM: TOM6809 `Psram`/`PsramMemoryResource`.
+- I2S audio: TOM6809 `PicoI2sAudioOutput` (PCM5100A DAC, pico-extras'
+  `pico_audio_i2s`).
 - USB HID: TOM6809 `PicoUsbHidInput` (+ pico-infonesPlus descriptor parsers).
 - Screen: PiCoMonitor.new `Screen`/`Widget` (Pimoroni PicoGraphics default).
 
