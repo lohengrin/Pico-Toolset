@@ -51,10 +51,18 @@ component ships an `example/` program that doubles as a smoke test.
   `flash_safe_execute()` (falling back to a plain interrupt-disable only
   when `multicore_lockout_ready()` is false, meaning the other core hasn't
   registered and is presumably not running yet) rather than calling
-  `hardware_psram`/`hardware_flash` functions directly. Any component that
-  owns core1 (like `usb_hid`) should call `flash_safe_execute_core_init()`
-  once, early, so the other core's own flash-safe operations can lock it out
-  properly instead of falling back to the weaker interrupt-only path.
+  `hardware_psram`/`hardware_flash` functions directly.
+  **Do NOT make a component register `flash_safe_execute_core_init()`/
+  `multicore_lockout_victim_init()` on core1 automatically** (tried in
+  `usb_hid`, reverted -- confirmed on real hardware to break the display):
+  the lockout IRQ handler steals every word off the raw inter-core FIFO,
+  which conflicts with any core1 loop that also uses
+  `multicore_fifo_push_blocking()`/`pop_blocking()` directly (both
+  PicoDoom's and TOM6809's chunked display-blit handoff do). The safe,
+  tested pattern is calling `psram_init()`/flash operations *before*
+  launching any core1 workload; only have a core1 loop opt into
+  `flash_safe_execute_core_init()` itself if it's confirmed not to use the
+  raw FIFO for anything of its own.
 - **Watchdog scratch registers are a shared resource**: `watchdog_hw->scratch[0..7]` is one flat, repo-wide namespace (8 words), not per-component storage -- reset_buttons and fault_handler both use it (to survive a `watchdog_reboot()`) and a consumer can link both. Before claiming a scratch index for a new use, check the allocation table in the top-level README (also mirrored in `libs/fault_handler/include/pico_toolset/fault_handler.h`) and extend it -- never reuse an index another component already owns, and remember `scratch[4]` is reserved by the SDK's own watchdog bookkeeping.
 - **No dependencies beyond pico-sdk** unless declared: SSD1306/ILI9486/
   XPT2046/PSRAM/reset_buttons/Screen use pico-sdk only. SD card uses
@@ -120,9 +128,12 @@ manual smoke tests of the examples on hardware.
   on the Waveshare 3.5in RPi LCD (A).
 - PSRAM: TOM6809 `Psram`/`PsramMemoryResource`. `flash_safe_execute()`-based
   protection against `hardware_psram`'s documented interrupt/other-core
-  unsafety (and `usb_hid`'s matching `flash_safe_execute_core_init()` call)
-  added after a real, hardware-observed intermittent freeze at PSRAM init on
-  both PicoDoom and TOM6809 -- see the README's "Notes and gotchas".
+  unsafety added after a real, hardware-observed intermittent freeze at
+  PSRAM init on both PicoDoom and TOM6809 -- see the README's "Notes and
+  gotchas". A matching automatic `flash_safe_execute_core_init()` call in
+  `usb_hid`'s `host_stack_setup()` was tried alongside it but reverted: it
+  broke the display on real hardware by conflicting with the raw
+  inter-core FIFO both projects' core1 loops use for their own blit handoff.
 - I2S audio: TOM6809 `PicoI2sAudioOutput` (PCM5100A DAC, pico-extras'
   `pico_audio_i2s`).
 - SD card: TOM6809 `PicoSdCard` (unifies its two board-specific variants,

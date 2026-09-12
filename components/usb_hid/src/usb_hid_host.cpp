@@ -3,7 +3,6 @@
 
 #include "hardware/dma.h"
 #include "hardware/sync.h"
-#include "pico/flash.h"
 #include "pico/multicore.h"
 #include "pio_usb.h"
 #include "tusb.h"
@@ -397,19 +396,23 @@ void UsbHidHost::core1_entry() {
 void UsbHidHost::host_stack_setup() {
     UsbHidHost* self = instance();
 
-    // Registers this core (wherever host_stack_setup() runs -- core1 by
-    // default, or whichever core called init() with run_on_core1=false) as
-    // a flash_safe_execute()/multicore_lockout victim: lets code on the
-    // OTHER core (e.g. a PSRAM/flash operation on core0, see
-    // pico_toolset_psram) safely park this core in a RAM-resident wait loop
-    // for the duration instead of racing it -- both flash and PSRAM briefly
-    // stop being readable via XIP during such an operation, and this core
-    // keeps running TinyUSB/Pico-PIO-USB code that lives in flash the whole
-    // time. Confirmed as a real cause of an intermittent, hard-to-reproduce
-    // freeze at PSRAM init when the USB host was already running on this
-    // core (2026-09, PicoDoom/TOM6809 -- see the top-level README).
-    flash_safe_execute_core_init();
-
+    // Deliberately NOT calling flash_safe_execute_core_init() here (tried,
+    // reverted 2026-09): multicore_lockout_victim_init() installs an
+    // exclusive IRQ handler on this core's SIO FIFO-not-empty interrupt that
+    // drains and inspects EVERY word arriving on the raw inter-core FIFO,
+    // silently discarding anything that isn't its own lockout handshake
+    // token. Every consumer core1 loop this toolset actually runs alongside
+    // (PicoDoom's, TOM6809's -- both use core1 for this host stack AND a
+    // chunked display-blit handoff via plain multicore_fifo_push_blocking()/
+    // pop_blocking()) ALSO uses that same raw FIFO for its own purposes;
+    // registering as a lockout victim silently steals every blit-index
+    // handoff before the app's own i_video_core1_step()-style poll ever
+    // sees it, freezing the display after a couple of frames (confirmed on
+    // real hardware: title screen never appears, then a hard hang once the
+    // ping-ponged buffer wraps back to a slot that's now never freed). See
+    // pico_toolset_psram's psram_init() and the README's "Notes and
+    // gotchas" for the PSRAM-side half of this story and what a consumer
+    // should do instead if it needs full flash_safe_execute() protection.
     pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
     pio_cfg.pin_dp = self->m_config.pin_dp;
     // Current Pico-PIO-USB uses one PIO (block) for both TX and RX halves.

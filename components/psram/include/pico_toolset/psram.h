@@ -52,14 +52,22 @@ struct PsramStatus {
 // unreadable via XIP, so an interrupt handler firing -- or the other core
 // executing from flash concurrently -- during that window hangs or faults):
 // uses flash_safe_execute() when the other core is lockout-ready (has
-// called flash_safe_execute_core_init()/multicore_lockout_victim_init() --
-// e.g. automatically, if it's running pico_toolset_usb_hid's host stack,
-// see that component's host_stack_setup()), otherwise falls back to a plain
-// interrupt-disable, which is correct as long as the other core hasn't
-// started running anything yet. If you call this after launching a core1
-// workload that is NOT pico_toolset_usb_hid, make sure that core has called
-// flash_safe_execute_core_init() itself first, or this falls back to the
-// interrupt-only protection and the other-core race is still possible.
+// called flash_safe_execute_core_init()/multicore_lockout_victim_init()
+// itself), otherwise falls back to a plain interrupt-disable, which is
+// correct as long as the other core hasn't started running anything yet.
+//
+// pico_toolset_usb_hid deliberately does NOT register its core1 as a
+// lockout victim (tried, reverted -- see the README's "Notes and gotchas"):
+// multicore_lockout's IRQ handler silently steals every word off the raw
+// inter-core FIFO, which breaks any consumer (this toolset's own PicoDoom/
+// TOM6809 examples included) that also uses multicore_fifo_push_blocking()/
+// pop_blocking() directly on that core, e.g. for a chunked display-blit
+// handoff. In practice this means: call psram_init() before launching any
+// core1 workload for full protection (the fallback interrupt-disable path
+// is then sufficient, since nothing is running on the other core yet); if
+// you must call it after core1 is already active AND that core1 doesn't use
+// the raw FIFO for anything of its own, have it call
+// flash_safe_execute_core_init() itself for the stronger protection.
 PsramStatus psram_init(const PsramConfig& config);
 
 // Status from the last psram_init() (all-false default if it hasn't run).

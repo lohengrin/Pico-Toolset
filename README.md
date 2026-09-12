@@ -449,17 +449,25 @@ screen.update();
   during that window (an ISR firing -- e.g. stdio_usb/TinyUSB's, present in
   every consumer of this toolset -- or the other core mid-instruction-fetch)
   hangs or faults. `pico_toolset_psram` now protects `psram_init()` with
-  `flash_safe_execute()` when the other core is lockout-ready, falling back
-  to a plain interrupt-disable otherwise (safe only if that core hasn't
-  started running anything yet -- see `psram.h`'s doc comment on
-  `psram_init()`). `pico_toolset_usb_hid`'s `host_stack_setup()` now calls
-  `flash_safe_execute_core_init()` on whichever core runs the host stack, so
-  a consumer combining PSRAM with this toolset's USB HID gets full
-  protection automatically regardless of which one starts first. If you use
-  PSRAM alongside a core1 workload that is NOT `pico_toolset_usb_hid`, call
-  `flash_safe_execute_core_init()` yourself on that core before it starts
-  running, or `psram_init()` silently falls back to the weaker
-  interrupt-only protection.
+  `flash_safe_execute()` when the other core is lockout-ready
+  (`multicore_lockout_ready()`), falling back to a plain interrupt-disable
+  otherwise -- **call `psram_init()` before launching any core1 workload**
+  for the fallback to be fully sufficient (nothing is running on the other
+  core yet, so there's nothing to race).
+  **`pico_toolset_usb_hid` deliberately does NOT register its core1 as a
+  lockout victim** (tried, reverted): `multicore_lockout_victim_init()`
+  installs an IRQ handler that silently steals every word off the raw
+  inter-core FIFO, which breaks any consumer -- this toolset's own PicoDoom/
+  TOM6809 examples included -- that also uses
+  `multicore_fifo_push_blocking()`/`pop_blocking()` directly on that core
+  (e.g. for a chunked display-blit handoff). Confirmed on real hardware:
+  registering the lockout victim made the *display* hang a few frames in
+  (the blit-index handoff got silently eaten by the lockout IRQ) even though
+  it fixed the original PSRAM freeze. If you need PSRAM/flash operations
+  *after* a core1 workload is already running, either reorder your boot so
+  PSRAM/flash init happens first (the tested, working pattern), or -- only
+  if that core1 loop doesn't use the raw FIFO for anything of its own --
+  have it call `flash_safe_execute_core_init()` itself.
 - **Watchdog scratch registers are shared across components.**
   `watchdog_hw->scratch[0..7]` is one flat set of 8 words for the whole
   toolset, not per-component storage -- a consumer linking both
