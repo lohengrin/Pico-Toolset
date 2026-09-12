@@ -39,6 +39,17 @@ struct UsbHidConfig {
     // kDefaultKeymapIndex (PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP) by default;
     // pick any compiled-in layout at runtime, e.g. with keymap_by_name().
     uint8_t keymap_index = kDefaultKeymapIndex;
+    // Keyboard LED/lock-state management -- generic behavioral options (no
+    // board wiring involved), see UsbHidHost's own doc comment. NumLock is
+    // considered "on" until physically toggled -- there is no USB-HID way
+    // to query a freshly-mounted keyboard's actual lock-key state, so this
+    // is this host's own convention (matching most desktop OSes' default).
+    bool numlock_initial_state = true;
+    // Plays a NumLock->CapsLock->ScrollLock->CapsLock->NumLock->off identify
+    // sequence on the keyboard's own LEDs when it mounts, before settling
+    // into the real, managed state. Purely cosmetic -- set false to skip
+    // straight to the managed state.
+    bool led_boot_animation = true;
 };
 
 // USB HID host over a Pico-PIO-USB port. Runs the TinyUSB host stack on a
@@ -74,6 +85,15 @@ public:
     // One typed ASCII character per physical press, in the config's keymap
     // layout (UsbHidConfig::keymap_index, see usb_hid_keymap.h); 0 if none.
     uint8_t consume_typed_ascii_char();
+
+    // --- Keyboard lock-key state (NumLock/CapsLock/ScrollLock) ---
+    // Toggled on each physical press of the corresponding key and pushed to
+    // every mounted keyboard's own LEDs (see UsbHidConfig::numlock_initial_state/
+    // led_boot_animation) -- reading these is the only way a consumer can
+    // know NumLock's state, since USB HID gives no other way to query it.
+    bool numlock_on() const { return m_numlock_on; }
+    bool capslock_on() const { return m_capslock_on; }
+    bool scrolllock_on() const { return m_scrolllock_on; }
 
     // --- Mouse ---
     struct MouseState {
@@ -135,6 +155,15 @@ private:
     static void host_stack_setup();
     static void core1_entry();
 
+    // --- Keyboard LED/lock-state management (usb_hid_host.cpp) ---
+    // Animation steps for the boot identify sequence, in playback order;
+    // Done means "not animating" (steady managed state).
+    enum class LedAnimStep : uint8_t { NumLock1, CapsLock1, ScrollLock, CapsLock2, NumLock2, Off, Settle, Done };
+    uint8_t current_led_mask() const;
+    void apply_led_mask(uint8_t mask); // no-op if unchanged since the last call
+    void start_led_animation();
+    void update_leds(); // called every task() tick
+
     static UsbHidHost* s_instance;
 
     UsbHidConfig m_config{};
@@ -164,6 +193,14 @@ private:
 
     GamepadSlot m_gamepads[4]{};
     uint8_t m_gamepad_count = 0;
+
+    // Keyboard lock-key state + LED animation (see usb_hid_host.cpp).
+    bool m_numlock_on = true;
+    bool m_capslock_on = false;
+    bool m_scrolllock_on = false;
+    LedAnimStep m_led_anim_step = LedAnimStep::Done;
+    uint64_t m_led_anim_next_us = 0;
+    uint8_t m_led_mask_sent = 0xFF; // sentinel -- no real mask has this value
 };
 
 } // namespace pico_toolset

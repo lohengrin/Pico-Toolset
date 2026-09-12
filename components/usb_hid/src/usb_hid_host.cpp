@@ -213,23 +213,52 @@ const usbh_class_driver_t kXInputDriver = {
 
 } // namespace
 
-// Small registry of mounted keyboard dev_addrs so the keyboard count can be
-// decremented accurately on unplug (tuh_hid_umount_cb gives no protocol).
+// Registry of mounted keyboards (dev_addr+instance) -- lets the keyboard
+// count be decremented accurately on unplug (tuh_hid_umount_cb gives no
+// protocol) and gives send_led_report_all() somewhere to broadcast to.
+struct KeyboardReg {
+    uint8_t dev_addr = 0;
+    uint8_t instance = 0;
+    bool in_use = false;
+};
 constexpr uint8_t kMaxKeyboardRegs = 8;
-uint8_t g_keyboard_addrs[kMaxKeyboardRegs]{};
-bool register_keyboard(uint8_t dev_addr) {
-    for (uint8_t& a : g_keyboard_addrs) {
-        if (a == dev_addr) return true;
-        if (a == 0) { a = dev_addr; return true; }
+KeyboardReg g_keyboard_regs[kMaxKeyboardRegs]{};
+
+enum class RegisterResult { AlreadyRegistered, NewlyRegistered, Full };
+RegisterResult register_keyboard(uint8_t dev_addr, uint8_t instance) {
+    for (const KeyboardReg& r : g_keyboard_regs) {
+        if (r.in_use && r.dev_addr == dev_addr && r.instance == instance) return RegisterResult::AlreadyRegistered;
+    }
+    for (KeyboardReg& r : g_keyboard_regs) {
+        if (!r.in_use) { r = {dev_addr, instance, true}; return RegisterResult::NewlyRegistered; }
+    }
+    return RegisterResult::Full;
+}
+bool unregister_keyboard(uint8_t dev_addr, uint8_t instance) {
+    for (KeyboardReg& r : g_keyboard_regs) {
+        if (r.in_use && r.dev_addr == dev_addr && r.instance == instance) { r = KeyboardReg{}; return true; }
     }
     return false;
 }
-bool unregister_keyboard(uint8_t dev_addr) {
-    bool found = false;
-    for (uint8_t& a : g_keyboard_addrs) {
-        if (a == dev_addr) { a = 0; found = true; }
+
+// Set_Report(Output) request on the keyboard's control endpoint, boot-
+// keyboard convention (report_id 0, 1-byte NumLock/CapsLock/ScrollLock/
+// Compose/Kana bitmap -- KEYBOARD_LED_* in class/hid/hid.h). This whole
+// stack only ever has one control transfer in flight at a time (see
+// tuh_control_xfer()'s single global _ctrl_xfer), so a lone static buffer
+// is safe to reuse across every call -- but it also means a broadcast to
+// several simultaneously-mounted keyboards is best-effort: a call made
+// while the previous one is still in flight (e.g. a second keyboard, or a
+// report to the same one arriving right after another) is simply dropped
+// by tuh_hid_set_report() returning false, matching this driver's existing
+// tolerance for imperfect multi-device edge cases elsewhere (DualSense/
+// generic-gamepad parsing).
+static uint8_t s_led_report_byte = 0;
+void send_led_report_all(uint8_t mask) {
+    s_led_report_byte = mask;
+    for (const KeyboardReg& r : g_keyboard_regs) {
+        if (r.in_use) tuh_hid_set_report(r.dev_addr, r.instance, 0, HID_REPORT_TYPE_OUTPUT, &s_led_report_byte, 1);
     }
-    return found;
 }
 
 // Invoked by TinyUSB's host stack at tuh_init() time to collect any
@@ -295,7 +324,7 @@ extern "C" void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t con
 
 extern "C" void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
     if (auto* self = UsbHidHost::instance())
-        self->on_hid_unmount(dev_addr, instance, unregister_keyboard(dev_addr));
+        self->on_hid_unmount(dev_addr, instance, unregister_keyboard(dev_addr, instance));
 }
 
 extern "C" void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report,
@@ -331,6 +360,12 @@ bool UsbHidHost::init(const UsbHidConfig& config) {
     if (m_config.max_gamepads > kMaxGamepadSlots) m_config.max_gamepads = kMaxGamepadSlots;
     m_gamepad_count = 0;
 
+    m_numlock_on = m_config.numlock_initial_state;
+    m_capslock_on = false;
+    m_scrolllock_on = false;
+    m_led_anim_step = LedAnimStep::Done;
+    m_led_mask_sent = 0xFF;
+
     if (m_config.run_on_core1) {
         multicore_reset_core1();
         static uint32_t core1_stack[4096]; // 16 KB, per TOM6809's stack guidance
@@ -354,7 +389,7 @@ bool UsbHidHost::init(const UsbHidConfig& config) {
 void UsbHidHost::core1_entry() {
     host_stack_setup();
     while (true) {
-        tuh_task();
+        task();
     }
 }
 
@@ -389,7 +424,72 @@ void UsbHidHost::host_stack_setup() {
     self->m_initialized = true;
 }
 
-void UsbHidHost::task() { tuh_task(); }
+void UsbHidHost::task() {
+    tuh_task();
+    if (auto* self = instance()) self->update_leds();
+}
+
+// --- Keyboard LED / lock-state management ---
+
+namespace {
+// Time each animation frame stays lit before advancing -- 6 frames (5
+// lit + the final all-off) times this is ~1.2s, "a small animation".
+constexpr uint32_t kLedAnimStepUs = 200'000;
+} // namespace
+
+uint8_t UsbHidHost::current_led_mask() const {
+    uint8_t mask = 0;
+    if (m_numlock_on) mask |= KEYBOARD_LED_NUMLOCK;
+    if (m_capslock_on) mask |= KEYBOARD_LED_CAPSLOCK;
+    if (m_scrolllock_on) mask |= KEYBOARD_LED_SCROLLLOCK;
+    return mask;
+}
+
+void UsbHidHost::apply_led_mask(uint8_t mask) {
+    if (mask == m_led_mask_sent) return; // nothing changed -- skip the control xfer
+    send_led_report_all(mask);
+    m_led_mask_sent = mask;
+}
+
+void UsbHidHost::start_led_animation() {
+    if (!m_config.led_boot_animation) {
+        m_led_anim_step = LedAnimStep::Done;
+        apply_led_mask(current_led_mask());
+        return;
+    }
+    // update_leds() (called every task() tick) drives the sequence from
+    // here -- due now, so the first frame lights on the very next tick.
+    m_led_anim_step = LedAnimStep::NumLock1;
+    m_led_anim_next_us = time_us_64();
+}
+
+void UsbHidHost::update_leds() {
+    if (m_led_anim_step == LedAnimStep::Done) return;
+    uint64_t now = time_us_64();
+    if (now < m_led_anim_next_us) return;
+
+    uint8_t mask = 0;
+    LedAnimStep next = LedAnimStep::Done;
+    switch (m_led_anim_step) {
+        case LedAnimStep::NumLock1:   mask = KEYBOARD_LED_NUMLOCK;    next = LedAnimStep::CapsLock1;  break;
+        case LedAnimStep::CapsLock1:  mask = KEYBOARD_LED_CAPSLOCK;   next = LedAnimStep::ScrollLock; break;
+        case LedAnimStep::ScrollLock: mask = KEYBOARD_LED_SCROLLLOCK; next = LedAnimStep::CapsLock2;  break;
+        case LedAnimStep::CapsLock2:  mask = KEYBOARD_LED_CAPSLOCK;   next = LedAnimStep::NumLock2;   break;
+        case LedAnimStep::NumLock2:   mask = KEYBOARD_LED_NUMLOCK;    next = LedAnimStep::Off;        break;
+        case LedAnimStep::Off:        mask = 0;                       next = LedAnimStep::Settle;     break;
+        // Settle: the animation's last frame is a plain off flash, then this
+        // step lights whatever the real managed state actually is (e.g.
+        // NumLock, per numlock_initial_state's default) -- kept as its own
+        // timed step rather than folded into Off so the two Set_Report
+        // control transfers are never issued back-to-back (only one control
+        // transfer is ever in flight on this stack, see send_led_report_all()).
+        case LedAnimStep::Settle:     mask = current_led_mask();      next = LedAnimStep::Done;       break;
+        case LedAnimStep::Done: return;
+    }
+    apply_led_mask(mask);
+    m_led_anim_step = next;
+    m_led_anim_next_us = now + kLedAnimStepUs;
+}
 
 // --- Keyboard ---
 
@@ -399,8 +499,9 @@ void UsbHidHost::on_mount(uint8_t dev_addr, uint8_t instance, bool is_keyboard, 
     // call returns (matching the original driver) -- no need to do it here
     // per-branch, and the original never did.
     if (m_config.enable_keyboard && is_keyboard) {
-        if (register_keyboard(dev_addr)) {
+        if (register_keyboard(dev_addr, instance) == RegisterResult::NewlyRegistered) {
             __atomic_fetch_add(&m_keyboard_count, 1, __ATOMIC_RELAXED);
+            start_led_animation();
         }
     } else if (m_config.enable_mouse && is_mouse && m_mouse_dev_addr == 0) {
         m_mouse_dev_addr = dev_addr;
@@ -449,17 +550,30 @@ void UsbHidHost::on_keyboard_report(const uint8_t* report, uint16_t len) {
     m_modifiers[inactive] = modifier;
     m_modifiers_active = inactive;
 
-    // Edge detection for consume_key_press.
+    // Edge detection for consume_key_press (also where NumLock/CapsLock/
+    // ScrollLock toggle on their own physical press-edge, HID usage IDs
+    // 0x53/0x39/0x47 -- see the HID Usage Tables, usage page 0x07).
     memset(m_press_edges[inactive], 0, sizeof(m_press_edges[inactive]));
     for (uint8_t i = 0; i < n; ++i) {
         uint8_t k = keys[i];
         if (k >= kMaxKeyUsages) continue;
         bool was_down = (m_prev_key_held[k >> 3] >> (k & 7)) & 1;
-        if (!was_down) m_press_edges[inactive][k >> 3] |= 1u << (k & 7);
+        if (!was_down) {
+            m_press_edges[inactive][k >> 3] |= 1u << (k & 7);
+            if (k == 0x53) m_numlock_on = !m_numlock_on;
+            else if (k == 0x39) m_capslock_on = !m_capslock_on;
+            else if (k == 0x47) m_scrolllock_on = !m_scrolllock_on;
+        }
     }
     memset(m_prev_key_held, 0, sizeof(m_prev_key_held));
     set_bit(m_prev_key_held, keys, n);
     m_press_edges_active = inactive;
+    // Reflect any toggle above immediately, same as a real OS updating
+    // NumLock's LED the instant it's pressed -- but not while the boot
+    // identify animation is still playing (update_leds()'s own Settle step
+    // already applies current_led_mask() once it finishes, picking up
+    // whatever the flags above end up as by then).
+    if (m_led_anim_step == LedAnimStep::Done) apply_led_mask(current_led_mask());
 
     // Typed-ascii edges for up to 6 held keys.
     for (uint8_t i = 0; i < 6; ++i) {

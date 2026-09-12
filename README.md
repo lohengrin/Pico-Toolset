@@ -279,6 +279,15 @@ new layout = implement it under a `#if PICO_TOOLSET_USB_HID_KEYMAP_*` guard in
 `usb_hid_keymap.cpp` and register its name in the component's
 `PICO_TOOLSET_USB_HID_KEYMAP_IMPL` list.
 
+NumLock/CapsLock/ScrollLock are tracked and pushed to every mounted
+keyboard's own LEDs (`Set_Report(Output)`, boot-keyboard convention) --
+`UsbHidHost::numlock_on()`/`capslock_on()`/`scrolllock_on()` are also the only
+way to read NumLock's state back, since USB HID gives no other way to query
+it. A freshly-mounted keyboard plays a NumLock->CapsLock->ScrollLock->
+CapsLock->NumLock->off identify animation before settling into the real,
+managed state (NumLock on by default -- see `UsbHidConfig::
+numlock_initial_state`/`led_boot_animation`).
+
 ### I2S audio (pico-extras -- see the setup section above)
 
 ```cpp
