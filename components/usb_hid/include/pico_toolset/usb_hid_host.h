@@ -101,8 +101,18 @@ public:
         int x = 0, y = 0;            // clamped absolute cursor
         bool left_button = false;
         bool right_button = false;
+        bool middle_button = false;
     };
     MouseState mouse_state() const;
+
+    // Raw relative movement accumulated since the last call, then reset to
+    // zero (read-and-clear, like a hardware FIFO) -- for a consumer that
+    // wants unclamped look/aim deltas (e.g. a first-person game's mouselook)
+    // rather than mouse_state()'s clamped virtual-cursor position, which
+    // caps movement at the configured mouse_max_x/y edges and so silently
+    // throws away turn input once the cursor pins there. Tracked in
+    // parallel with the clamped x/y, not derived from it.
+    void consume_mouse_delta(int& dx, int& dy);
 
     // --- Gamepad (HID + XInput merged) ---
     GamepadState gamepad_state(size_t index) const;
@@ -190,6 +200,14 @@ private:
     MouseState m_mouse{};
     uint8_t m_mouse_dev_addr = 0;
     uint8_t m_mouse_instance = 0;
+    // Raw accumulator for consume_mouse_delta() -- on_mouse_report() adds
+    // into it every report (same core as the host stack), consume_mouse_delta()
+    // reads and resets it from the caller's core. Plain volatile ints, no
+    // lock: same cross-core convention as the keyboard/gamepad state above --
+    // a read racing a concurrent add could rarely drop or double-count a few
+    // units from one report, imperceptible for mouselook smoothness.
+    volatile int m_mouse_delta_x = 0;
+    volatile int m_mouse_delta_y = 0;
 
     GamepadSlot m_gamepads[4]{};
     uint8_t m_gamepad_count = 0;

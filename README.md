@@ -269,14 +269,17 @@ std::pmr::vector<uint8_t> big(&res);
 ```cpp
 #include "pico_toolset/usb_hid_configs.h"
 
-// Two presets exist for this board -- pick the one matching your build (see
-// usb_hid_configs.h: pio_num/run_on_core1 depend on what else is active).
+// Three presets exist for this board -- pick the one matching your build
+// (see usb_hid_configs.h: pio_num/run_on_core1 depend on what else is
+// active, and whether you launch core1 yourself).
 pico_toolset::UsbHidHost usb;
 usb.init(pico_toolset::configs::usb_hid::kWaveshareRp2350PiZeroLcd);
 while (true) {
     for (char ch; (ch = usb.consume_typed_ascii_char()) != 0;) putchar(ch);
     auto g = usb.gamepad_state(0);
-    auto m = usb.mouse_state();
+    auto m = usb.mouse_state();       // clamped absolute cursor (UI use)
+    int dx, dy;
+    usb.consume_mouse_delta(dx, dy);  // raw unclamped relative movement (mouselook/aim)
 }
 ```
 

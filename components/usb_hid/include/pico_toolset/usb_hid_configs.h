@@ -31,4 +31,23 @@ inline constexpr UsbHidConfig kWaveshareRp2350PiZeroHdmi = {
     .run_on_core1 = false,
 };
 
+// Same board and pins as kWaveshareRp2350PiZeroLcd (PIO0 free), but for a
+// consumer that launches and owns core1 itself instead of letting init()
+// spawn it -- e.g. to interleave UsbHidHost::task() with its own per-frame
+// work (a chunked LCD blit state machine) in one core1 loop, the way a
+// display driver's DMA-fed pixel push can't be split across a core boundary
+// mid-frame. With run_on_core1=false, init() only calls tuh_init() (on
+// whichever core calls it -- must be the SAME core that then calls task(),
+// since Pico-PIO-USB's SOF-timer IRQ handler binds to the core that
+// registered it): call init() from inside your own core1 entry function,
+// then loop task() + your other work from there, mirroring the pattern
+// TOM6809/kWaveshareRp2350PiZeroHdmi already uses on core0. Validated on
+// real hardware by PicoDoom (github.com/lohengrin/PicoDoom), whose core1
+// loop also drives its ILI9486 driver's chunked blit.
+inline constexpr UsbHidConfig kWaveshareRp2350PiZeroLcdManualCore1 = {
+    .pin_dp = 28,
+    .pio_num = 0,
+    .run_on_core1 = false,
+};
+
 } // namespace pico_toolset::configs::usb_hid

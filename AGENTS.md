@@ -115,6 +115,12 @@ manual smoke tests of the examples on hardware.
   `consume_pending_watchdog_tag()` pair -- the Thomson-model-tag mapping
   stays in TOM6809).
 - USB HID: TOM6809 `PicoUsbHidInput` (+ pico-infonesPlus descriptor parsers).
+  Mouse `middle_button`, the raw-delta `consume_mouse_delta()` (for
+  mouselook/aim, alongside the existing clamped-cursor `mouse_state()`), and
+  the `kWaveshareRp2350PiZeroLcdManualCore1` config preset (a consumer
+  launching and owning core1 itself) ported from PicoDoom's
+  `PicoUsbMouse`/`PicoUsbKeyboard`, whose core1 loop interleaves USB polling
+  with its own ILI9486 chunked-blit stepping.
 - DVI/HDMI: vendored from Waveshare's RP2350-PiZero C example repo (itself
   derived from Wren6991/PicoDVI, BSD-3-Clause), extracted into TOM6809 first
   then moved here once its HDMI/audio work stabilized. HDMI digital audio
