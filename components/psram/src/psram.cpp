@@ -39,10 +39,11 @@ bool g_initialized = false;
 // toolset's README "Notes and gotchas"). do_init() below is the risky
 // sequence, run under whichever protection is actually available:
 // flash_safe_execute() (disables interrupts on this core AND parks the
-// other one, if it has called flash_safe_execute_core_init()/
-// multicore_lockout_victim_init() -- see usb_hid's host_stack_setup()) when
-// ready, otherwise a plain interrupt-disable (still correct when the other
-// core hasn't been launched at all yet -- nothing there to race with).
+// other one, if it has itself called flash_safe_execute_core_init()/
+// multicore_lockout_victim_init() -- NOT usb_hid's core1, deliberately, see
+// that component's host_stack_setup()) when ready, otherwise a plain
+// interrupt-disable (still correct when the other core hasn't been
+// launched at all yet -- nothing there to race with).
 struct InitParams {
     const PsramConfig* config;
 };
@@ -149,9 +150,10 @@ PsramStatus psram_init(const PsramConfig& config) {
 
     InitParams params{&config};
     if (multicore_lockout_ready()) {
-        // Other core is lockout-ready (called flash_safe_execute_core_init()/
-        // multicore_lockout_victim_init(), e.g. via usb_hid's
-        // host_stack_setup()) -- full protection against both hazards.
+        // Other core is lockout-ready (it called flash_safe_execute_core_init()/
+        // multicore_lockout_victim_init() itself -- NOT automatic via
+        // usb_hid, see that component's host_stack_setup()) -- full
+        // protection against both hazards.
         flash_safe_execute(do_init, &params, 1000);
     } else {
         // Not ready -- most commonly because the other core hasn't been
