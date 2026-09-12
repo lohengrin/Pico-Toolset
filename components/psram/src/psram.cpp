@@ -7,7 +7,10 @@
 
 #include "hardware/clocks.h"
 #include "hardware/flash.h"
+#include "hardware/sync.h"
 #include "pico/error.h"
+#include "pico/flash.h"
+#include "pico/multicore.h"
 
 #include <cstdlib>
 
@@ -23,6 +26,28 @@ constexpr uint32_t kPsramMinDeselectNs = 50;
 
 PsramStatus g_status;
 bool g_initialized = false;
+
+// hardware/psram.h documents psram_detect_cs_and_size()/psram_reinitialize()
+// as *unsafe* unless interrupts are disabled and the other core is not
+// concurrently executing from flash/PSRAM: both briefly switch the QMI into
+// a raw command/direct mode where flash is not readable via XIP at all, so
+// any code fetch from flash during that window -- an interrupt handler
+// firing (stdio_usb/TinyUSB's IRQs, in every consumer of this toolset), or
+// the other core mid-instruction-fetch -- hangs or faults. Confirmed as the
+// real-hardware cause of an intermittent, "usually fixed by resetting"
+// freeze at PSRAM init on both PicoDoom and TOM6809 (2026-09, see this
+// toolset's README "Notes and gotchas"). do_init() below is the risky
+// sequence, run under whichever protection is actually available:
+// flash_safe_execute() (disables interrupts on this core AND parks the
+// other one, if it has called flash_safe_execute_core_init()/
+// multicore_lockout_victim_init() -- see usb_hid's host_stack_setup()) when
+// ready, otherwise a plain interrupt-disable (still correct when the other
+// core hasn't been launched at all yet -- nothing there to race with).
+struct InitParams {
+    const PsramConfig* config;
+};
+
+void do_init(void* param);
 
 struct Block {
     size_t size;
@@ -61,18 +86,13 @@ bool run_self_test(uint8_t* base, size_t size, PsramStatus& status) {
     return true;
 }
 
-} // namespace
-
-PsramStatus psram_init(const PsramConfig& config) {
-    g_status = PsramStatus{};
-    g_status.self_test_samples = config.self_test_samples;
-    g_free_list = nullptr;
-    g_initialized = false;
+void do_init(void* param) {
+    const PsramConfig& config = *static_cast<const InitParams*>(param)->config;
 
     uint8_t cs_pins[] = {config.cs_pin};
     size_t size = psram_detect_cs_and_size(cs_pins, 1);
     if (size == 0) {
-        return g_status; // not present (or not responding on this CS pin)
+        return; // not present (or not responding on this CS pin)
     }
     g_status.present = true;
     g_status.size_bytes = size;
@@ -99,15 +119,15 @@ PsramStatus psram_init(const PsramConfig& config) {
         max_freq_hz = min_freq_for_divisor_limit;
 
     if (psram_configure_params(max_freq_hz, PICO_DEFAULT_PSRAM_MAX_SELECT, kPsramMinDeselectNs) != PICO_OK) {
-        return g_status;
+        return;
     }
     if (psram_reinitialize() != PICO_OK) {
-        return g_status;
+        return;
     }
 
     auto* base = reinterpret_cast<uint8_t*>(kPsramBase);
     if (config.run_self_test && !run_self_test(base, size, g_status)) {
-        return g_status;
+        return;
     }
 
     g_status.test_ok = true;
@@ -117,6 +137,35 @@ PsramStatus psram_init(const PsramConfig& config) {
     g_free_list->size = size - sizeof(Block);
     g_free_list->free = true;
     g_free_list->next = nullptr;
+}
+
+} // namespace
+
+PsramStatus psram_init(const PsramConfig& config) {
+    g_status = PsramStatus{};
+    g_status.self_test_samples = config.self_test_samples;
+    g_free_list = nullptr;
+    g_initialized = false;
+
+    InitParams params{&config};
+    if (multicore_lockout_ready()) {
+        // Other core is lockout-ready (called flash_safe_execute_core_init()/
+        // multicore_lockout_victim_init(), e.g. via usb_hid's
+        // host_stack_setup()) -- full protection against both hazards.
+        flash_safe_execute(do_init, &params, 1000);
+    } else {
+        // Not ready -- most commonly because the other core hasn't been
+        // launched at all yet (this project's own boot order runs PSRAM
+        // init first): calling flash_safe_execute() here would refuse
+        // (PICO_ERROR_NOT_PERMITTED, or assert in debug builds) rather than
+        // proceed, since it can't confirm the other core is safe. Falling
+        // back to a plain interrupt-disable is correct in that specific
+        // case -- with no code running on the other core at all, only this
+        // core's own interrupt handlers are a risk.
+        uint32_t save = save_and_disable_interrupts();
+        do_init(&params);
+        restore_interrupts(save);
+    }
     return g_status;
 }
 

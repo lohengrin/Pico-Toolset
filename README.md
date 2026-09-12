@@ -437,6 +437,29 @@ screen.update();
 
 ## Notes and gotchas
 
+- **PSRAM init can hang if it races an interrupt or the other core (real
+  hardware finding, 2026-09, PicoDoom/TOM6809).** Symptom: an intermittent
+  freeze right at PSRAM init -- worse right after flashing, "usually" cleared
+  by a reset (sometimes needing several). Root cause, straight from
+  `hardware/psram.h`'s own doc comment: `psram_detect_cs_and_size()` and
+  `psram_reinitialize()` are documented *unsafe* unless interrupts are
+  disabled and the other core is not concurrently executing from flash/PSRAM
+  -- both functions briefly switch the QMI into a raw command/direct mode
+  where flash is not readable via XIP at all, so any code fetch from flash
+  during that window (an ISR firing -- e.g. stdio_usb/TinyUSB's, present in
+  every consumer of this toolset -- or the other core mid-instruction-fetch)
+  hangs or faults. `pico_toolset_psram` now protects `psram_init()` with
+  `flash_safe_execute()` when the other core is lockout-ready, falling back
+  to a plain interrupt-disable otherwise (safe only if that core hasn't
+  started running anything yet -- see `psram.h`'s doc comment on
+  `psram_init()`). `pico_toolset_usb_hid`'s `host_stack_setup()` now calls
+  `flash_safe_execute_core_init()` on whichever core runs the host stack, so
+  a consumer combining PSRAM with this toolset's USB HID gets full
+  protection automatically regardless of which one starts first. If you use
+  PSRAM alongside a core1 workload that is NOT `pico_toolset_usb_hid`, call
+  `flash_safe_execute_core_init()` yourself on that core before it starts
+  running, or `psram_init()` silently falls back to the weaker
+  interrupt-only protection.
 - **Watchdog scratch registers are shared across components.**
   `watchdog_hw->scratch[0..7]` is one flat set of 8 words for the whole
   toolset, not per-component storage -- a consumer linking both

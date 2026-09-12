@@ -44,8 +44,22 @@ struct PsramStatus {
 };
 
 // Detects the PSRAM chip on `config.cs_pin`, configures the QMI CS1 memory
-// map, and runs the sampled read/write self-test. Must be called exactly
-// once, from core0, before any psram_malloc() and before core1 starts.
+// map, and runs the sampled read/write self-test. Call exactly once, before
+// any psram_malloc().
+//
+// Internally protected against hardware_psram's documented unsafety
+// (psram_detect_cs_and_size()/psram_reinitialize() briefly make flash
+// unreadable via XIP, so an interrupt handler firing -- or the other core
+// executing from flash concurrently -- during that window hangs or faults):
+// uses flash_safe_execute() when the other core is lockout-ready (has
+// called flash_safe_execute_core_init()/multicore_lockout_victim_init() --
+// e.g. automatically, if it's running pico_toolset_usb_hid's host stack,
+// see that component's host_stack_setup()), otherwise falls back to a plain
+// interrupt-disable, which is correct as long as the other core hasn't
+// started running anything yet. If you call this after launching a core1
+// workload that is NOT pico_toolset_usb_hid, make sure that core has called
+// flash_safe_execute_core_init() itself first, or this falls back to the
+// interrupt-only protection and the other-core race is still possible.
 PsramStatus psram_init(const PsramConfig& config);
 
 // Status from the last psram_init() (all-false default if it hasn't run).

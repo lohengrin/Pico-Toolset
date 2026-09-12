@@ -3,6 +3,7 @@
 
 #include "hardware/dma.h"
 #include "hardware/sync.h"
+#include "pico/flash.h"
 #include "pico/multicore.h"
 #include "pio_usb.h"
 #include "tusb.h"
@@ -395,6 +396,20 @@ void UsbHidHost::core1_entry() {
 
 void UsbHidHost::host_stack_setup() {
     UsbHidHost* self = instance();
+
+    // Registers this core (wherever host_stack_setup() runs -- core1 by
+    // default, or whichever core called init() with run_on_core1=false) as
+    // a flash_safe_execute()/multicore_lockout victim: lets code on the
+    // OTHER core (e.g. a PSRAM/flash operation on core0, see
+    // pico_toolset_psram) safely park this core in a RAM-resident wait loop
+    // for the duration instead of racing it -- both flash and PSRAM briefly
+    // stop being readable via XIP during such an operation, and this core
+    // keeps running TinyUSB/Pico-PIO-USB code that lives in flash the whole
+    // time. Confirmed as a real cause of an intermittent, hard-to-reproduce
+    // freeze at PSRAM init when the USB host was already running on this
+    // core (2026-09, PicoDoom/TOM6809 -- see the top-level README).
+    flash_safe_execute_core_init();
+
     pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
     pio_cfg.pin_dp = self->m_config.pin_dp;
     // Current Pico-PIO-USB uses one PIO (block) for both TX and RX halves.

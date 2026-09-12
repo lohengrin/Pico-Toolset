@@ -12,6 +12,8 @@ if(PICO_RP2350)
     target_link_libraries(pico_toolset_psram PRIVATE
         hardware_flash
         hardware_clocks
+        pico_flash
+        pico_multicore
     )
     target_compile_features(pico_toolset_psram PUBLIC cxx_std_20)
 
