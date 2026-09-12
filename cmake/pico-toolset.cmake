@@ -16,4 +16,5 @@
 #       pico_toolset_psram        # RP2350 only
 #       pico_toolset_usb_hid
 #       pico_toolset_screen
+#       pico_toolset_fault_handler
 #   )

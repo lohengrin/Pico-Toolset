@@ -29,6 +29,7 @@ standalone drivers.
 | Library | Target | Description |
 |---------|--------|-------------|
 | Screen   | `pico_toolset_screen`  | Pluggable `DisplayDriver` abstraction + PiCoMonitor-style slot widget composition, with SSD1306/ILI9486/Pimoroni adaptors. |
+| Fault handler | `pico_toolset_fault_handler` | Cortex-M33 hard-fault handler that survives a watchdog reset to report PC/LR/CFSR on the *next* boot, instead of the SDK's default silent halt. No board wiring involved (core MCU + watchdog only), hence a library rather than a `components/` driver. |
 
 All code lives in namespace `pico_toolset` and targets C++20.
 
@@ -51,7 +52,8 @@ pico-toolset/
 │   ├── usb_hid/   include/pico_toolset/*.h  src/  example/  tusb_config.h
 │   └── dvi_hdmi/  dvi.h dvi.c ... (flat, vendored -- see its own README.md)
 └── libs/
-    └── screen/    include/pico_toolset/*.h  example/
+    ├── screen/         include/pico_toolset/*.h  example/
+    └── fault_handler/  include/pico_toolset/fault_handler.h  src/  example/
 ```
 
 ## Building (in-tree)
@@ -83,6 +85,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_DVI_HDMI` | ON | Build PIO-based DVI/HDMI video + example |
 | `PICO_TOOLSET_DVI_HDMI_AUDIO` | OFF | Enable HDMI data-island digital audio (see `components/dvi_hdmi/README.md`) |
 | `PICO_TOOLSET_DVI_HDMI_IRQ_STATS` | OFF | Enable core1 IRQ-handler-headroom stats (bring-up/measurement tool) |
+| `PICO_TOOLSET_BUILD_FAULT_HANDLER` | ON | Build the hard-fault handler + example |
 | `PICO_TOOLSET_USB_HID_KEYMAPS` | `us;fr` | Semicolon-separated keyboard layouts to compile in (implemented: `us`, `fr`) |
 | `PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP` | `us` | Layout used by default (must be listed in `PICO_TOOLSET_USB_HID_KEYMAPS`) |
 | `PICO_TOOLSET_BUILD_SCREEN`  | ON | Build screen abstraction + example |
@@ -333,6 +336,27 @@ if (pressed >= 0) {
 }
 ```
 
+### Fault handler (hard-fault survives to next boot)
+
+Link `pico_toolset_fault_handler` and call `report_pending_hard_fault()`
+once, early in `main()` (after `stdio_init_all()` and any USB-CDC-attach
+wait). No other init call is needed -- linking the library alone overrides
+the SDK's default `isr_hardfault`.
+
+```cpp
+#include "pico_toolset/fault_handler.h"
+
+int main() {
+    stdio_init_all();
+    sleep_ms(2000);  // let a USB-CDC terminal attach
+    pico_toolset::report_pending_hard_fault("MyApp");
+    // ...rest of your app...
+}
+```
+
+`consume_pending_hard_fault(FaultInfo&)` is available if you'd rather act on
+the PC/LR/CFSR programmatically than have them printed.
+
 ### DVI/HDMI video (+ optional digital audio)
 
 Lower-level than this toolset's other drivers -- no config struct, no C++
@@ -373,6 +397,27 @@ screen.update();
 
 ## Notes and gotchas
 
+- **Watchdog scratch registers are shared across components.**
+  `watchdog_hw->scratch[0..7]` is one flat set of 8 words for the whole
+  toolset, not per-component storage -- a consumer linking both
+  `reset_buttons` and `fault_handler` (or a future component that also needs
+  to survive a `watchdog_reboot()`) must not have them collide. Current
+  allocation:
+
+  | Index | Owner | Purpose |
+  |-------|-------|---------|
+  | `scratch[0]` | reset_buttons | tagged-reboot magic |
+  | `scratch[1]` | reset_buttons | tagged-reboot tag value |
+  | `scratch[2]` | fault_handler | fault magic |
+  | `scratch[3]` | fault_handler | faulting PC |
+  | `scratch[4]` | *(reserved by the SDK's own watchdog bookkeeping)* | -- |
+  | `scratch[5]` | fault_handler | faulting LR |
+  | `scratch[6]` | fault_handler | CFSR |
+  | `scratch[7]` | *(free)* | -- |
+
+  Adding a new scratch-register user: pick an unclaimed index above, extend
+  this table, and mirror it in that component's header doc comment (see
+  `libs/fault_handler/include/pico_toolset/fault_handler.h`).
 - **ILI9486 wire protocol**: commands go out byte-at-a-time with CS pulsed
   around *every* command/parameter word (16-bit, `0x00`-padded, D/C high);
   pixel data streams as one continuous CS-low burst. `spi_set_baudrate()` is
