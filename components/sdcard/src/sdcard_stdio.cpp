@@ -23,6 +23,7 @@
 #include <sys/stat.h>
 
 #include "pico/stdio.h"
+#include "pico/time.h" // at_the_end_of_time, used by _read()'s console-fd path
 
 #include "ff.h"
 
