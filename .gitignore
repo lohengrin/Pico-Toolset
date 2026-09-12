@@ -1,0 +1,54 @@
+# Build directories
+build*/
+cmake-build-*/
+out/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+.cmake/
+
+# VCPKG
+vcpkg_installed/
+vcpkg.json
+!vcpkg.json
+
+# IDE files
+.vscode/
+.claude/
+.opencode/
+.zcode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Compiled objects and binaries
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Precompiled headers
+*.gch
+*.pch
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Misc
+*.log
+*.tmp
+
