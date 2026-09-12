@@ -336,12 +336,27 @@ bool UsbHidHost::init(const UsbHidConfig& config) {
         static uint32_t core1_stack[4096]; // 16 KB, per TOM6809's stack guidance
         multicore_launch_core1_with_stack(core1_entry, core1_stack, sizeof(core1_stack));
     } else {
+        // Shares core0 with the caller's own loop (e.g. HDMI builds, where
+        // core1 belongs exclusively to the DVI driver) -- host_stack_setup()
+        // only does the one-time tuh_init(), it must NOT also run the
+        // tuh_task() polling loop here, or init() would never return. The
+        // caller is required to call task() every iteration of its own loop
+        // instead (see this class's task()/PicoUsbHidInput::task()) --
+        // confirmed on real hardware: without this split, init() blocking
+        // forever here silently wedges boot right after it's called, with
+        // no crash and nothing further ever printed (the exact "frozen after
+        // LVGL ready (DVI), no serial output" symptom).
         host_stack_setup();
     }
     return true;
 }
 
-void UsbHidHost::core1_entry() { host_stack_setup(); }
+void UsbHidHost::core1_entry() {
+    host_stack_setup();
+    while (true) {
+        tuh_task();
+    }
+}
 
 void UsbHidHost::host_stack_setup() {
     UsbHidHost* self = instance();
@@ -372,10 +387,6 @@ void UsbHidHost::host_stack_setup() {
     tuh_configure(kTuhRhport, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
     tuh_init(kTuhRhport);
     self->m_initialized = true;
-
-    while (true) {
-        tuh_task();
-    }
 }
 
 void UsbHidHost::task() { tuh_task(); }
