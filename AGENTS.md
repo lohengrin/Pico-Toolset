@@ -80,6 +80,23 @@ manual smoke tests of the examples on hardware.
   table and build-options table, and (once you have a real-hardware-
   validated board+device combination) add its own `<name>_configs.h` -- see
   "Config struct for everything" above.
+- **Extend `<name>_configs.h`, don't work around it**: when a consumer
+  validates the existing driver on a *new* board, or a new wiring variant of
+  a board already covered (e.g. a different profile that moves a pin to
+  dodge a peripheral conflict, the way usb_hid's Lcd/Hdmi presets differ
+  only in `pio_num`/`run_on_core1`), add a new named preset to that
+  component's existing `<name>_configs.h` -- don't create a second configs
+  file, don't put board-specific values back as struct defaults, and don't
+  let the consuming project hardcode the pins locally instead (if you find
+  yourself doing that, the preset belongs here instead, so the next
+  consumer on the same board doesn't have to re-derive it). Name it
+  `pico_toolset::configs::<component>::<PascalCaseBoardOrVariantName>`,
+  document which project/hardware validated it (a link/name is enough), and
+  copy the doc-comment style already in that file (wire rationale, any
+  gotcha like a required `gpio_base`/DMA-channel/PIO choice). If the new
+  preset is for a variant of a board already in the file (like the usb_hid
+  Lcd/Hdmi split), keep both presets side by side with a comment on each
+  explaining when to pick which -- don't replace the existing one.
 
 ## Source lineage (when porting code in)
 
