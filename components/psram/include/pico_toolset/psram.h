@@ -41,6 +41,12 @@ struct PsramStatus {
     // true = its complement.
     bool fail_on_second_pattern = false;
     uint32_t clk_sys_hz_at_test = 0;
+    // The actual QMI CS1 clock applied (clk_sys_hz_at_test/divisor, after
+    // PsramConfig::max_clock_hz's own clamping) -- may differ from what was
+    // requested since the divisor is an integer and its own 3-bit-rxdelay
+    // clamp can push it further. 0 if init/psram_set_clock_hz() never
+    // succeeded.
+    uint32_t clock_hz = 0;
 };
 
 // Detects the PSRAM chip on `config.cs_pin`, configures the QMI CS1 memory

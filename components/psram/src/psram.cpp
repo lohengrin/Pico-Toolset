@@ -68,6 +68,18 @@ uint32_t clamp_max_freq_hz(uint32_t requested_hz, uint32_t clk_sys_hz) {
     return max_freq_hz;
 }
 
+// What psram_configure_params(max_freq_hz, ...) actually ends up applying,
+// for diagnostics (PsramStatus::clock_hz) -- it computes the same
+// divisor = ceil(clk_sys/max_freq_hz) documented above, then the real QMI
+// clock is clk_sys/divisor, which can come out below max_freq_hz (integer
+// divisor rounding). Kept as a separate read-only computation rather than
+// having psram_configure_params() itself report it back, since that's a
+// pico-sdk function this toolset doesn't own.
+uint32_t actual_freq_for(uint32_t clk_sys_hz, uint32_t max_freq_hz) {
+    uint32_t divisor = (clk_sys_hz + max_freq_hz - 1) / max_freq_hz; // ceil
+    return clk_sys_hz / divisor;
+}
+
 // do_set_clock()'s outcome -- flash_safe_execute()/the interrupt-disable
 // fallback both take a single void* and return nothing, so this carries the
 // requested frequency in and the result out.
@@ -83,8 +95,10 @@ void do_set_clock(void* param) {
 
     p.ok = psram_configure_params(max_freq_hz, PICO_DEFAULT_PSRAM_MAX_SELECT, kPsramMinDeselectNs) == PICO_OK
         && psram_reinitialize() == PICO_OK;
-    if (p.ok)
+    if (p.ok) {
         g_status.clk_sys_hz_at_test = clk_sys_hz;
+        g_status.clock_hz = actual_freq_for(clk_sys_hz, max_freq_hz);
+    }
 }
 
 struct Block {
@@ -150,6 +164,7 @@ void do_init(void* param) {
     if (psram_reinitialize() != PICO_OK) {
         return;
     }
+    g_status.clock_hz = actual_freq_for(g_status.clk_sys_hz_at_test, max_freq_hz);
 
     auto* base = reinterpret_cast<uint8_t*>(kPsramBase);
     if (config.run_self_test && !run_self_test(base, size, g_status)) {
