@@ -9,8 +9,20 @@ if(NOT TARGET pico_fatfs)
     )
 endif()
 
+# Overrides newlib's global weak file syscalls (open/read/write/lseek/
+# fstat/stat/isatty) to route through FatFs -- a whole-program decision, so
+# opt-in rather than always compiled into pico_toolset_sdcard. See
+# sdcard_stdio.cpp's header comment and the README's "POSIX/stdio file
+# access" section.
+option(PICO_TOOLSET_SDCARD_STDIO "Also install POSIX/stdio newlib syscalls (fopen/fread/...) over FatFs" OFF)
+
+set(PICO_TOOLSET_SDCARD_SOURCES src/sdcard.cpp)
+if(PICO_TOOLSET_SDCARD_STDIO)
+    list(APPEND PICO_TOOLSET_SDCARD_SOURCES src/sdcard_stdio.cpp)
+endif()
+
 add_library(pico_toolset_sdcard STATIC
-    src/sdcard.cpp
+    ${PICO_TOOLSET_SDCARD_SOURCES}
 )
 target_include_directories(pico_toolset_sdcard PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/include

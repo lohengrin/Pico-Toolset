@@ -81,6 +81,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_USB_HID` | ON | Build PIO-USB HID host + example |
 | `PICO_TOOLSET_BUILD_I2S_AUDIO` | OFF | Build I2S audio output + example (needs pico-extras, see below) |
 | `PICO_TOOLSET_BUILD_SDCARD`  | ON | Build SD card (FatFs/pico_fatfs) driver + example |
+| `PICO_TOOLSET_SDCARD_STDIO`  | OFF | Also install POSIX/stdio newlib syscalls (`fopen`/`fread`/...) over FatFs |
 | `PICO_TOOLSET_BUILD_RESET_BUTTONS` | ON | Build debounced-buttons + tagged-watchdog-reboot helper + example |
 | `PICO_TOOLSET_BUILD_DVI_HDMI` | ON | Build PIO-based DVI/HDMI video + example |
 | `PICO_TOOLSET_DVI_HDMI_AUDIO` | OFF | Enable HDMI data-island digital audio (see `components/dvi_hdmi/README.md`) |
@@ -318,6 +319,26 @@ std::vector<uint8_t> data = sd.read_file("config.bin");
 `pico_fatfs` is fetched via `FetchContent` by default; set `PICO_FATFS_DIR`
 to point at a local checkout instead (same pattern as `PICO_PIO_USB_DIR`
 above).
+
+#### POSIX/stdio file access
+
+`list_files()`/`read_file()` load a whole file into memory. If your code
+(or a library it uses, e.g. a WAD/archive format with a seekable directory
+table) instead calls `fopen()`/`fread()`/`fseek()` or the raw POSIX
+`open()`/`read()`/`lseek()`, set `PICO_TOOLSET_SDCARD_STDIO=ON` to also
+compile in a newlib syscall shim over the same FatFs mount:
+
+```cpp
+pico_toolset::SdCard sd;
+sd.init(pico_toolset::configs::sdcard::kWaveshareRp2350PiZero);
+// ...then anywhere in the program:
+FILE* f = fopen("LEVEL1.DAT", "rb");
+```
+
+This overrides newlib's *global* weak file syscalls, so it's opt-in
+(default OFF) rather than always built into `pico_toolset_sdcard` --- only
+one thing in a given program should own them. Console fds 0/1/2 still pass
+through to `pico_stdio` unchanged.
 
 ### Reset buttons (debounced + tagged watchdog reboot)
 
