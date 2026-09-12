@@ -114,6 +114,15 @@ manual smoke tests of the examples on hardware.
   `consume_pending_watchdog_tag()` pair -- the Thomson-model-tag mapping
   stays in TOM6809).
 - USB HID: TOM6809 `PicoUsbHidInput` (+ pico-infonesPlus descriptor parsers).
+- DVI/HDMI: vendored from Waveshare's RP2350-PiZero C example repo (itself
+  derived from Wren6991/PicoDVI, BSD-3-Clause), extracted into TOM6809 first
+  then moved here once its HDMI/audio work stabilized. HDMI digital audio
+  (`audio_ring.*`/`data_packet.*`, new files not vendored) ports rh1tech/
+  frank-hdmi-audio's ring design (BSD-3-Clause) and Shuichi Takano's
+  `pico_lib` dvi::DataPacket encode algorithm (MIT) -- see
+  `components/dvi_hdmi/README.md` for full detail and links, and the
+  top-level README's "Credits and third-party code" section for the
+  user-facing summary.
   DualSense parsing and the DMA-channel-claim fix in `host_stack_setup()`
   ported from TOM6809's own copy after real-hardware testing found the
   toolset's version missing both.

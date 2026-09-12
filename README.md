@@ -19,6 +19,7 @@ independently.
 | I2S audio | `pico_toolset_i2s_audio` | Float-sample I2S DAC output (e.g. PCM5100A) via pico-extras' `pico_audio_i2s`; non-blocking queue, config-driven pins/DMA channel/PIO SM. OFF by default -- needs pico-extras set up by the consumer (see below). |
 | SD card   | `pico_toolset_sdcard`   | FatFs R0.15 (elehobica/pico_fatfs) over native or PIO-bit-banged SPI; config-driven pins/PIO/gpio_base, `list_files()`/`read_file()`/`read_file_pmr()`. |
 | Reset buttons | `pico_toolset_reset_buttons` | N debounced, active-HIGH momentary buttons + a generic tagged-watchdog-reboot pair (`watchdog_reboot_with_tag()`/`consume_pending_watchdog_tag()`), reusable for any "boot straight into mode X" use case. |
+| DVI/HDMI  | `pico_toolset_dvi_hdmi` | PIO-based DVI/TMDS serialiser + encoder (no HSTX needed -- works on any GPIO set a board wires to its connector), with optional HDMI data-island digital audio (CEA-861 InfoFrames/ACR/audio-sample packets) and a core1 IRQ-handler-headroom measurement tool. See "Credits and third-party code" below for full provenance. |
 
 ## Libraries
 
@@ -47,7 +48,8 @@ pico-toolset/
 │   ├── i2s_audio/ include/pico_toolset/i2s_audio.h src/  example/
 │   ├── sdcard/    include/pico_toolset/sdcard.h    src/  example/
 │   ├── reset_buttons/ include/pico_toolset/reset_buttons.h src/ example/
-│   └── usb_hid/   include/pico_toolset/*.h  src/  example/  tusb_config.h
+│   ├── usb_hid/   include/pico_toolset/*.h  src/  example/  tusb_config.h
+│   └── dvi_hdmi/  dvi.h dvi.c ... (flat, vendored -- see its own README.md)
 └── libs/
     └── screen/    include/pico_toolset/*.h  example/
 ```
@@ -78,6 +80,9 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_I2S_AUDIO` | OFF | Build I2S audio output + example (needs pico-extras, see below) |
 | `PICO_TOOLSET_BUILD_SDCARD`  | ON | Build SD card (FatFs/pico_fatfs) driver + example |
 | `PICO_TOOLSET_BUILD_RESET_BUTTONS` | ON | Build debounced-buttons + tagged-watchdog-reboot helper + example |
+| `PICO_TOOLSET_BUILD_DVI_HDMI` | ON | Build PIO-based DVI/HDMI video + example |
+| `PICO_TOOLSET_DVI_HDMI_AUDIO` | OFF | Enable HDMI data-island digital audio (see `components/dvi_hdmi/README.md`) |
+| `PICO_TOOLSET_DVI_HDMI_IRQ_STATS` | OFF | Enable core1 IRQ-handler-headroom stats (bring-up/measurement tool) |
 | `PICO_TOOLSET_USB_HID_KEYMAPS` | `us;fr` | Semicolon-separated keyboard layouts to compile in (implemented: `us`, `fr`) |
 | `PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP` | `us` | Layout used by default (must be listed in `PICO_TOOLSET_USB_HID_KEYMAPS`) |
 | `PICO_TOOLSET_BUILD_SCREEN`  | ON | Build screen abstraction + example |
@@ -319,6 +324,32 @@ if (pressed >= 0) {
 }
 ```
 
+### DVI/HDMI video (+ optional digital audio)
+
+Lower-level than this toolset's other drivers -- no config struct, no C++
+class: it's the vendored `dvi.h` C API (PIO serialiser, TMDS encode,
+scanline timing), config-driven the way its own upstream already is
+(`dvi_inst`/`dvi_serialiser_cfg`, `common_dvi_pin_configs.h`'s named board
+pinouts). See `components/dvi_hdmi/README.md` for the full API and its
+`example/` for a minimal (not real-hardware-tested by this toolset --
+see that file's own header) scanline-based video example. For a real,
+real-hardware-validated consumer with HDMI digital audio, mode-aware
+scaling, and a documented scanbuf-bug workaround, see TOM6809
+(github.com/lohengrin/TOM6809)'s `PicoDviVideoOutput`/`PicoHdmiAudioOutput`
+classes.
+
+```cpp
+#include "dvi.h"
+#include "common_dvi_pin_configs.h"
+
+dvi_inst dvi;
+dvi.timing = &dvi_timing_640x480p_60hz;
+dvi.ser_cfg = pico_sock_cfg;  // or another common_dvi_pin_configs.h preset
+dvi_init(&dvi, next_striped_spin_lock_num(), next_striped_spin_lock_num());
+// ...register IRQs + dvi_start() on whichever core owns scanout, feed
+// dvi.q_colour_valid/q_colour_free -- see components/dvi_hdmi/README.md.
+```
+
 ### Screen (widget composition)
 
 ```cpp
@@ -393,7 +424,41 @@ screen.update();
 ## License
 
 MIT -- see `LICENSE`. Derived drivers attribute their upstream origins in
-each header.
+each header; the third-party code the DVI/HDMI component carries forward
+under its own, different license is called out below.
+
+## Credits and third-party code
+
+Every component here started from real-hardware-validated code in the
+sibling projects listed in each component's own "Source lineage" note
+(`AGENTS.md`) or header comment. The DVI/HDMI component in particular
+vendors and adapts several external projects directly, each under its own
+license (all compatible with, but distinct from, this toolset's own MIT
+license above):
+
+- **[Wren6991/PicoDVI](https://github.com/Wren6991/PicoDVI)** (Luke Wren,
+  BSD-3-Clause) -- the base PIO-based DVI/TMDS serialiser + encoder
+  (`components/dvi_hdmi/dvi.c`, `dvi_serialiser.*`, `tmds_encode.*`,
+  `dvi_timing.*`, `common_dvi_pin_configs.h`, ...), vendored via Waveshare's
+  RP2350-PiZero C example repository (`RP2350-PiZero/C/01-DVI/libdvi`).
+- **[rh1tech/frank-hdmi-audio](https://github.com/rh1tech/frank-hdmi-audio)**
+  (BSD-3-Clause, itself layered on Wren6991/PicoDVI) -- design basis for the
+  HDMI data-island audio addition: the lock-free SPSC sample ring
+  (`components/dvi_hdmi/audio_ring.{h,cpp}`, with one documented bug fixed
+  relative to the original -- see that file's own header) and the C-linkage
+  free-function shape the data-island packet encoder
+  (`components/dvi_hdmi/data_packet.{h,cpp}`) follows. Its `docs/LLM_GUIDE.md`
+  also documents the "half-pre-fill the audio ring at init" technique this
+  component's real-hardware consumer (TOM6809's `PicoHdmiAudioOutput`) uses.
+- **[shuichitakano/pico_lib](https://github.com/shuichitakano/pico_lib)**
+  (Shuichi Takano, MIT, Copyright (c) 2021) -- the CEA-861 InfoFrame/ACR/
+  audio-sample packet layouts and TERC4/BCH-parity encode algorithm
+  (`dvi::DataPacket`), translated into `data_packet.{h,cpp}`'s C-linkage
+  shape.
+
+See `components/dvi_hdmi/README.md` for the full provenance writeup,
+including exactly which files/blocks came from where and which patches are
+this toolset's own (tagged `// PATCH (...)` in the vendored sources).
 
 ## Building the examples
 
