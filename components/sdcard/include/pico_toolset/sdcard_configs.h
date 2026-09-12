@@ -45,4 +45,24 @@ inline const SdCardConfig kPicoDvCarrier = {
     .gpio_base = -1, // every pin here is within the default 0-31 window
 };
 
+// Elecrow CrowPanel PICO HMI 2.8" uSD ("TF") slot -- shares SPI1's native
+// hardware SPI with the panel's ST7789 display and XPT2046 touch (each on
+// its own CS line: LCD=GP9, touch=GP16, SD=GP22), unlike the two presets
+// above which use PIO-bit-banged SPI on a dedicated bus. Pins from the
+// board's schematic; bench-confirm on first flash (this board's SD path is
+// new, unlike its already-flying display).
+inline const SdCardConfig kElecrowCrowPanelPicoHmi28 = {
+    .spi_instance = spi1,
+    .pin_miso = 12,
+    .pin_cs = 22,
+    .pin_sck = 10,
+    .pin_mosi = 11,
+    .pullup = true,
+    .clk_slow_hz = 100'000,
+    .clk_fast_hz = 10'000'000,
+    .pio = pio0, // ignored: spi_instance is set, so pico_fatfs uses native hardware SPI
+    .sm = 0,
+    .gpio_base = -1, // every pin here is within the default 0-31 window
+};
+
 } // namespace pico_toolset::configs::sdcard

@@ -23,4 +23,17 @@ inline const Xpt2046Config kWaveshareRp2350PiZero = {
     .touch_freq_hz = 2'000'000,
 };
 
+// Elecrow CrowPanel PICO HMI 2.8" built-in resistive touch, sharing SPI1
+// with the panel's ST7789 display (configs::st7789::kElecrowCrowPanelPicoHmi28)
+// and its uSD card (configs::sdcard::kElecrowCrowPanelPicoHmi28) -- each on
+// its own CS line (touch CS=GP16, PENIRQ=GP17). Pins from the board's
+// schematic; bench-confirm on first flash (this board's touch path is new,
+// unlike its already-flying display).
+inline const Xpt2046Config kElecrowCrowPanelPicoHmi28 = {
+    .spi_instance = spi1,
+    .pin_cs = 16,
+    .pin_irq = 17,
+    .touch_freq_hz = 2'000'000,
+};
+
 } // namespace pico_toolset::configs::xpt2046
