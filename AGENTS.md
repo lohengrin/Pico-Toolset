@@ -136,6 +136,14 @@ manual smoke tests of the examples on hardware.
 
 - SSD1306: David Schramm's rpi-pico-ssd1306 (MIT).
 - ILI9486: a validated SPI driver + DMA enhancement (MIT).
+- ST7789: ported from a consumer's local fork of Pimoroni's MIT-licensed
+  ST7789 driver (itself extended by that consumer for a non-Pimoroni,
+  320x240 panel variant -- the `ELECROW` type in the original), rewritten
+  here as a plain config-struct component with no Pimoroni/PicoGraphics
+  dependency (register sequence, DMA pixel streaming, and backlight gamma
+  curve carried over unchanged; the original's per-size `if(width==...)`
+  branching became explicit `St7789Config` fields: `col_offset`/
+  `row_offset`/`madctl`/`inversion_on`/`tearing_effect_on`).
 - XPT2046: touch driver + linear calibration, real-hardware-validated
   on the Waveshare 3.5in RPi LCD (A) wired over a Waveshare RP2350-PiZero's
   GPIO/SPI header (that board has no built-in screen of its own).
