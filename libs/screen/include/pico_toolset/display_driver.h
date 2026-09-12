@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 namespace pico_toolset {
@@ -47,6 +48,40 @@ public:
 
     // Optional: set panel backlight (0-255). Default no-op.
     virtual void set_backlight(uint8_t /**/ ) {}
+
+    // Draws a 1px-wide line between two points (Bresenham). Default
+    // implementation is set_pixel()-based; drivers may override for speed.
+    virtual void draw_line(int x0, int y0, int x1, int y1, Color color) {
+        int dx = x1 > x0 ? x1 - x0 : x0 - x1;
+        int sx = x0 < x1 ? 1 : -1;
+        int dy = y1 > y0 ? y0 - y1 : y1 - y0; // negative abs(dy)
+        int sy = y0 < y1 ? 1 : -1;
+        int err = dx + dy;
+        while (true) {
+            set_pixel(x0, y0, color);
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    }
+
+    // Draws a line `thickness` pixels wide, centered on the segment.
+    // Default implementation: a filled quad for a straight vertical or
+    // horizontal segment (the common case for bars/graph axes); falls back
+    // to a plain draw_line() for any other angle. Drivers needing thick
+    // diagonal lines should override this directly.
+    virtual void draw_thick_line(int x0, int y0, int x1, int y1, int thickness, Color color) {
+        if (thickness <= 1) { draw_line(x0, y0, x1, y1, color); return; }
+        int half = thickness / 2;
+        if (y0 == y1) {
+            fill_rect(std::min(x0, x1), y0 - half, std::max(x0, x1), y0 - half + thickness - 1, color);
+        } else if (x0 == x1) {
+            fill_rect(x0 - half, std::min(y0, y1), x0 - half + thickness - 1, std::max(y0, y1), color);
+        } else {
+            draw_line(x0, y0, x1, y1, color);
+        }
+    }
 };
 
 } // namespace pico_toolset
