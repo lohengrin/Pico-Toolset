@@ -182,7 +182,7 @@ void Ili9486::end_write() {
     gpio_put(m_pin_cs, 1);
 }
 
-void Ili9486::write_pixels(std::span<const uint16_t> pixels) {
+void Ili9486::start_pixels_dma(std::span<const uint16_t> pixels) {
     const uint8_t* bytes = reinterpret_cast<const uint8_t*>(pixels.data());
     size_t n = pixels.size_bytes();
 
@@ -195,30 +195,49 @@ void Ili9486::write_pixels(std::span<const uint16_t> pixels) {
         dma_channel_configure(m_dma_chan, &cfg,
                               &spi_get_hw(m_spi)->dr,
                               bytes, n, true);
-        dma_channel_wait_for_finish_blocking(m_dma_chan);
-
-        // dma_channel_wait_for_finish_blocking() only guarantees the DMA
-        // engine has pushed every byte into the TX FIFO -- it says nothing
-        // about the RX FIFO (which fills with a shifted-in byte per TX byte,
-        // full duplex, and is never read here) or about whether the last
-        // byte has actually finished shifting out over the wire (BSY can
-        // still be set after the FIFO drains). spi_write_blocking() below
-        // (the non-DMA path) drains RX and waits out BSY for exactly this
-        // reason; do the same here so a bus shared with another device (e.g.
-        // an XPT2046 touch controller CS-selected right after this call)
-        // sees a clean, fully-idle SPI1 instead of stale RX bytes queued
-        // from this transfer -- confirmed on real hardware: without this, a
-        // shared-bus touch read consistently read back zeros instead of its
-        // own ADC response.
-        while (spi_is_readable(m_spi))
-            (void) spi_get_hw(m_spi)->dr;
-        while (spi_get_hw(m_spi)->sr & SPI_SSPSR_BSY_BITS)
-            tight_loop_contents();
-        while (spi_is_readable(m_spi))
-            (void) spi_get_hw(m_spi)->dr;
     } else {
+        // No async path available: do the whole transfer synchronously right
+        // here. pixels_busy() correctly reports false afterwards (nothing
+        // left to wait for) and finish_pixels_dma() is a no-op, so the
+        // start/poll/finish trio still behaves correctly for callers that
+        // use it unconditionally.
         spi_write_blocking(m_spi, bytes, n);
     }
+}
+
+bool Ili9486::pixels_busy() const {
+    return m_use_dma && m_dma_chan >= 0 && dma_channel_is_busy(m_dma_chan);
+}
+
+void Ili9486::finish_pixels_dma() {
+    if (!(m_use_dma && m_dma_chan >= 0))
+        return; // start_pixels_dma()'s synchronous fallback already fully drained the bus.
+
+    // dma_channel_is_busy() clearing only guarantees the DMA engine has
+    // pushed every byte into the TX FIFO -- it says nothing about the RX
+    // FIFO (which fills with a shifted-in byte per TX byte, full duplex, and
+    // is never read here) or about whether the last byte has actually
+    // finished shifting out over the wire (BSY can still be set after the
+    // FIFO drains). spi_write_blocking()'s implicit drain covers this for
+    // the non-DMA path; do the same here so a bus shared with another device
+    // (e.g. an XPT2046 touch controller CS-selected right after this call)
+    // sees a clean, fully-idle SPI1 instead of stale RX bytes queued from
+    // this transfer -- confirmed on real hardware: without this, a
+    // shared-bus touch read consistently read back zeros instead of its own
+    // ADC response.
+    while (spi_is_readable(m_spi))
+        (void) spi_get_hw(m_spi)->dr;
+    while (spi_get_hw(m_spi)->sr & SPI_SSPSR_BSY_BITS)
+        tight_loop_contents();
+    while (spi_is_readable(m_spi))
+        (void) spi_get_hw(m_spi)->dr;
+}
+
+void Ili9486::write_pixels(std::span<const uint16_t> pixels) {
+    start_pixels_dma(pixels);
+    while (pixels_busy())
+        tight_loop_contents();
+    finish_pixels_dma();
 }
 
 void Ili9486::fill_solid(uint16_t rgb565) {

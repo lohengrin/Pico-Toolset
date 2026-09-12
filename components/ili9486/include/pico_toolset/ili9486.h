@@ -68,9 +68,27 @@ public:
 
     // Streams RGB565 pixels (already big-endian byte order on the wire) into
     // the window opened by set_window(). Callers must not overrun the window.
+    // Blocks until the whole transfer (and its SPI-level cleanup) is done --
+    // see start_pixels_dma() below for a non-blocking alternative.
     void write_pixels(std::span<const uint16_t> pixels);
 
-    // Deasserts CS after a set_window()/write_pixels() sequence.
+    // Non-blocking pixel streaming, for callers that need to do other work
+    // (e.g. a USB host stack's task()) while a large transfer is in flight
+    // instead of blocking the CPU for its whole duration. Usage:
+    //   start_pixels_dma(pixels);
+    //   while (pixels_busy()) { other_work(); }
+    //   finish_pixels_dma();
+    // before the next set_window()/write_pixels()/end_write(). Falls back to
+    // a synchronous transfer when DMA isn't available/configured (use_dma
+    // false, or too high a pixel_freq_hz) -- pixels_busy() then always
+    // reports false and finish_pixels_dma() is a no-op, so callers can use
+    // this trio unconditionally regardless of config.
+    void start_pixels_dma(std::span<const uint16_t> pixels);
+    [[nodiscard]] bool pixels_busy() const;
+    void finish_pixels_dma();
+
+    // Deasserts CS after a set_window()/write_pixels() (or
+    // start_pixels_dma()/finish_pixels_dma()) sequence.
     void end_write();
 
     // Fills the whole panel with one solid color.
