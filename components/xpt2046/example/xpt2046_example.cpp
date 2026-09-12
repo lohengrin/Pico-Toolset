@@ -4,19 +4,20 @@
 // bus a display driver already brought up, so this example brings the bus
 // up directly rather than depending on pico_toolset_ili9486.
 #include "pico_toolset/xpt2046.h"
+#include "pico_toolset/xpt2046_configs.h"
 #include "pico/stdlib.h"
 
 #include <cstdio>
 
-using pico_toolset::Xpt2046Config;
 using pico_toolset::Xpt2046Touch;
 
 int main() {
     stdio_init_all();
     sleep_ms(2000);
 
-    // Adapt pins/SPI instance here for your board -- must match whatever
-    // display driver (or your own spi_init() call) already owns this bus.
+    // On a different board, copy this preset and change only the fields
+    // that differ (spi_instance especially: it must match whatever display
+    // driver, or your own spi_init() call, already owns this bus).
     spi_inst_t* const kSpi = spi1;
     constexpr uint kPinSck = 10;
     constexpr uint kPinMosi = 11;
@@ -27,11 +28,8 @@ int main() {
     gpio_set_function(kPinMosi, GPIO_FUNC_SPI);
     gpio_set_function(kPinMiso, GPIO_FUNC_SPI);
 
-    Xpt2046Config cfg;
+    auto cfg = pico_toolset::configs::xpt2046::kWaveshareRp2350PiZero;
     cfg.spi_instance = kSpi;
-    cfg.pin_cs = 7;
-    cfg.pin_irq = 17;
-    cfg.touch_freq_hz = 2'000'000;
 
     Xpt2046Touch touch;
     touch.init(cfg);

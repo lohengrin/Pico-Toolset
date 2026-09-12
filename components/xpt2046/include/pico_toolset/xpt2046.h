@@ -9,14 +9,20 @@ namespace pico_toolset {
 // Configuration for an XPT2046-compatible resistive touch controller sharing
 // an SPI bus with a display panel (e.g. pico_toolset::Ili9486 on the
 // Waveshare-style 3.5" RPi LCD family, where the panel is write-only and
-// MISO belongs to the touch controller alone). All pins and clock are
-// configurable; spi_instance must match whichever SPI peripheral the display
-// driver already initialized (this driver never calls spi_init() itself --
-// see the class doc comment).
+// MISO belongs to the touch controller alone). spi_instance must match
+// whichever SPI peripheral the display driver already initialized (this
+// driver never calls spi_init() itself -- see the class doc comment).
+//
+// No field below has a working default -- see xpt2046_configs.h for
+// known-good board+panel presets (e.g. configs::xpt2046::kWaveshareRp2350PiZero), or
+// fill in every field yourself for a board without one yet. spi_instance in
+// particular should usually be set from the co-located display driver's own
+// spi() accessor (e.g. lcd.spi()) rather than copied from a preset, so the
+// two drivers always agree on which bus they share.
 struct Xpt2046Config {
-    spi_inst_t* spi_instance = spi1;      // SPI peripheral (already initialized elsewhere)
-    uint8_t     pin_cs       = 7;         // Touch controller's own Chip Select
-    uint8_t     pin_irq      = 17;        // Active-low PENIRQ, polled (not IRQ-driven)
+    spi_inst_t* spi_instance = nullptr; // SPI peripheral (already initialized elsewhere) -- must be set
+    uint8_t     pin_cs;                 // Touch controller's own Chip Select
+    uint8_t     pin_irq;                // Active-low PENIRQ, polled (not IRQ-driven)
     uint32_t    touch_freq_hz = 2'000'000; // Touch-appropriate SPI clock
 };
 

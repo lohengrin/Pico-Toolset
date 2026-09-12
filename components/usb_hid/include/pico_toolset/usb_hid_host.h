@@ -10,11 +10,16 @@
 
 namespace pico_toolset {
 
-// Configuration for the PIO-USB HID host. All pins and options configurable.
+// Configuration for the PIO-USB HID host. pin_dp/pio_num/run_on_core1 are
+// board+use-case wiring (which pin is D+, which PIO block is free, whether
+// core1 is available or already owned by e.g. a DVI driver) with no working
+// default -- see usb_hid_configs.h for known-good presets (e.g.
+// configs::usb_hid::kWaveshareRp2350PiZeroLcd), or set them yourself for a board/use
+// case without one yet.
 struct UsbHidConfig {
-    uint8_t pin_dp = 28;              // PIO-USB D+ pin (D- = D+1)
-    uint     pio_num = 0;             // PIO block (keep free of other PIO users)
-    bool     run_on_core1 = true;     // Dedicate core1 to the USB host stack
+    uint8_t pin_dp;                   // PIO-USB D+ pin (D- = D+1) -- must be set
+    uint     pio_num;                 // PIO block (keep free of other PIO users) -- must be set
+    bool     run_on_core1;            // Dedicate core1 to the USB host stack -- must be set (false if core1 is already owned elsewhere, e.g. a DVI driver)
     uint32_t core1_stack_size = 4096; // Core1 stack in words (16 KB)
     uint8_t  rhport = 1;              // TinyUSB root hub port for PIO-USB (1)
     uint8_t  max_hid_interfaces = 4;  // CFG_TUH_HID

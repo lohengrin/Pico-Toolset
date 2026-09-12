@@ -2,12 +2,12 @@
 // Detects the PSRAM, runs the self-test, then exercises the allocator and
 // the std::pmr adapter.
 #include "pico_toolset/psram.h"
+#include "pico_toolset/psram_configs.h"
 #include "pico/stdlib.h"
 
 #include <cstdio>
 #include <vector>
 
-using pico_toolset::PsramConfig;
 using pico_toolset::PsramResource;
 using pico_toolset::psram_init;
 using pico_toolset::psram_malloc;
@@ -19,11 +19,8 @@ int main() {
     stdio_init_all();
     sleep_ms(2000);
 
-    PsramConfig cfg;
-    cfg.cs_pin = 47; // adjust to your board (Waveshare RP2350-PiZero uses GPIO47)
-    cfg.run_self_test = true;
-
-    auto status = psram_init(cfg);
+    // On a different board, copy this preset and change cs_pin.
+    auto status = psram_init(pico_toolset::configs::psram::kWaveshareRp2350PiZero);
     printf("PSRAM present=%d test_ok=%d size=%zu bytes at clk_sys=%u Hz\n",
            status.present, status.test_ok, status.size_bytes,
            status.clk_sys_hz_at_test);

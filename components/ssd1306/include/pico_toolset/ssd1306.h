@@ -10,10 +10,16 @@ namespace pico_toolset {
 
 // Configuration for the SSD1306 OLED display. All pins and timings are
 // configurable so the driver adapts to any board wiring.
+//
+// i2c_instance/sda_pin/scl_pin have no working default -- they're board
+// wiring, not driver behavior. No validated per-board preset exists yet for
+// this component (unlike e.g. pico_toolset::Ili9486Config's
+// ili9486_configs.h) -- fill them in for your own board, or contribute a
+// preset once you've validated one on real hardware.
 struct Ssd1306Config {
-    i2c_inst_t* i2c_instance = i2c1;  // I2C peripheral to use
-    uint8_t     sda_pin      = 19;    // SDA GPIO
-    uint8_t     scl_pin      = 18;    // SCL GPIO
+    i2c_inst_t* i2c_instance = nullptr; // I2C peripheral to use -- must be set
+    uint8_t     sda_pin;                // SDA GPIO -- must be set
+    uint8_t     scl_pin;                // SCL GPIO -- must be set
     uint32_t    i2c_freq_hz  = 400000; // I2C clock speed
     uint8_t     address      = 0x3C;  // I2C slave address
     uint8_t     width        = 128;   // Pixel width

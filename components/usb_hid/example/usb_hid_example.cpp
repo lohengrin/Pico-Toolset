@@ -1,12 +1,12 @@
 // PIO-USB HID host example (doubles as an integration test).
 // Polls keyboard, mouse and gamepad state and prints to the serial console.
 #include "pico_toolset/usb_hid_host.h"
+#include "pico_toolset/usb_hid_configs.h"
 #include "pico/stdlib.h"
 
 #include <cstdio>
 
 using pico_toolset::Keymap;
-using pico_toolset::UsbHidConfig;
 using pico_toolset::UsbHidHost;
 using pico_toolset::kDefaultKeymapIndex;
 using pico_toolset::kKeymapCount;
@@ -21,9 +21,10 @@ int main() {
     for (uint8_t i = 0; i < kKeymapCount; ++i)
         printf("  [%u] %s%s\n", i, kKeymaps[i].name, i == kDefaultKeymapIndex ? " (default)" : "");
 
-    UsbHidConfig cfg;
-    cfg.pin_dp = 28;          // default Pico-PIO-USB D+ pin (D- is pin 29)
-    cfg.run_on_core1 = true;  // dedicate core1 to the host stack
+    // On a different board (or a build where core1/PIO0 are already spoken
+    // for by another driver), pick a different preset or copy this one and
+    // adjust -- see usb_hid_configs.h.
+    auto cfg = pico_toolset::configs::usb_hid::kWaveshareRp2350PiZeroLcd;
     cfg.enable_keyboard = true;
     cfg.enable_mouse = true;
     cfg.enable_gamepad = true;

@@ -10,15 +10,22 @@ namespace pico_toolset {
 // Configuration for the ILI9486 SPI LCD (as used on Waveshare RP2350-PiZero
 // style carrier boards, where the controller sits behind a 16-bit shift
 // register). All pins and clocks are configurable.
+//
+// No field below has a working default -- pins/SPI instance/clocks are
+// board wiring, not driver behavior, so this struct deliberately can't be
+// default-constructed into something that just happens to work. Either
+// start from a known-good preset in ili9486_configs.h (e.g.
+// configs::ili9486::kWaveshareRp2350PiZero) or fill in every field yourself for a
+// board this toolset doesn't have a preset for yet.
 struct Ili9486Config {
-    spi_inst_t* spi_instance = spi1;   // SPI peripheral
-    uint8_t     pin_sck      = 10;     // SPI SCK
-    uint8_t     pin_mosi     = 11;     // SPI MOSI
-    uint8_t     pin_miso     = 12;     // SPI MISO (touch controller shares the bus)
-    uint8_t     pin_cs       = 8;      // Chip Select
-    uint8_t     pin_dc       = 24;     // Data/Command
-    uint8_t     pin_rst      = 25;     // Hardware Reset
-    uint8_t     pin_backlight = 255;   // Backlight PWM pin (255 = none)
+    spi_inst_t* spi_instance = nullptr; // SPI peripheral -- must be set
+    uint8_t     pin_sck;                // SPI SCK
+    uint8_t     pin_mosi;               // SPI MOSI
+    uint8_t     pin_miso;               // SPI MISO (touch controller shares the bus)
+    uint8_t     pin_cs;                 // Chip Select
+    uint8_t     pin_dc;                 // Data/Command
+    uint8_t     pin_rst;                // Hardware Reset
+    uint8_t     pin_backlight = 255;    // Backlight PWM pin (255 = none)
     uint32_t    spi_freq_hz  = 8000000;   // Command/parameter clock
     uint32_t    pixel_freq_hz = 25000000; // Pixel-streaming clock
     bool        use_dma      = true;   // DMA-backed pixel streaming when available

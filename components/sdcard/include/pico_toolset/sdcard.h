@@ -17,12 +17,16 @@ namespace pico_toolset {
 // set spi_instance = nullptr to request PIO-bit-banged SPI in that case
 // (pico_fatfs_set_config() reports back which mode it actually configured,
 // see SdCard::used_native_spi()).
+// No field below has a working default -- pins/SPI-vs-PIO mode/PIO block are
+// board wiring, not driver behavior -- see sdcard_configs.h for known-good
+// per-board presets (e.g. configs::sdcard::kWaveshareRp2350PiZero), or fill in
+// every field yourself for a board without one yet.
 struct SdCardConfig {
-    spi_inst_t* spi_instance = nullptr; // nullptr = PIO-bit-banged SPI
-    uint8_t     pin_miso = 0;
-    uint8_t     pin_cs   = 0;
-    uint8_t     pin_sck  = 0;
-    uint8_t     pin_mosi = 0;
+    spi_inst_t* spi_instance = nullptr; // nullptr = PIO-bit-banged SPI -- must be set either way
+    uint8_t     pin_miso;
+    uint8_t     pin_cs;
+    uint8_t     pin_sck;
+    uint8_t     pin_mosi;
     bool        pullup   = true;        // MISO/MOSI pins only
 
     uint32_t clk_slow_hz = 100'000;     // card-init clock (pico_fatfs' own CLK_SLOW_DEFAULT)
@@ -31,8 +35,8 @@ struct SdCardConfig {
                                          // trace; a high SPI clock over jumper wires causes
                                          // intermittent corruption that reads as "no card"
 
-    PIO  pio = pio1; // PIO block for bit-banged SPI (ignored if spi_instance is set)
-    uint sm   = 0;   // PIO state machine index within that block
+    PIO  pio; // PIO block for bit-banged SPI (ignored if spi_instance is set) -- must be set
+    uint sm = 0; // PIO state machine index within that block
 
     // Whether/how to call pio_set_gpio_base() before mounting. RP2350B's PIO
     // blocks each see only one 32-pin-wide addressing window (default

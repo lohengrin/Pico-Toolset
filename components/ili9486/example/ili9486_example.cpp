@@ -1,31 +1,22 @@
 // ILI9486 SPI LCD example (doubles as an integration test).
 // Fills the panel with a sequence of solid colors plus a simple color sweep.
 #include "pico_toolset/ili9486.h"
+#include "pico_toolset/ili9486_configs.h"
 #include "pico/stdlib.h"
 
 #include <cstdio>
 
 using pico_toolset::Ili9486;
-using pico_toolset::Ili9486Config;
 
 int main() {
     stdio_init_all();
     sleep_ms(2000);
 
-    Ili9486Config cfg;
-    // Adapt pins here for your board:
-    cfg.spi_instance = spi1;
-    cfg.pin_sck      = 10;
-    cfg.pin_mosi     = 11;
-    cfg.pin_miso     = 12;
-    cfg.pin_cs       = 8;
-    cfg.pin_dc       = 24;
-    cfg.pin_rst      = 25;
-    cfg.pin_backlight = 255; // or a PWM-capable GPIO for dimming
-    cfg.use_dma      = true;
-
+    // On a different board, copy this preset and change only the fields
+    // that differ, or build an Ili9486Config from scratch -- see that
+    // struct's own doc comment for which fields you must set.
     Ili9486 lcd;
-    if (!lcd.init(cfg)) {
+    if (!lcd.init(pico_toolset::configs::ili9486::kWaveshareRp2350PiZero)) {
         printf("ILI9486 init failed\n");
         return 1;
     }

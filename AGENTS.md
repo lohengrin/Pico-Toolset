@@ -14,7 +14,22 @@ component ships an `example/` program that doubles as a smoke test.
 ## Component invariants (keep when editing)
 
 - **Config struct for everything**: never hard-code pins/bus/frequencies in
-  driver logic. Defaults belong in the config struct's member initializers.
+  driver logic. But config structs must NOT default-construct into something
+  that happens to work, either -- pins/bus instances/PIO-DMA assignments are
+  board wiring, and a member initializer baking in one specific board's
+  values is exactly the hardcoding this rule exists to prevent (it just
+  hides inside the struct instead of the driver). Leave those fields with no
+  default (so `Config{}` value-initializes them to an obviously-invalid 0/
+  nullptr, not a silently-plausible wrong board); give a generic *behavioral*
+  option (`use_dma`, `run_self_test`, `buffer_count`, ...) a real default if
+  one makes sense regardless of board. Ship known-good combinations instead
+  in a sibling `<name>_configs.h`, one `inline constexpr` (or `inline const`
+  if the type holds a non-constexpr-safe pointer like `spi_inst_t*`/`PIO` --
+  the SDK's `spi1`/`pio1` etc. macros are reinterpret_casts, not core
+  constant expressions) per validated board+device combination, namespaced
+  `pico_toolset::configs::<component>::<PascalCaseBoardName>`. Only add a
+  preset for a combination actually validated on real hardware by a
+  consumer -- don't invent plausible-looking pin numbers.
 - **RP2040 + RP2350**: guard RP2350-only features (PSRAM) with `#if PICO_RP2350`
   and reflect it in CMake (`if(PICO_RP2350)`) so RP2040 builds stay valid.
 - **Namespace**: all public API lives in `pico_toolset` (except `extern "C"`
@@ -61,8 +76,10 @@ manual smoke tests of the examples on hardware.
   for constants, `Ssd1306`/`Ili9486` style class names.
 - Include guards are `#pragma once`.
 - When adding a component: add top-level option + `add_subdirectory`, define
-  `pico_toolset_<name>` target + `_example`, and update README's component
-  table and build-options table.
+  `pico_toolset_<name>` target + `_example`, update README's component
+  table and build-options table, and (once you have a real-hardware-
+  validated board+device combination) add its own `<name>_configs.h` -- see
+  "Config struct for everything" above.
 
 ## Source lineage (when porting code in)
 

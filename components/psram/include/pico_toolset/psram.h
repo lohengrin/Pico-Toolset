@@ -13,10 +13,13 @@
 
 namespace pico_toolset {
 
-// Configuration for PSRAM bring-up. Only the chip-select pin normally needs
-// to be set per board (PSRAM typically maps at the default XIP QSPI pins).
+// Configuration for PSRAM bring-up. cs_pin has no working default -- it's
+// board wiring (which QSPI CS pin the PSRAM chip is on), not driver
+// behavior -- see psram_configs.h for known-good per-board presets (e.g.
+// configs::psram::kWaveshareRp2350PiZero), or set it yourself for a board without
+// one yet.
 struct PsramConfig {
-    uint8_t  cs_pin = 47;              // QSPI CS pin for the PSRAM chip
+    uint8_t  cs_pin;                    // QSPI CS pin for the PSRAM chip -- must be set
     uint32_t max_clock_hz = 30'000'000; // PSRAM clock (0 = SDK default)
     bool     run_self_test = true;     // Run read/write pattern test
     size_t   self_test_samples = 64;   // Number of test samples

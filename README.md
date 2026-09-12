@@ -168,10 +168,24 @@ target_link_libraries(my_app PRIVATE pico_toolset_ili9486)
 
 ## Minimal usage
 
+None of these config structs have a working default -- pins, bus instances,
+and PIO/DMA assignments are board wiring, not driver behavior, so a
+default-constructed config is deliberately not something that "just happens
+to work". Each component instead ships a `<name>_configs.h` header with
+named presets for the specific board+device combinations this toolset has
+validated on real hardware; start from one of those (copying and adjusting
+what differs for a similar-but-not-identical board), or fill in every field
+yourself for a board without a preset yet -- see each struct's own doc
+comment for which fields are required.
+
 ### SSD1306
 
+No validated preset exists yet for this component (contribute one once
+you've tested it on real hardware) -- fill in every field:
+
 ```cpp
-pico_toolset::Ssd1306Config cfg;        // defaults: i2c1, SDA19/SCL18, 400kHz, 0x3C
+pico_toolset::Ssd1306Config cfg;
+cfg.i2c_instance = i2c1; cfg.sda_pin = 19; cfg.scl_pin = 18;
 pico_toolset::Ssd1306 oled;
 oled.init(cfg);
 oled.clear();
@@ -182,9 +196,10 @@ oled.show();
 ### ILI9486
 
 ```cpp
-pico_toolset::Ili9486Config cfg;        // defaults: spi1, SCK10/MOSI11/CS8/DC24/RST25
+#include "pico_toolset/ili9486_configs.h"
+
 pico_toolset::Ili9486 lcd;
-lcd.init(cfg);
+lcd.init(pico_toolset::configs::ili9486::kWaveshareRp2350PiZero);
 lcd.fill_solid(0x001F);                 // solid blue
 lcd.set_window(0, 0, 100, 100);
 lcd.write_pixels(span_of_100x100_pixels);
@@ -194,11 +209,14 @@ lcd.end_write();
 ### XPT2046 touch (shares a bus with a display driver)
 
 ```cpp
-pico_toolset::Ili9486Config lcd_cfg;    // spi_init()s spi1 -- must happen first
-pico_toolset::Ili9486 lcd;
-lcd.init(lcd_cfg);
+#include "pico_toolset/ili9486_configs.h"
+#include "pico_toolset/xpt2046_configs.h"
 
-pico_toolset::Xpt2046Config touch_cfg;  // defaults: spi1, CS7/IRQ17, 2MHz
+pico_toolset::Ili9486 lcd;              // spi_init()s spi1 -- must happen first
+lcd.init(pico_toolset::configs::ili9486::kWaveshareRp2350PiZero);
+
+auto touch_cfg = pico_toolset::configs::xpt2046::kWaveshareRp2350PiZero;
+touch_cfg.spi_instance = lcd.spi();     // always take this from the display driver, not the preset
 pico_toolset::Xpt2046Touch touch;
 touch.init(touch_cfg);                  // does NOT call spi_init() -- shares lcd's bus
 
@@ -213,7 +231,9 @@ if (sample.pressed) {
 ### PSRAM (RP2350)
 
 ```cpp
-auto st = pico_toolset::psram_init({}); // defaults: CS=GPIO47, self-test on
+#include "pico_toolset/psram_configs.h"
+
+auto st = pico_toolset::psram_init(pico_toolset::configs::psram::kWaveshareRp2350PiZero);
 void* p = pico_toolset::psram_malloc(4096);
 pico_toolset::PsramResource res;        // std::pmr::memory_resource
 std::pmr::vector<uint8_t> big(&res);
@@ -222,9 +242,12 @@ std::pmr::vector<uint8_t> big(&res);
 ### USB HID host
 
 ```cpp
-pico_toolset::UsbHidConfig cfg;         // defaults: D+ = GPIO28, core1 dedicated
+#include "pico_toolset/usb_hid_configs.h"
+
+// Two presets exist for this board -- pick the one matching your build (see
+// usb_hid_configs.h: pio_num/run_on_core1 depend on what else is active).
 pico_toolset::UsbHidHost usb;
-usb.init(cfg);
+usb.init(pico_toolset::configs::usb_hid::kWaveshareRp2350PiZeroLcd);
 while (true) {
     for (char ch; (ch = usb.consume_typed_ascii_char()) != 0;) putchar(ch);
     auto g = usb.gamepad_state(0);
@@ -254,9 +277,10 @@ new layout = implement it under a `#if PICO_TOOLSET_USB_HID_KEYMAP_*` guard in
 ### I2S audio (pico-extras -- see the setup section above)
 
 ```cpp
-pico_toolset::I2sAudioConfig cfg;       // defaults: 44.1kHz mono, DATA26/BCK27, DMA ch.0, PIO SM0
+#include "pico_toolset/i2s_audio_configs.h"
+
 pico_toolset::I2sAudioOutput audio;
-if (!audio.init(cfg)) { /* handle failure */ }
+if (!audio.init(pico_toolset::configs::i2s_audio::kPicoDvCarrier)) { /* handle failure */ }
 std::array<float, 882> frame;           // [-1, 1] samples, e.g. one 20ms frame at 44.1kHz
 // ...fill frame...
 audio.queue_samples(frame);             // non-blocking; drops this call's audio if no buffer is free
@@ -265,11 +289,11 @@ audio.queue_samples(frame);             // non-blocking; drops this call's audio
 ### SD card
 
 ```cpp
-pico_toolset::SdCardConfig cfg;         // defaults: PIO-bit-banged SPI, pio1/sm0
-cfg.pin_miso = 19; cfg.pin_cs = 22; cfg.pin_sck = 5; cfg.pin_mosi = 18;
-// cfg.gpio_base = 16;  // only if a configured pin is >= 32, see the doc comment
+#include "pico_toolset/sdcard_configs.h"
+
+// Two presets exist -- pick the one matching your board, or copy and adjust.
 pico_toolset::SdCard sd;
-if (!sd.init(cfg)) { /* no card / mount failed -- sd.last_mount_result() has the FRESULT */ }
+if (!sd.init(pico_toolset::configs::sdcard::kPicoDvCarrier)) { /* no card / mount failed -- sd.last_mount_result() has the FRESULT */ }
 for (const auto& name : sd.list_files({"txt", "bin"})) { /* ... */ }
 std::vector<uint8_t> data = sd.read_file("config.bin");
 ```
