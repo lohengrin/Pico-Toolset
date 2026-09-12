@@ -76,6 +76,18 @@ component ships an `example/` program that doubles as a smoke test.
   (`PICO_TOOLSET_BUILD_I2S_AUDIO` defaults OFF, unlike every other
   component, for exactly this reason).
 
+## Board & combination docs
+
+`boards/*.md` describes a complete assembled board or board+peripheral
+combination end-to-end (which components to enable, which named preset to
+call on each, resource conflicts already resolved, build command, example)
+-- the layer above the per-driver `<name>_configs.h` presets described
+below. Start at [`boards/README.md`](boards/README.md) (index + template).
+`examples/` holds one full-integration example per distinct hardware
+combination, built all at once via `examples/CMakeLists.txt`'s superbuild
+(`cmake -S examples -B examples-build && cmake --build examples-build`, no
+board/component flags needed).
+
 ## Build/verify workflow
 
 Prereqs: `PICO_SDK_PATH` set; RP2350 builds need `-DPICO_BOARD=pico2`.
@@ -125,7 +137,8 @@ manual smoke tests of the examples on hardware.
 - SSD1306: David Schramm's rpi-pico-ssd1306 (MIT).
 - ILI9486: a validated SPI driver + DMA enhancement (MIT).
 - XPT2046: touch driver + linear calibration, real-hardware-validated
-  on the Waveshare 3.5in RPi LCD (A).
+  on the Waveshare 3.5in RPi LCD (A) wired over a Waveshare RP2350-PiZero's
+  GPIO/SPI header (that board has no built-in screen of its own).
 - PSRAM: external-PSRAM driver. `flash_safe_execute()`-based
   protection against `hardware_psram`'s documented interrupt/other-core
   unsafety added after a real, hardware-observed intermittent freeze at

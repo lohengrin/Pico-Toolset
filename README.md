@@ -38,8 +38,14 @@ All code lives in namespace `pico_toolset` and targets C++20.
 ```
 pico-toolset/
 ├── CMakeLists.txt            # top-level: options + subdirectories
-├── boards/                   # shared pico-sdk board-definition headers
+├── boards/                   # board/combination docs + pico-sdk board-definition headers
+│   ├── README.md
 │   └── waveshare_rp2350_pizero.h
+├── examples/                 # full-combination examples, one per board/combo (see boards/)
+│   ├── CMakeLists.txt        # superbuild: builds every combination in one pass
+│   ├── pico_dv/
+│   ├── waveshare_pizero/
+│   └── waveshare_pizero_lcd35a/
 ├── cmake/
 │   ├── pico-toolset.cmake    # helper for FetchContent consumers
 │   └── pico_pio_usb.cmake    # makes Pico-PIO-USB available (submodule or fetch)
@@ -149,6 +155,23 @@ add_subdirectory(third_party/pico-toolset)
 (`pico_toolset_i2s_audio requires the pico_audio_i2s target...`) if
 `pico_audio_i2s` doesn't exist by the time it's reached, rather than
 misbehaving silently.
+
+## Boards & full-combination examples
+
+`boards/*.md` documents complete assembled board/combinations (which
+components to enable, which preset to call, resource conflicts, build
+command) -- see [`boards/README.md`](boards/README.md) for the index and
+template. `examples/` holds one full-integration example per combination,
+all buildable in a single pass with no flags:
+
+```sh
+export PICO_SDK_PATH=/path/to/pico-sdk
+export PICO_EXTRAS_PATH=/path/to/pico-extras   # needed by the pico_dv legs
+cmake -S examples -B examples-build
+cmake --build examples-build
+```
+
+produces every combination's `.uf2` under `examples-build/uf2/`.
 
 ## Using a component from your own project
 
