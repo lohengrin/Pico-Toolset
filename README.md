@@ -38,6 +38,8 @@ All code lives in namespace `pico_toolset` and targets C++20.
 ```
 pico-toolset/
 ├── CMakeLists.txt            # top-level: options + subdirectories
+├── boards/                   # shared pico-sdk board-definition headers
+│   └── waveshare_rp2350_pizero.h
 ├── cmake/
 │   ├── pico-toolset.cmake    # helper for FetchContent consumers
 │   └── pico_pio_usb.cmake    # makes Pico-PIO-USB available (submodule or fetch)
@@ -173,6 +175,20 @@ Add it as a submodule, then in your `CMakeLists.txt`:
 set(PICO_TOOLSET_BUILD_ILI9486 ON  CACHE BOOL "" FORCE)
 add_subdirectory(third_party/pico-toolset)
 target_link_libraries(my_app PRIVATE pico_toolset_ili9486)
+```
+
+### Shared board headers
+
+`boards/` at the repo root holds `pico_sdk` board-definition headers for
+carrier boards more than one project targets (currently
+`waveshare_rp2350_pizero.h`), so they're defined once instead of vendored
+per-project. Point `PICO_BOARD_HEADER_DIRS` at it **before**
+`pico_sdk_import.cmake` runs (board selection happens at include time):
+
+```cmake
+set(PICO_BOARD waveshare_rp2350_pizero CACHE STRING "Board type" FORCE)
+set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/pico-toolset/boards CACHE STRING "" FORCE)
+include(pico_sdk_import.cmake)
 ```
 
 ## Minimal usage

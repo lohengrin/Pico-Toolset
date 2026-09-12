@@ -133,5 +133,9 @@ manual smoke tests of the examples on hardware.
   its original scratch[0..3] onto scratch[2]/[3]/[5]/[6] to not collide with
   reset_buttons' scratch[0]/[1] -- see the scratch-register invariant above.
 - Screen: PiCoMonitor.new `Screen`/`Widget` (Pimoroni PicoGraphics default).
+- `boards/waveshare_rp2350_pizero.h`: Raspberry Pi (Trading) Ltd.'s pico-sdk
+  board header for this board (BSD-3-Clause), as vendored/extended
+  identically by both TOM6809 and PicoDoom -- moved here once instead of
+  staying duplicated per-project.
 
 Credit upstream in headers when adapting code.
