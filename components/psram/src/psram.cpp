@@ -50,6 +50,43 @@ struct InitParams {
 
 void do_init(void* param);
 
+// psram_configure_params() computes divisor = ceil(clk_sys/max_freq) and
+// rxdelay = divisor, but QMI_M1_TIMING_RXDELAY is a 3-bit field (max 7)
+// whose bounds check is compiled out by default -- an out-of-range rxdelay
+// would be silently truncated. Clamp the effective max frequency so the
+// divisor can never exceed 7 whatever clk_sys is. Shared by do_init() and
+// do_set_clock() so both apply the exact same clamp as
+// PsramConfig::max_clock_hz's own doc comment promises.
+uint32_t clamp_max_freq_hz(uint32_t requested_hz, uint32_t clk_sys_hz) {
+    constexpr uint32_t kMaxRxdelayDivisor = 7;
+    uint32_t min_freq_for_divisor_limit = clk_sys_hz / kMaxRxdelayDivisor + 1;
+    uint32_t max_freq_hz = requested_hz;
+    if (max_freq_hz == 0)
+        max_freq_hz = 30'000'000; // conservative; see the bring-up notes
+    if (max_freq_hz < min_freq_for_divisor_limit)
+        max_freq_hz = min_freq_for_divisor_limit;
+    return max_freq_hz;
+}
+
+// do_set_clock()'s outcome -- flash_safe_execute()/the interrupt-disable
+// fallback both take a single void* and return nothing, so this carries the
+// requested frequency in and the result out.
+struct ClockParams {
+    uint32_t max_clock_hz; // in: requested (already un-clamped)
+    bool ok;               // out
+};
+
+void do_set_clock(void* param) {
+    auto& p = *static_cast<ClockParams*>(param);
+    uint32_t clk_sys_hz = clock_get_hz(clk_sys);
+    uint32_t max_freq_hz = clamp_max_freq_hz(p.max_clock_hz, clk_sys_hz);
+
+    p.ok = psram_configure_params(max_freq_hz, PICO_DEFAULT_PSRAM_MAX_SELECT, kPsramMinDeselectNs) == PICO_OK
+        && psram_reinitialize() == PICO_OK;
+    if (p.ok)
+        g_status.clk_sys_hz_at_test = clk_sys_hz;
+}
+
 struct Block {
     size_t size;
     bool free;
@@ -105,19 +142,7 @@ void do_init(void* param) {
     flash_devinfo_set_cs_size(1, flash_devinfo_bytes_to_size(static_cast<uint32_t>(size)));
 
     g_status.clk_sys_hz_at_test = clock_get_hz(clk_sys);
-
-    // psram_configure_params() computes divisor = ceil(clk_sys/max_freq) and
-    // rxdelay = divisor, but QMI_M1_TIMING_RXDELAY is a 3-bit field (max 7)
-    // whose bounds check is compiled out by default -- an out-of-range
-    // rxdelay would be silently truncated. Clamp the effective max frequency
-    // so the divisor can never exceed 7 whatever clk_sys is.
-    constexpr uint32_t kMaxRxdelayDivisor = 7;
-    uint32_t min_freq_for_divisor_limit = g_status.clk_sys_hz_at_test / kMaxRxdelayDivisor + 1;
-    uint32_t max_freq_hz = config.max_clock_hz;
-    if (max_freq_hz == 0)
-        max_freq_hz = 30'000'000; // conservative; see the bring-up notes
-    if (max_freq_hz < min_freq_for_divisor_limit)
-        max_freq_hz = min_freq_for_divisor_limit;
+    uint32_t max_freq_hz = clamp_max_freq_hz(config.max_clock_hz, g_status.clk_sys_hz_at_test);
 
     if (psram_configure_params(max_freq_hz, PICO_DEFAULT_PSRAM_MAX_SELECT, kPsramMinDeselectNs) != PICO_OK) {
         return;
@@ -172,6 +197,25 @@ PsramStatus psram_init(const PsramConfig& config) {
 }
 
 const PsramStatus& psram_status() { return g_status; }
+
+bool psram_set_clock_hz(uint32_t max_clock_hz) {
+    if (!g_initialized || !g_status.test_ok)
+        return false;
+
+    ClockParams params{max_clock_hz, false};
+    if (multicore_lockout_ready()) {
+        flash_safe_execute(do_set_clock, &params, 1000);
+    } else {
+        // See this function's own doc comment (psram.h): safe as long as no
+        // un-lockout-registered second core is concurrently executing from
+        // flash/PSRAM -- the caller's responsibility to ensure, same as
+        // psram_init().
+        uint32_t save = save_and_disable_interrupts();
+        do_set_clock(&params);
+        restore_interrupts(save);
+    }
+    return params.ok;
+}
 
 extern "C" void* psram_malloc(size_t size) {
     if (!g_initialized || !g_status.test_ok || size == 0) return nullptr;

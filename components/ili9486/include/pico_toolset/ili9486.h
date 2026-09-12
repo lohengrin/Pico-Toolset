@@ -82,6 +82,23 @@ public:
     // Accessor for sharing the SPI bus (e.g. with an XPT2046 touch).
     [[nodiscard]] spi_inst_t* spi() const { return m_spi; }
 
+    // Live pixel-clock tuning, for finding a panel/wiring's real corruption
+    // ceiling on actual hardware instead of guessing from a datasheet.
+    // set_pixel_clock_hz() just updates the requested rate for future
+    // set_window() calls (which re-applies it via spi_set_baudrate() every
+    // time already, so no re-init is needed -- takes effect next frame).
+    // Plain field writes, not synchronized: fine for a caller on a different
+    // core than the one calling set_window() (e.g. tuning from a keypress
+    // handler while a blit loop runs on another core) since the worst case
+    // is one frame using a stale rate, not corruption of the field itself.
+    void set_pixel_clock_hz(uint32_t hz) { m_pixel_baud = hz; }
+    [[nodiscard]] uint32_t pixel_clock_hz() const { return m_pixel_baud; }
+    // What spi_set_baudrate() actually achieved as of the last set_window()
+    // call (its return value) -- SPI's integer clock divider means an
+    // arbitrary requested hz gets rounded, so this can differ from
+    // pixel_clock_hz(). 0 before the first set_window() call.
+    [[nodiscard]] uint32_t pixel_clock_actual_hz() const { return m_pixel_baud_actual; }
+
 private:
     void claim_bus();
     void write_command(uint8_t cmd);
@@ -94,6 +111,7 @@ private:
     uint8_t     m_pin_backlight = 255;
     uint32_t    m_command_baud = 8'000'000;
     uint32_t    m_pixel_baud = 25'000'000;
+    uint32_t    m_pixel_baud_actual = 0;
     bool        m_use_dma = true;
     int         m_dma_chan = -1;
 };

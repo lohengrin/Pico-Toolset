@@ -170,8 +170,9 @@ void Ili9486::set_window(int x0, int y0, int x1, int y1) {
 
     // Switch to the pixel clock BEFORE asserting CS: spi_set_baudrate()
     // disables/re-enables the peripheral and must not fire while the shift
-    // register is latching (real-hardware horizontal-shift bug).
-    spi_set_baudrate(m_spi, m_pixel_baud);
+    // register is latching (real-hardware horizontal-shift bug). Stash its
+    // return (the actual achieved rate) for pixel_clock_actual_hz().
+    m_pixel_baud_actual = spi_set_baudrate(m_spi, m_pixel_baud);
 
     gpio_put(m_pin_dc, 1);
     gpio_put(m_pin_cs, 0);

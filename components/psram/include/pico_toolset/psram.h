@@ -73,6 +73,31 @@ PsramStatus psram_init(const PsramConfig& config);
 // Status from the last psram_init() (all-false default if it hasn't run).
 const PsramStatus& psram_status();
 
+// Reconfigures the QMI CS1 clock divisor for a different target frequency,
+// without re-running chip detection or the self-test -- for a consumer that
+// wants to try a different psram_init()-time max_clock_hz (e.g. while
+// tuning) without a full reinit. 0 falls back to the same SDK-default
+// (30MHz) psram_init() uses; any requested frequency below what the QMI
+// timing's 3-bit rxdelay field can express at the current clk_sys is
+// clamped up, exactly like PsramConfig::max_clock_hz at init time. Returns
+// false if PSRAM was never successfully initialized, or if the SDK's
+// psram_configure_params()/psram_reinitialize() calls themselves fail.
+//
+// Carries the exact same hardware hazard as psram_init() (see its own doc
+// comment): protected the same way (flash_safe_execute() when
+// multicore_lockout_ready(), else a plain interrupt-disable). Unlike
+// psram_init(), which this toolset's consumers only ever call once at boot
+// before launching a second core (so the interrupt-disable fallback is
+// always safe there), a *runtime* clock change made after a second core is
+// already active needs that core to be lockout-ready for real protection --
+// calling this with the fallback path while an un-lockout-registered core1
+// is concurrently executing from flash/PSRAM (e.g. pico_toolset_usb_hid's,
+// which deliberately isn't lockout-registered -- see psram_init()'s doc
+// comment) is exactly the hazard project_psram_freeze_fix's PSRAM-init
+// freeze was about, just at a different call site. Prefer calling this only
+// before launching any second core, same as psram_init().
+bool psram_set_clock_hz(uint32_t max_clock_hz);
+
 // First-fit free-list allocator over the mapped region. Returns nullptr if
 // PSRAM isn't present/healthy, on OOM, or for size 0. Blocks are 8-byte
 // aligned.
