@@ -7,6 +7,15 @@
 
 #include "dvi_serialiser.h"
 
+// Every dvi_serialiser_cfg literal below leaves `prog_offs` at its implicit
+// zero -- that field is pure output state, written by dvi_serialiser_init()
+// itself (pio_add_program()'s returned offset) and never meant to be
+// caller-supplied, so there's nothing to actually initialize it to here.
+// Silences -Wmissing-field-initializers for exactly that one intentionally-
+// omitted field, without touching upstream's own values below.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+
 #ifndef DVI_DEFAULT_SERIAL_CONFIG
 #define DVI_DEFAULT_SERIAL_CONFIG pico_sock_cfg
 #endif
@@ -116,5 +125,7 @@ static const struct dvi_serialiser_cfg waveshare_rp2040_pizero = {
 	.pins_clk = 28,
 	.invert_diffpairs = false
 };
+
+#pragma GCC diagnostic pop
 
 #endif
