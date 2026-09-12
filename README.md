@@ -1,7 +1,7 @@
 # Pico-Toolset
 
 Reusable, configuration-driven drivers for Raspberry Pi Pico (RP2040 and
-RP2350), extracted from the TOM6809, PicoDoom and PiCoMonitor projects and
+RP2350), extracted from real-hardware consumer projects and
 re-packaged as a set of independent CMake components. Every component is
 pin/config-structured so it adapts to any board wiring, ships with an example
 that doubles as an integration smoke-test, and can be built or skipped
@@ -28,7 +28,7 @@ standalone drivers.
 
 | Library | Target | Description |
 |---------|--------|-------------|
-| Screen   | `pico_toolset_screen`  | Pluggable `DisplayDriver` abstraction + PiCoMonitor-style slot widget composition, with SSD1306/ILI9486/Pimoroni adaptors. |
+| Screen   | `pico_toolset_screen`  | Pluggable `DisplayDriver` abstraction + slot-based widget composition, with SSD1306/ILI9486/Pimoroni adaptors. |
 | Fault handler | `pico_toolset_fault_handler` | Cortex-M33 hard-fault handler that survives a watchdog reset to report PC/LR/CFSR on the *next* boot, instead of the SDK's default silent halt. No board wiring involved (core MCU + watchdog only), hence a library rather than a `components/` driver. |
 
 All code lives in namespace `pico_toolset` and targets C++20.
@@ -405,11 +405,7 @@ scanline timing), config-driven the way its own upstream already is
 (`dvi_inst`/`dvi_serialiser_cfg`, `common_dvi_pin_configs.h`'s named board
 pinouts). See `components/dvi_hdmi/README.md` for the full API and its
 `example/` for a minimal (not real-hardware-tested by this toolset --
-see that file's own header) scanline-based video example. For a real,
-real-hardware-validated consumer with HDMI digital audio, mode-aware
-scaling, and a documented scanbuf-bug workaround, see TOM6809
-(github.com/lohengrin/TOM6809)'s `PicoDviVideoOutput`/`PicoHdmiAudioOutput`
-classes.
+see that file's own header) scanline-based video example.
 
 ```cpp
 #include "dvi.h"
@@ -438,7 +434,7 @@ screen.update();
 ## Notes and gotchas
 
 - **PSRAM init can hang if it races an interrupt or the other core (real
-  hardware finding, 2026-09, PicoDoom/TOM6809).** Symptom: an intermittent
+  hardware finding, 2026-09).** Symptom: an intermittent
   freeze right at PSRAM init -- worse right after flashing, "usually" cleared
   by a reset (sometimes needing several). Root cause, straight from
   `hardware/psram.h`'s own doc comment: `psram_detect_cs_and_size()` and
@@ -457,8 +453,8 @@ screen.update();
   **`pico_toolset_usb_hid` deliberately does NOT register its core1 as a
   lockout victim** (tried, reverted): `multicore_lockout_victim_init()`
   installs an IRQ handler that silently steals every word off the raw
-  inter-core FIFO, which breaks any consumer -- this toolset's own PicoDoom/
-  TOM6809 examples included -- that also uses
+  inter-core FIFO, which breaks any consumer -- this toolset's own
+  examples included -- that also uses
   `multicore_fifo_push_blocking()`/`pop_blocking()` directly on that core
   (e.g. for a chunked display-blit handoff). Confirmed on real hardware:
   registering the lockout victim made the *display* hang a few frames in
@@ -527,8 +523,7 @@ screen.update();
 - **USB HID**: the host stack owns a whole core (default core1). For DVI/HDMI
   builds where core1 is busy, set `run_on_core1 = false` and call
   `UsbHidHost::task()` from your core0 loop. Endpoint re-arming after an
-  unplug is intentionally not retried (wedge-prevention finding from
-  TOM6809).
+  unplug is intentionally not retried (wedge-prevention finding).
 - **SD card PIO/GPIO-base sharing**: if another PIO-based component (e.g.
   `usb_hid`'s Pico-PIO-USB, or a DVI/HDMI serializer) is also active, give
   `SdCardConfig::pio` a block none of them claim. If any configured SD pin
@@ -554,9 +549,9 @@ under its own, different license is called out below.
 
 ## Credits and third-party code
 
-Every component here started from real-hardware-validated code in the
-sibling projects listed in each component's own "Source lineage" note
-(`AGENTS.md`) or header comment. The DVI/HDMI component in particular
+Every component here started from real-hardware-validated code in
+consumer projects, which each component's own "Source lineage" note
+(`AGENTS.md`) or header comment describes. The DVI/HDMI component in particular
 vendors and adapts several external projects directly, each under its own
 license (all compatible with, but distinct from, this toolset's own MIT
 license above):
@@ -574,7 +569,7 @@ license above):
   free-function shape the data-island packet encoder
   (`components/dvi_hdmi/data_packet.{h,cpp}`) follows. Its `docs/LLM_GUIDE.md`
   also documents the "half-pre-fill the audio ring at init" technique this
-  component's real-hardware consumer (TOM6809's `PicoHdmiAudioOutput`) uses.
+  component uses.
 - **[shuichitakano/pico_lib](https://github.com/shuichitakano/pico_lib)**
   (Shuichi Takano, MIT, Copyright (c) 2021) -- the CEA-861 InfoFrame/ACR/
   audio-sample packet layouts and TERC4/BCH-parity encode algorithm

@@ -35,7 +35,7 @@ bool g_initialized = false;
 // firing (stdio_usb/TinyUSB's IRQs, in every consumer of this toolset), or
 // the other core mid-instruction-fetch -- hangs or faults. Confirmed as the
 // real-hardware cause of an intermittent, "usually fixed by resetting"
-// freeze at PSRAM init on both PicoDoom and TOM6809 (2026-09, see this
+// freeze at PSRAM init on both consumer projects (2026-09, see this
 // toolset's README "Notes and gotchas"). do_init() below is the risky
 // sequence, run under whichever protection is actually available:
 // flash_safe_execute() (disables interrupts on this core AND parks the
@@ -115,7 +115,7 @@ void do_init(void* param) {
     uint32_t min_freq_for_divisor_limit = g_status.clk_sys_hz_at_test / kMaxRxdelayDivisor + 1;
     uint32_t max_freq_hz = config.max_clock_hz;
     if (max_freq_hz == 0)
-        max_freq_hz = 30'000'000; // conservative; see TOM6809's bring-up notes
+        max_freq_hz = 30'000'000; // conservative; see the bring-up notes
     if (max_freq_hz < min_freq_for_divisor_limit)
         max_freq_hz = min_freq_for_divisor_limit;
 

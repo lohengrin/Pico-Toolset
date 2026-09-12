@@ -52,7 +52,7 @@ struct Ili9486Config {
 //   3. CS is pulsed around EVERY individual command/parameter; pixel data is
 //      the one exception -- it streams as one continuous CS-low burst.
 //
-// Derived from TOM6809's validated driver + PicoDoom's DMA enhancement (MIT).
+// Derived from a validated driver + DMA enhancement (MIT).
 class Ili9486 {
 public:
     static constexpr int kWidth  = 480;

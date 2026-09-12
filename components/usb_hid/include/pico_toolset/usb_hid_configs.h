@@ -11,8 +11,7 @@ namespace pico_toolset::configs::usb_hid {
 
 // Waveshare RP2350-PiZero's PIO-USB port (GPIO28=D+/GPIO29=D-), for a build
 // where core1 is free to dedicate to the USB host stack and PIO0 is free
-// (i.e. no DVI/HDMI output active). Validated on real hardware by TOM6809
-// (github.com/lohengrin/TOM6809)'s LCD profile.
+// (i.e. no DVI/HDMI output active). Validated on real hardware, LCD profile.
 inline constexpr UsbHidConfig kWaveshareRp2350PiZeroLcd = {
     .pin_dp = 28,
     .pio_num = 0,
@@ -24,7 +23,7 @@ inline constexpr UsbHidConfig kWaveshareRp2350PiZeroLcd = {
 // DVI/HDMI video driver (so the host stack must run on core0 instead, polled
 // from the app's own loop via UsbHidHost::task()) and PIO0 is taken by that
 // same DVI driver (so USB moves to PIO2 -- PIO1 is typically the SD card's).
-// Validated on real hardware by TOM6809's HDMI profile.
+// Validated on real hardware, HDMI profile.
 inline constexpr UsbHidConfig kWaveshareRp2350PiZeroHdmi = {
     .pin_dp = 28,
     .pio_num = 2,
@@ -41,8 +40,8 @@ inline constexpr UsbHidConfig kWaveshareRp2350PiZeroHdmi = {
 // since Pico-PIO-USB's SOF-timer IRQ handler binds to the core that
 // registered it): call init() from inside your own core1 entry function,
 // then loop task() + your other work from there, mirroring the pattern
-// TOM6809/kWaveshareRp2350PiZeroHdmi already uses on core0. Validated on
-// real hardware by PicoDoom (github.com/lohengrin/PicoDoom), whose core1
+// kWaveshareRp2350PiZeroHdmi already uses on core0. Validated on
+// real hardware by a consumer whose core1
 // loop also drives its ILI9486 driver's chunked blit.
 inline constexpr UsbHidConfig kWaveshareRp2350PiZeroLcdManualCore1 = {
     .pin_dp = 28,

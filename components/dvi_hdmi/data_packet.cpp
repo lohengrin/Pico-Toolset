@@ -24,13 +24,13 @@ namespace {
 // Verbatim from the upstream port; this table is derived from the CEA-861
 // spec's BCH generator polynomial, not something to hand-tune.
 //
-// `const` + TOM6809_DATA_PACKET_RAM_DATA rather than `constexpr`: constexpr
+// `const` + PICO_TOOLSET_DATA_PACKET_RAM_DATA rather than `constexpr`: constexpr
 // would pin this in flash .rodata, and data_packet_set_audio_sample() reads
 // it up to 35 times per scanline from the core1 DMA IRQ (see data_packet.h's
 // RAM residency note -- this exact table sitting in flash was half of a
 // confirmed real-hardware picture loss).
 // clang-format off
-const uint8_t TOM6809_DATA_PACKET_RAM_DATA kBchTable[256] = {
+const uint8_t PICO_TOOLSET_DATA_PACKET_RAM_DATA kBchTable[256] = {
     0x00, 0xd9, 0xb5, 0x6c, 0x6d, 0xb4, 0xd8, 0x01,
     0xda, 0x03, 0x6f, 0xb6, 0xb7, 0x6e, 0x02, 0xdb,
     0xb3, 0x6a, 0x06, 0xdf, 0xde, 0x07, 0x6b, 0xb2,
@@ -70,14 +70,14 @@ const uint8_t TOM6809_DATA_PACKET_RAM_DATA kBchTable[256] = {
 // data_packet_set_audio_sample()/data_packet_encode()) and so are marked
 // RAM-resident for the case where the compiler chooses not to inline them --
 // see data_packet.h's RAM residency note.
-uint8_t TOM6809_DATA_PACKET_FUNC(encode_bch3)(const uint8_t *p) {
+uint8_t PICO_TOOLSET_DATA_PACKET_FUNC(encode_bch3)(const uint8_t *p) {
     uint8_t v = kBchTable[p[0]];
     v = kBchTable[p[1] ^ v];
     v = kBchTable[p[2] ^ v];
     return v;
 }
 
-uint8_t TOM6809_DATA_PACKET_FUNC(encode_bch7)(const uint8_t *p) {
+uint8_t PICO_TOOLSET_DATA_PACKET_FUNC(encode_bch7)(const uint8_t *p) {
     uint8_t v = kBchTable[p[0]];
     for (int i = 1; i < 7; ++i) {
         v = kBchTable[p[i] ^ v];
@@ -89,14 +89,14 @@ uint8_t TOM6809_DATA_PACKET_FUNC(encode_bch7)(const uint8_t *p) {
 // lookup table -- this is only ever called on up to 3 bytes per audio
 // sub-packet (24 bytes/scanline at most), nowhere near hot enough to need
 // the table the upstream C++ used for the same computation.
-uint8_t TOM6809_DATA_PACKET_FUNC(byte_parity)(uint8_t v) {
+uint8_t PICO_TOOLSET_DATA_PACKET_FUNC(byte_parity)(uint8_t v) {
     v ^= static_cast<uint8_t>(v >> 4);
     v ^= static_cast<uint8_t>(v >> 2);
     v ^= static_cast<uint8_t>(v >> 1);
     return v & 1;
 }
 
-uint8_t TOM6809_DATA_PACKET_FUNC(parity3)(uint8_t a, uint8_t b, uint8_t c) {
+uint8_t PICO_TOOLSET_DATA_PACKET_FUNC(parity3)(uint8_t a, uint8_t b, uint8_t c) {
     return static_cast<uint8_t>(byte_parity(a) ^ byte_parity(b) ^ byte_parity(c));
 }
 
@@ -106,26 +106,26 @@ uint8_t TOM6809_DATA_PACKET_FUNC(parity3)(uint8_t a, uint8_t b, uint8_t c) {
 // RAM-resident for the same reason as kBchTable above, and more urgently:
 // data_packet_encode() indexes this ~70 times per scanline, every scanline,
 // from the core1 DMA IRQ.
-const uint16_t TOM6809_DATA_PACKET_RAM_DATA kTerc4Syms[16] = {
+const uint16_t PICO_TOOLSET_DATA_PACKET_RAM_DATA kTerc4Syms[16] = {
     0b1010011100, 0b1001100011, 0b1011100100, 0b1011100010, 0b0101110001, 0b0100011110, 0b0110001110, 0b0100111100,
     0b1011001100, 0b0100111001, 0b0110011100, 0b1011000110, 0b1010001110, 0b1001110001, 0b0101100011, 0b1011000011,
 };
 
-uint32_t TOM6809_DATA_PACKET_FUNC(make_terc4_x2)(int i0, int i1) {
+uint32_t PICO_TOOLSET_DATA_PACKET_FUNC(make_terc4_x2)(int i0, int i1) {
     return static_cast<uint32_t>(kTerc4Syms[i0]) | (static_cast<uint32_t>(kTerc4Syms[i1]) << 10);
 }
-uint32_t TOM6809_DATA_PACKET_FUNC(make_terc4_x2)(int i) { return make_terc4_x2(i, i); }
+uint32_t PICO_TOOLSET_DATA_PACKET_FUNC(make_terc4_x2)(int i) { return make_terc4_x2(i, i); }
 
 // Data-island guardband symbol (lanes 1/2), fixed per spec -- two copies of
 // the 10-bit pattern 0100110011 (0x133) packed into one 20-bit word:
 // 0x133 | (0x133 << 10) = 0x4CD33.
 constexpr uint32_t kDataGuardbandSym = 0x4CD33u;
 
-void TOM6809_DATA_PACKET_FUNC(compute_header_parity)(data_packet_t *packet) {
+void PICO_TOOLSET_DATA_PACKET_FUNC(compute_header_parity)(data_packet_t *packet) {
     packet->header[3] = encode_bch3(packet->header);
 }
 
-void TOM6809_DATA_PACKET_FUNC(compute_subpacket_parity)(data_packet_t *packet, int i) {
+void PICO_TOOLSET_DATA_PACKET_FUNC(compute_subpacket_parity)(data_packet_t *packet, int i) {
     packet->subpacket[i][7] = encode_bch7(packet->subpacket[i]);
 }
 
@@ -152,7 +152,7 @@ void data_packet_compute_parity(data_packet_t *packet) {
     }
 }
 
-void TOM6809_DATA_PACKET_FUNC(data_packet_set_null)(data_packet_t *packet) { std::memset(packet, 0, sizeof(*packet)); }
+void PICO_TOOLSET_DATA_PACKET_FUNC(data_packet_set_null)(data_packet_t *packet) { std::memset(packet, 0, sizeof(*packet)); }
 
 void data_packet_set_avi_info_frame(data_packet_t *packet, scan_info_t scan, pixel_format_t pixel_format,
                                      colorimetry_t colorimetry, picture_aspect_ratio_t picture_aspect_ratio,
@@ -223,7 +223,7 @@ void data_packet_set_audio_clock_regeneration(data_packet_t *packet, int cts, in
     std::memcpy(packet->subpacket[3], sp0, 8);
 }
 
-int TOM6809_DATA_PACKET_FUNC(data_packet_set_audio_sample)(data_packet_t *packet, audio_ring_t *ring, int n,
+int PICO_TOOLSET_DATA_PACKET_FUNC(data_packet_set_audio_sample)(data_packet_t *packet, audio_ring_t *ring, int n,
                                                             int frame_ct) {
     const int layout = 0; // 2-channel layout
     const int sample_present = (1 << n) - 1;
@@ -264,7 +264,7 @@ int TOM6809_DATA_PACKET_FUNC(data_packet_set_audio_sample)(data_packet_t *packet
     return frame_ct;
 }
 
-void TOM6809_DATA_PACKET_FUNC(data_packet_encode)(data_island_stream_t *stream, const data_packet_t *packet,
+void PICO_TOOLSET_DATA_PACKET_FUNC(data_packet_encode)(data_island_stream_t *stream, const data_packet_t *packet,
                                                    bool vsync, bool hsync) {
     const int hv = (vsync ? 2 : 0) | (hsync ? 1 : 0);
     const int hv1 = hv | 8;

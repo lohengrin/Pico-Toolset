@@ -44,7 +44,7 @@ struct Xpt2046Config {
 // Returns raw, uncalibrated 12-bit ADC readings -- see xpt2046_calibration.h
 // for mapping them into pixel space.
 //
-// Derived from TOM6809's real-hardware-validated driver (MIT).
+// Derived from a real-hardware-validated driver (MIT).
 class Xpt2046Touch {
 public:
     struct RawSample {

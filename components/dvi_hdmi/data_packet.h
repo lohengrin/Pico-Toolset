@@ -4,7 +4,7 @@
  * packets that ride in a scanline's horizontal blanking interval, TERC4-
  * encoded (with BCH parity) the way an HDMI receiver expects.
  *
- * New file, not a vendored one -- part of TOM6809's HDMI-audio addition
+ * New file, not a vendored one -- this project's HDMI-audio addition
  * (see README.md and CMakeLists.txt's "PATCH
  * (hdmi-audio):" notes). The TERC4/BCH-parity encode algorithm and the
  * InfoFrame/ACR/audio-sample packet layouts are ported from Shuichi
@@ -18,8 +18,8 @@
  * Plain C (see audio_ring.h's identical rationale) -- dvi.c embeds
  * data_packet_t members directly in struct dvi_inst and is compiled as C.
  */
-#ifndef TOM6809_DATA_PACKET_H
-#define TOM6809_DATA_PACKET_H
+#ifndef PICO_TOOLSET_DATA_PACKET_H
+#define PICO_TOOLSET_DATA_PACKET_H
 
 #include "audio_ring.h"
 #include <stdbool.h>
@@ -30,29 +30,29 @@
 // (Pico-SDK-only), which would make this header (and anything that includes
 // it, including this project's native ctest build) un-host-buildable. Same
 // approach frank_data_packet.h already takes for the same reason.
-#define TOM6809_TMDS_CHANNELS 3
-#define TOM6809_W_GUARDBAND 2
-#define TOM6809_W_PREAMBLE 8
-#define TOM6809_W_DATA_PACKET 32
+#define PICO_TOOLSET_TMDS_CHANNELS 3
+#define PICO_TOOLSET_W_GUARDBAND 2
+#define PICO_TOOLSET_W_PREAMBLE 8
+#define PICO_TOOLSET_W_DATA_PACKET 32
 #ifndef DVI_SYMBOLS_PER_WORD
 #define DVI_SYMBOLS_PER_WORD 2
 #endif
-#define TOM6809_W_DATA_ISLAND (TOM6809_W_GUARDBAND * 2 + TOM6809_W_DATA_PACKET)
-#define N_DATA_ISLAND_WORDS (TOM6809_W_DATA_ISLAND / DVI_SYMBOLS_PER_WORD)
+#define PICO_TOOLSET_W_DATA_ISLAND (PICO_TOOLSET_W_GUARDBAND * 2 + PICO_TOOLSET_W_DATA_PACKET)
+#define N_DATA_ISLAND_WORDS (PICO_TOOLSET_W_DATA_ISLAND / DVI_SYMBOLS_PER_WORD)
 
 #if defined(PICO_ON_DEVICE)
 #include "pico.h"
-#define TOM6809_DATA_PACKET_FUNC(name) __not_in_flash_func(name)
+#define PICO_TOOLSET_DATA_PACKET_FUNC(name) __not_in_flash_func(name)
 // Lookup tables read from the per-scanline core1 DMA IRQ must live in RAM,
 // not flash .rodata -- see this header's "RAM residency" note below.
-#define TOM6809_DATA_PACKET_RAM_DATA __not_in_flash("tom6809_hdmi_audio")
+#define PICO_TOOLSET_DATA_PACKET_RAM_DATA __not_in_flash("pico_toolset_hdmi_audio")
 #else
-#define TOM6809_DATA_PACKET_FUNC(name) name
-#define TOM6809_DATA_PACKET_RAM_DATA
+#define PICO_TOOLSET_DATA_PACKET_FUNC(name) name
+#define PICO_TOOLSET_DATA_PACKET_RAM_DATA
 #endif
 
 /*
- * RAM residency (why TOM6809_DATA_PACKET_FUNC/_RAM_DATA are not optional)
+ * RAM residency (why PICO_TOOLSET_DATA_PACKET_FUNC/_RAM_DATA are not optional)
  * ----------------------------------------------------------------------
  * Everything reachable from dvi_dma_irq_handler() (dvi.c) runs once per
  * scanline on core1 and must finish inside the horizontal active region --
@@ -124,7 +124,7 @@ typedef struct data_packet {
 } data_packet_t;
 
 typedef struct data_island_stream {
-    uint32_t data[TOM6809_TMDS_CHANNELS][N_DATA_ISLAND_WORDS];
+    uint32_t data[PICO_TOOLSET_TMDS_CHANNELS][N_DATA_ISLAND_WORDS];
 } data_island_stream_t;
 
 void data_packet_compute_parity(data_packet_t *packet);
@@ -132,7 +132,7 @@ void data_packet_compute_parity(data_packet_t *packet);
 // RAM-resident: called every scanline from the core1 DMA IRQ whenever
 // dvi_update_data_packet_() declines to supply a packet (see the RAM
 // residency note above).
-void TOM6809_DATA_PACKET_FUNC(data_packet_set_null)(data_packet_t *packet);
+void PICO_TOOLSET_DATA_PACKET_FUNC(data_packet_set_null)(data_packet_t *packet);
 
 // Idle data-island content: what dvi_timing.c's *_with_audio() scanline
 // builders point the DMA at when they first build each list, before
@@ -171,7 +171,7 @@ void data_packet_set_audio_clock_regeneration(data_packet_t *packet, int cts, in
 // it actually consumed) and returns the updated running sample-frame count
 // (0-191, CEA-861's "B" bit / frame-count-of-192 convention for the IEC
 // 60958 channel-status block start marker) for the next call's `frame_ct`.
-int TOM6809_DATA_PACKET_FUNC(data_packet_set_audio_sample)(data_packet_t *packet, audio_ring_t *ring, int n,
+int PICO_TOOLSET_DATA_PACKET_FUNC(data_packet_set_audio_sample)(data_packet_t *packet, audio_ring_t *ring, int n,
                                                             int frame_ct);
 
 // TERC4-encodes `packet` (with BCH parity) into `stream`, ready for the DMA
@@ -180,11 +180,11 @@ int TOM6809_DATA_PACKET_FUNC(data_packet_set_audio_sample)(data_packet_t *packet
 // format. `vsync`/`hsync` are the *polarity-corrected* current sync state
 // (matching dvi_timing_state's v_state/the timing's own sync polarity),
 // carried in every data-island guardband/header symbol per the HDMI spec.
-void TOM6809_DATA_PACKET_FUNC(data_packet_encode)(data_island_stream_t *stream, const data_packet_t *packet,
+void PICO_TOOLSET_DATA_PACKET_FUNC(data_packet_encode)(data_island_stream_t *stream, const data_packet_t *packet,
                                                    bool vsync, bool hsync);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* TOM6809_DATA_PACKET_H */
+#endif /* PICO_TOOLSET_DATA_PACKET_H */

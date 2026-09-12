@@ -9,9 +9,7 @@ fixed HSTX pad range.
 This is the low-level signal-generation layer (PIO serialiser, TMDS encode,
 scanline timing, the data-island packet/audio-ring machinery) -- pixel
 content comes from whatever the consumer's own `dvi_inst` scanout callback
-produces. TOM6809 (github.com/lohengrin/TOM6809)'s `PicoDviVideoOutput`/
-`PicoHdmiAudioOutput` classes are one real, real-hardware-validated example
-of that consumer layer, for reference.
+produces.
 
 ## Provenance
 
@@ -32,10 +30,10 @@ License: BSD 3-Clause (Copyright (c) 2021, Luke Wren) -- see `LICENSE` in
 this directory. Applies to every vendored file (all but `audio_ring.*` and
 `data_packet.*`, see below).
 
-Originally extracted into TOM6809 (github.com/lohengrin/TOM6809) on
-2026-09-06, moved here (its first consumer's own consolidated toolset) on
-2026-09-12 once TOM6809's HDMI/audio work had stabilized -- see the git
-history of both repos for the intermediate real-hardware debugging that
+Originally extracted into this project's own source lineage on
+2026-09-06, moved here on
+2026-09-12 once the HDMI/audio work had stabilized -- see the git
+history for the intermediate real-hardware debugging that
 happened in between.
 
 ## HDMI digital audio (`PICO_TOOLSET_DVI_HDMI_AUDIO`)
@@ -49,7 +47,7 @@ byte-identical output to the vendored (pure-DVI, video-only) originals --
 that's the regression firewall for consumers who only want video.
 
 `audio_ring.{h,cpp}` and `data_packet.{h,cpp}` are new files in this
-directory, not vendored from PicoDVI -- ported for TOM6809's HDMI-audio
+directory, not vendored from PicoDVI -- ported for this project's HDMI-audio
 addition from two further third-party sources, each credited in full in the
 file's own header comment:
 
@@ -75,8 +73,7 @@ file's own header comment:
 
 Half-pre-filling the audio ring at init (rather than starting empty) follows
 rh1tech/frank-hdmi-audio's `docs/LLM_GUIDE.md`, "Half-pre-fill the audio ring
-at init" -- see `PicoHdmiAudioOutput`'s own doc comment in TOM6809 for the
-consumer-side half of that.
+at init" -- `dvi_audio_init()` in dvi.c does the consumer side of that.
 
 ## IRQ headroom stats (`PICO_TOOLSET_DVI_HDMI_IRQ_STATS`)
 

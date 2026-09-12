@@ -6,11 +6,10 @@
 
 namespace pico_toolset::configs::i2s_audio {
 
-// TOM6809's custom "Pico DV" carrier board's onboard PCM5100A-style I2S DAC
+// The "Pico DV" carrier board's onboard PCM5100A-style I2S DAC
 // (DATA=GPIO26, BCK=GPIO27, LRCK=GPIO28). DMA channel 0 and PIO SM 0 are
 // free on this board's own component mix (no other driver claims a fixed
-// DMA channel by hardcoded number). Validated on real hardware by TOM6809
-// (github.com/lohengrin/TOM6809).
+// DMA channel by hardcoded number). Validated on real hardware.
 inline constexpr I2sAudioConfig kPicoDvCarrier = {
     .sample_rate_hz = 44100,
     .channel_count = 1,

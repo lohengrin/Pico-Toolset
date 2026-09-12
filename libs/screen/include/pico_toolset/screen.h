@@ -8,7 +8,7 @@
 
 namespace pico_toolset {
 
-// Composes widgets onto a DisplayDriver using PiCoMonitor-style slots.
+// Composes widgets onto a DisplayDriver using slot-based composition.
 //
 // Each slot owns an (optional) widget: UL/UR/BL/BR place a widget in a
 // quadrant of the display; FS owns a full-screen widget. Render order is

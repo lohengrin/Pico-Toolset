@@ -5,7 +5,7 @@
 #      e.g. -DPICO_PIO_USB_DIR=/path/to/Pico-PIO-USB
 #   2. Let FetchContent clone it (needs a git checkout on the build machine).
 #
-# Design (mirrors TOM6809's proven RP2350 build):
+# Design (mirrors the toolset's proven RP2350 build):
 #   * Pico-PIO-USB's current master provides ONE INTERFACE library target,
 #     `pico_pio_usb` (PIO programs + host/device/CRC sources). There is no
 #     `tinyusb_host` inside it -- that lives in the Pico SDK's own vendored

@@ -31,7 +31,7 @@ struct UsbHidConfig {
     uint8_t  max_gamepads = 4;        // Gamepad slots
     // Absolute mouse cursor is clamped to [0, mouse_max_x] x [0, mouse_max_y]
     // -- set these to the consuming app's own canonical cursor space (e.g.
-    // its display resolution minus 1). Defaults match TOM6809's 640x480
+    // its display resolution minus 1). Defaults match a 640x480
     // canonical space.
     int      mouse_max_x = 639;
     int      mouse_max_y = 479;

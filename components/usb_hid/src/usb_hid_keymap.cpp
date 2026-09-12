@@ -149,7 +149,7 @@ uint8_t hid_usage_to_ascii(uint8_t usage_id, uint8_t modifier_mask, uint8_t keym
 uint8_t hid_usage_to_ascii(uint8_t usage_id, uint8_t modifier_mask, const Keymap& keymap) {
     // Numeric keypad: same character on every layout and regardless of Shift
     // (NumLock-off navigation meaning is not distinguished -- no way to read
-    // the NumLock output-report state back, same convention as TOM6809).
+    // the NumLock output-report state back, same convention as the host).
     // 0x54..0x63: / * - + Enter 1 2 3 4 5 6 7 8 9 0 .
     if (usage_id >= 0x54 && usage_id <= 0x63) {
         static constexpr char kKeypad[16] = {'/', '*', '-', '+', '\n',

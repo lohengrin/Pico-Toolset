@@ -58,7 +58,7 @@ component ships an `example/` program that doubles as a smoke test.
   the lockout IRQ handler steals every word off the raw inter-core FIFO,
   which conflicts with any core1 loop that also uses
   `multicore_fifo_push_blocking()`/`pop_blocking()` directly (both
-  PicoDoom's and TOM6809's chunked display-blit handoff do). The safe,
+  consumer projects' chunked display-blit handoff do). The safe,
   tested pattern is calling `psram_init()`/flash operations *before*
   launching any core1 workload; only have a core1 loop opt into
   `flash_safe_execute_core_init()` itself if it's confirmed not to use the
@@ -123,35 +123,35 @@ manual smoke tests of the examples on hardware.
 ## Source lineage (when porting code in)
 
 - SSD1306: David Schramm's rpi-pico-ssd1306 (MIT).
-- ILI9486: TOM6809 `Ili9486Display` + PicoDoom DMA (MIT).
-- XPT2046: TOM6809 `Xpt2046Touch`/`TouchCalibration`, real-hardware-validated
+- ILI9486: a validated SPI driver + DMA enhancement (MIT).
+- XPT2046: touch driver + linear calibration, real-hardware-validated
   on the Waveshare 3.5in RPi LCD (A).
-- PSRAM: TOM6809 `Psram`/`PsramMemoryResource`. `flash_safe_execute()`-based
+- PSRAM: external-PSRAM driver. `flash_safe_execute()`-based
   protection against `hardware_psram`'s documented interrupt/other-core
   unsafety added after a real, hardware-observed intermittent freeze at
-  PSRAM init on both PicoDoom and TOM6809 -- see the README's "Notes and
+  PSRAM init on both consumer projects -- see the README's "Notes and
   gotchas". A matching automatic `flash_safe_execute_core_init()` call in
   `usb_hid`'s `host_stack_setup()` was tried alongside it but reverted: it
   broke the display on real hardware by conflicting with the raw
   inter-core FIFO both projects' core1 loops use for their own blit handoff.
-- I2S audio: TOM6809 `PicoI2sAudioOutput` (PCM5100A DAC, pico-extras'
+- I2S audio: I2S DAC output (PCM5100A DAC, pico-extras'
   `pico_audio_i2s`).
-- SD card: TOM6809 `PicoSdCard` (unifies its two board-specific variants,
-  `PicoSdCard_PicoDv`/`PicoSdCard_Waveshare`, into one config-driven driver).
-- Reset buttons: TOM6809 `PicoResetButtons` (decomposed into the generic
+- SD card: unifies two board-specific SD-in-SPI variants
+  (Pico DV / Waveshare flavors, over native SDIO wiring)
+  into one config-driven driver.
+- Reset buttons: decomposed into the generic
   `DebouncedButtons` + `watchdog_reboot_with_tag()`/
   `consume_pending_watchdog_tag()` pair -- the Thomson-model-tag mapping
-  stays in TOM6809).
-- USB HID: TOM6809 `PicoUsbHidInput` (+ pico-infonesPlus descriptor parsers).
+  stays with the consumer.
+- USB HID: `UsbHidHost` (HID report-descriptor parsing ported from the
+  upstream consumer's own parsers).
   Mouse `middle_button`, the raw-delta `consume_mouse_delta()` (for
   mouselook/aim, alongside the existing clamped-cursor `mouse_state()`), and
   the `kWaveshareRp2350PiZeroLcdManualCore1` config preset (a consumer
-  launching and owning core1 itself) ported from PicoDoom's
-  `PicoUsbMouse`/`PicoUsbKeyboard`, whose core1 loop interleaves USB polling
-  with its own ILI9486 chunked-blit stepping.
+  launching and owning core1 itself), whose core1 loop interleaves USB
+  polling with its own ILI9486 chunked-blit stepping.
 - DVI/HDMI: vendored from Waveshare's RP2350-PiZero C example repo (itself
-  derived from Wren6991/PicoDVI, BSD-3-Clause), extracted into TOM6809 first
-  then moved here once its HDMI/audio work stabilized. HDMI digital audio
+  derived from Wren6991/PicoDVI, BSD-3-Clause). HDMI digital audio
   (`audio_ring.*`/`data_packet.*`, new files not vendored) ports rh1tech/
   frank-hdmi-audio's ring design (BSD-3-Clause) and Shuichi Takano's
   `pico_lib` dvi::DataPacket encode algorithm (MIT) -- see
@@ -159,17 +159,15 @@ manual smoke tests of the examples on hardware.
   top-level README's "Credits and third-party code" section for the
   user-facing summary.
   DualSense parsing and the DMA-channel-claim fix in `host_stack_setup()`
-  ported from TOM6809's own copy after real-hardware testing found the
-  toolset's version missing both.
-- Fault handler: PicoDoom `FaultHandler.cpp` -- a Cortex-M33 hard-fault
+  added after real-hardware testing found the toolset's version missing both.
+- Fault handler: a Cortex-M33 hard-fault
   handler that stashes PC/LR/CFSR in watchdog scratch registers and reboots,
   reporting on the next boot instead of the SDK's silent default. Moved off
   its original scratch[0..3] onto scratch[2]/[3]/[5]/[6] to not collide with
   reset_buttons' scratch[0]/[1] -- see the scratch-register invariant above.
-- Screen: PiCoMonitor.new `Screen`/`Widget` (Pimoroni PicoGraphics default).
+- Screen: `Screen`/`Widget` (Pimoroni PicoGraphics default).
 - `boards/waveshare_rp2350_pizero.h`: Raspberry Pi (Trading) Ltd.'s pico-sdk
-  board header for this board (BSD-3-Clause), as vendored/extended
-  identically by both TOM6809 and PicoDoom -- moved here once instead of
+  board header for this board (BSD-3-Clause), vendored here once instead of
   staying duplicated per-project.
 
 Credit upstream in headers when adapting code.

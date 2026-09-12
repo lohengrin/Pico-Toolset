@@ -351,16 +351,16 @@ void dvi_setup_scanline_for_vblank_with_audio(const struct dvi_timing *t, const 
 	dma_cb_t *synclist = dvi_lane_from_list(l, TMDS_SYNC_LANE);
 	_set_data_cb(&synclist[0], &dma_cfg[TMDS_SYNC_LANE], sym_hsync_off, t->h_front_porch / DVI_SYMBOLS_PER_WORD, 2, false);
 	_set_data_cb(&synclist[1], &dma_cfg[TMDS_SYNC_LANE], data_packet0, N_DATA_ISLAND_WORDS, 0, false);
-	_set_data_cb(&synclist[2], &dma_cfg[TMDS_SYNC_LANE], sym_hsync_on, (t->h_sync_width - TOM6809_W_DATA_ISLAND) / DVI_SYMBOLS_PER_WORD, 2, false);
+	_set_data_cb(&synclist[2], &dma_cfg[TMDS_SYNC_LANE], sym_hsync_on, (t->h_sync_width - PICO_TOOLSET_W_DATA_ISLAND) / DVI_SYMBOLS_PER_WORD, 2, false);
 	_set_data_cb(&synclist[3], &dma_cfg[TMDS_SYNC_LANE], sym_hsync_off, t->h_back_porch / DVI_SYMBOLS_PER_WORD, 2, true);
 	_set_data_cb(&synclist[4], &dma_cfg[TMDS_SYNC_LANE], sym_hsync_off, t->h_active_pixels / DVI_SYMBOLS_PER_WORD, 2, false);
 
 	for (int i = 1; i < N_TMDS_LANES; ++i) {
 		dma_cb_t *cblist = dvi_lane_from_list(l, i);
-		_set_data_cb(&cblist[0], &dma_cfg[i], sym_no_sync, (t->h_front_porch - TOM6809_W_PREAMBLE) / DVI_SYMBOLS_PER_WORD, 2, false);
-		_set_data_cb(&cblist[1], &dma_cfg[i], sym_preamble_to_data, TOM6809_W_PREAMBLE / DVI_SYMBOLS_PER_WORD, 2, false);
+		_set_data_cb(&cblist[0], &dma_cfg[i], sym_no_sync, (t->h_front_porch - PICO_TOOLSET_W_PREAMBLE) / DVI_SYMBOLS_PER_WORD, 2, false);
+		_set_data_cb(&cblist[1], &dma_cfg[i], sym_preamble_to_data, PICO_TOOLSET_W_PREAMBLE / DVI_SYMBOLS_PER_WORD, 2, false);
 		_set_data_cb(&cblist[2], &dma_cfg[i], data_packet_get_default_island_12(), N_DATA_ISLAND_WORDS, 0, false);
-		_set_data_cb(&cblist[3], &dma_cfg[i], sym_no_sync, (t->h_sync_width + t->h_back_porch - TOM6809_W_DATA_ISLAND) / DVI_SYMBOLS_PER_WORD, 2, false);
+		_set_data_cb(&cblist[3], &dma_cfg[i], sym_no_sync, (t->h_sync_width + t->h_back_porch - PICO_TOOLSET_W_DATA_ISLAND) / DVI_SYMBOLS_PER_WORD, 2, false);
 		_set_data_cb(&cblist[4], &dma_cfg[i], sym_no_sync, t->h_active_pixels / DVI_SYMBOLS_PER_WORD, 2, false);
 	}
 }
@@ -446,18 +446,18 @@ void dvi_setup_scanline_for_active_with_audio(const struct dvi_timing *t, const 
 		if (i == TMDS_SYNC_LANE) {
 			_set_data_cb(&cblist[0], &dma_cfg[i], sym_hsync_off, t->h_front_porch / DVI_SYMBOLS_PER_WORD, 2, false);
 			_set_data_cb(&cblist[1], &dma_cfg[i], data_packet0, N_DATA_ISLAND_WORDS, 0, false);
-			_set_data_cb(&cblist[2], &dma_cfg[i], sym_hsync_on, (t->h_sync_width - TOM6809_W_DATA_ISLAND) / DVI_SYMBOLS_PER_WORD, 2, false);
-			_set_data_cb(&cblist[3], &dma_cfg[i], sym_hsync_off, (t->h_back_porch - TOM6809_W_GUARDBAND) / DVI_SYMBOLS_PER_WORD, 2, false);
-			_set_data_cb(&cblist[4], &dma_cfg[i], &video_gaurdband_syms[0], TOM6809_W_GUARDBAND / DVI_SYMBOLS_PER_WORD, 2, true);
+			_set_data_cb(&cblist[2], &dma_cfg[i], sym_hsync_on, (t->h_sync_width - PICO_TOOLSET_W_DATA_ISLAND) / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[3], &dma_cfg[i], sym_hsync_off, (t->h_back_porch - PICO_TOOLSET_W_GUARDBAND) / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[4], &dma_cfg[i], &video_gaurdband_syms[0], PICO_TOOLSET_W_GUARDBAND / DVI_SYMBOLS_PER_WORD, 2, true);
 			active_block = 5;
 		} else {
-			_set_data_cb(&cblist[0], &dma_cfg[i], sym_no_sync, (t->h_front_porch - TOM6809_W_PREAMBLE) / DVI_SYMBOLS_PER_WORD, 2, false);
-			_set_data_cb(&cblist[1], &dma_cfg[i], sym_preamble_to_data, TOM6809_W_PREAMBLE / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[0], &dma_cfg[i], sym_no_sync, (t->h_front_porch - PICO_TOOLSET_W_PREAMBLE) / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[1], &dma_cfg[i], sym_preamble_to_data, PICO_TOOLSET_W_PREAMBLE / DVI_SYMBOLS_PER_WORD, 2, false);
 			_set_data_cb(&cblist[2], &dma_cfg[i], data_packet_get_default_island_12(), N_DATA_ISLAND_WORDS, 0, false);
 			_set_data_cb(&cblist[3], &dma_cfg[i], sym_no_sync,
-				(t->h_sync_width + t->h_back_porch - TOM6809_W_DATA_ISLAND - TOM6809_W_PREAMBLE - TOM6809_W_GUARDBAND) / DVI_SYMBOLS_PER_WORD, 2, false);
-			_set_data_cb(&cblist[4], &dma_cfg[i], i == 1 ? sym_preamble_to_video1 : sym_preamble_to_video2, TOM6809_W_PREAMBLE / DVI_SYMBOLS_PER_WORD, 2, false);
-			_set_data_cb(&cblist[5], &dma_cfg[i], &video_gaurdband_syms[i], TOM6809_W_GUARDBAND / DVI_SYMBOLS_PER_WORD, 2, false);
+				(t->h_sync_width + t->h_back_porch - PICO_TOOLSET_W_DATA_ISLAND - PICO_TOOLSET_W_PREAMBLE - PICO_TOOLSET_W_GUARDBAND) / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[4], &dma_cfg[i], i == 1 ? sym_preamble_to_video1 : sym_preamble_to_video2, PICO_TOOLSET_W_PREAMBLE / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[5], &dma_cfg[i], &video_gaurdband_syms[i], PICO_TOOLSET_W_GUARDBAND / DVI_SYMBOLS_PER_WORD, 2, false);
 			active_block = 6;
 		}
 

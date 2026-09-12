@@ -18,7 +18,7 @@ namespace {
 
 constexpr uint8_t kTuhRhport = 1; // see tusb_config.h
 
-// --- HID report-descriptor classification (see TOM6809) ---
+// --- HID report-descriptor classification ---
 // Minimal structurally-correct HID item walk: prefix bits7-4 = tag, bits3-2 =
 // type (0 Main / 1 Global / 2 Local / 3 res), bits1-0 = size code (3 = 4
 // bytes). Returns true only when a top-level Collection(Application) carries
@@ -79,7 +79,7 @@ inline void set_bit(uint8_t* bits, const uint8_t* usages, uint8_t n) {
 
 // Sony's DualSense (PS5 controller) is a genuine USB HID gamepad, but its
 // report descriptor doesn't reliably pass looks_like_joystick_report_descriptor()
-// on real hardware (TOM6809 finding) -- detected by VID/PID instead. Its
+// on real hardware -- detected by VID/PID instead. Its
 // report layout is nothing like the generic byte0=X/byte1=Y/byte2-bit0=fire
 // fallback: reports are report-ID-prefixed, the D-pad is a 4-bit hat switch,
 // and face buttons sit in specific bit positions -- cross-checked against
@@ -194,7 +194,7 @@ bool xinput_xfer_cb(uint8_t dev_addr, uint8_t ep_addr, xfer_result_t result, uin
         if (auto* self = UsbHidHost::instance())
             self->on_xinput_report(dev_addr, dev->report_buf, static_cast<uint16_t>(xferred_bytes));
         // Re-arm only on success -- re-arming on a stall/unplug wedges the
-        // host stack (TOM6809 real-hardware finding).
+        // host stack (real-hardware finding).
         usbh_edpt_xfer(dev_addr, dev->ep_in, dev->report_buf, kXInputReportLen);
     }
     return true;
@@ -274,9 +274,9 @@ UsbHidHost* UsbHidHost::s_instance = nullptr;
 
 extern "C" void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report,
                                  uint16_t desc_len) {
-    // Classification ported to exactly match TOM6809's own original
-    // PicoUsbHidInput.cpp (the proven, real-hardware-validated driver this
-    // component replaced) after two real-hardware regressions here:
+    // Classification ported to exactly match the proven,
+    // real-hardware-validated driver this
+    // component replaced after two real-hardware regressions here:
     //
     // 1. tuh_hid_get_protocol() returns the negotiated BOOT(0)/REPORT(1)
     //    protocol *mode*, not the interface's declared type --
@@ -295,7 +295,7 @@ extern "C" void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t con
 
     // DualSense identified by VID/PID first, independent of the descriptor
     // heuristic below: its descriptor doesn't reliably trip
-    // looks_like_joystick_report_descriptor() (TOM6809 real-hardware
+    // looks_like_joystick_report_descriptor() (real-hardware
     // finding), even though it's a known, specific device identifiable
     // another way. No false-positive risk: only two exact (vid,pid) pairs
     // match.
@@ -368,7 +368,7 @@ bool UsbHidHost::init(const UsbHidConfig& config) {
 
     if (m_config.run_on_core1) {
         multicore_reset_core1();
-        static uint32_t core1_stack[4096]; // 16 KB, per TOM6809's stack guidance
+        static uint32_t core1_stack[4096]; // 16 KB stack
         multicore_launch_core1_with_stack(core1_entry, core1_stack, sizeof(core1_stack));
     } else {
         // Shares core0 with the caller's own loop (e.g. HDMI builds, where
@@ -376,7 +376,7 @@ bool UsbHidHost::init(const UsbHidConfig& config) {
         // only does the one-time tuh_init(), it must NOT also run the
         // tuh_task() polling loop here, or init() would never return. The
         // caller is required to call task() every iteration of its own loop
-        // instead (see this class's task()/PicoUsbHidInput::task()) --
+        // instead (see this class's task()) --
         // confirmed on real hardware: without this split, init() blocking
         // forever here silently wedges boot right after it's called, with
         // no crash and nothing further ever printed (the exact "frozen after
@@ -402,11 +402,11 @@ void UsbHidHost::host_stack_setup() {
     // drains and inspects EVERY word arriving on the raw inter-core FIFO,
     // silently discarding anything that isn't its own lockout handshake
     // token. Every consumer core1 loop this toolset actually runs alongside
-    // (PicoDoom's, TOM6809's -- both use core1 for this host stack AND a
+    // uses core1 for this host stack AND a
     // chunked display-blit handoff via plain multicore_fifo_push_blocking()/
     // pop_blocking()) ALSO uses that same raw FIFO for its own purposes;
     // registering as a lockout victim silently steals every blit-index
-    // handoff before the app's own i_video_core1_step()-style poll ever
+    // handoff before the app's own core1 poll ever
     // sees it, freezing the display after a couple of frames (confirmed on
     // real hardware: title screen never appears, then a hard hang once the
     // ping-ponged buffer wraps back to a slot that's now never freed). See
@@ -423,7 +423,7 @@ void UsbHidHost::host_stack_setup() {
     // index (0, see pio_usb_configuration.h's PIO_USB_DMA_TX_DEFAULT), and
     // pio_usb.c's pio_usb_bus_init() claims it via dma_claim_mask(1<<tx_ch)
     // -- panics ("DMA channel N is already claimed") if another driver
-    // already claimed it before this runs (TOM6809 real-hardware finding:
+    // already claimed it before this runs (real-hardware finding:
     // hit this against both a DVI/HDMI video driver's own DMA channels and
     // an LCD driver's DMA-backed pixel writes, depending on which else was
     // active). dma_claim_unused_channel(true) alone still panics identically
@@ -645,7 +645,7 @@ void UsbHidHost::on_mouse_report(const uint8_t* report, uint16_t len) {
     // (bit0=left, bit1=right), byte1=dx, byte2=dy (signed 8-bit) -- with NO
     // report-ID prefix (boot protocol reports are never numbered). Reports
     // may be longer than 3 bytes (padding to endpoint size, a wheel byte);
-    // the extra bytes are ignored. Ported from TOM6809's own original driver
+    // the extra bytes are ignored. Ported from the original driver
     // after a real-hardware regression here: this component previously read
     // dx/dy from bytes 1-2 but buttons from byte 3 (gated behind len>=5),
     // which never matches a real boot-protocol mouse -- left-click never
@@ -761,7 +761,7 @@ void UsbHidHost::on_xinput_report(uint8_t dev_addr, const uint8_t* report, uint1
         if (b1 & 0x80) s.buttons |= kBtY;
 
         // Real-hardware regression fix, cross-checked against Linux's xpad
-        // driver and TOM6809's own original XInput parser: this component
+        // driver and the original XInput parser: this component
         // had the trigger and stick byte ranges swapped/misaligned. The
         // actual wired Xbox 360 layout is byte4=LT, byte5=RT (single bytes,
         // 0-255), bytes6-7=left stick X (int16 LE), bytes8-9=left stick Y,
@@ -791,7 +791,7 @@ void UsbHidHost::on_xinput_report(uint8_t dev_addr, const uint8_t* report, uint1
         int16_t rx16 = static_cast<int16_t>(report[10] | (report[11] << 8));
         int16_t ry16 = static_cast<int16_t>(report[12] | (report[13] << 8));
         // XInput's raw Y is positive-up; this struct's shared dead-zone
-        // convention (see PicoUsbHidInput::get_joystick_state()) treats
+        // convention (see UsbHidHost::gamepad_state()) treats
         // higher values as "down", so the Y axes are inverted here to match.
         s.lx = scale_axis(lx16, false);
         s.ly = scale_axis(ly16, true);

@@ -90,7 +90,7 @@ extern "C" {
 // Hub support ON by default: the common real-world topology for a PIO-USB
 // host is a keyboard+mouse combo dongle or a physical hub, both of which
 // enumerate as a hub with devices behind it -- with this off, nothing behind
-// a hub is ever seen at all (TOM6809 real-hardware finding: this was the
+// a hub is ever seen at all (real-hardware finding: this was the
 // root cause of a keyboard+mouse combo failing completely, not a narrow
 // single-device edge case).
 #ifndef CFG_TUH_HUB

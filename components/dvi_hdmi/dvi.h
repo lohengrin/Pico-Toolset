@@ -104,7 +104,7 @@ struct dvi_inst {
 	// time that IRQ fires. `volatile` and read cross-core with no locking
 	// from dvi_irq_us_accum() below -- a plain aligned 32-bit load/store
 	// never tears on Cortex-M33, and this is a display-only counter (same
-	// tolerance PicoDviVideoOutput's own g_total_refresh_screen_us already
+	// tolerance the IRQ-stats tool itself already
 	// relies on). Wraps every ~71 minutes (2^32 us); callers must diff two
 	// readings with unsigned subtraction, which stays correct across the
 	// wrap.
@@ -141,8 +141,8 @@ void dvi_framebuf_main_16bpp(struct dvi_inst *inst);
 // (give it ring storage) then dvi_set_audio_freq() (declares the rate,
 // writes the ACR/InfoFrame contents). Both are plain scalar/ring writes,
 // safe to call from whichever core owns the emulation loop, at any time
-// after dvi_init(). See PicoHdmiAudioOutput's own doc comment for this
-// project's actual call site.
+// after dvi_init(). See dvi_audio_init()'s caller for this project's
+// actual use.
 
 // Resets the audio sub-state to "no audio" and repoints every list's
 // data-island DMA slot(s) at the shared next_data_stream buffer -- called

@@ -4,11 +4,7 @@
 // real hardware -- it's a minimal illustration of dvi.h's own documented
 // per-scanline "scanbuf" worker API (dvi_scanbuf_main_16bpp(), see dvi.h),
 // written directly from that header and dvi.c's implementation of it, not
-// extracted from a working project. For a real-hardware-validated consumer
-// of this same library (a more advanced per-frame scanline encoder with its
-// own documented scanbuf-bug workaround, HDMI digital audio, and mode-aware
-// scaling), see TOM6809 (github.com/lohengrin/TOM6809)'s
-// PicoDviVideoOutput/PicoHdmiAudioOutput classes.
+// extracted from a working project.
 //
 // The pin config below (pico_sock_cfg, common_dvi_pin_configs.h) is the
 // Waveshare RP2350-PiZero's onboard TMDS connector -- adapt it (or pick a
@@ -29,7 +25,8 @@ dvi_inst g_dvi;
 constexpr int kWidth = 640;
 // A handful of scanline buffers, recycled forever -- avoids needing a full
 // 640x480x16bpp framebuffer (600KB, more than an RP2040/RP2350's on-chip
-// SRAM), the same reason TOM6809's own consumer streams from PSRAM instead
+// SRAM), the same reason real-hardware consumers of this library stream
+// from PSRAM instead
 // of holding a framebuffer of that size on-chip. dvi_scanbuf_main_16bpp()
 // doesn't guarantee which physical scanline consumes which buffer, so every
 // buffer here holds an IDENTICAL copy of the same vertical-bar pattern --
@@ -71,8 +68,7 @@ int main() {
     g_dvi.ser_cfg = pico_sock_cfg; // adapt for your own board -- see common_dvi_pin_configs.h
     // Only needed if your board's TMDS pins are >= 32 (RP2350B's PIO blocks
     // see one 32-pin window at a time, 0-31 or 16-47) -- see
-    // PicoDviVideoOutput's own doc comment in TOM6809 for the real-hardware
-    // finding behind this call. Omit it if every pin in your ser_cfg is < 32.
+    // the real-hardware finding behind this call. Omit it if every pin in your ser_cfg is < 32.
     pio_set_gpio_base(g_dvi.ser_cfg.pio, 16);
     dvi_init(&g_dvi, next_striped_spin_lock_num(), next_striped_spin_lock_num());
 

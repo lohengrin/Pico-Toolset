@@ -78,7 +78,7 @@ target_compile_definitions(pico_toolset_usb_hid PUBLIC
 
 # Linking tinyusb_host defines LIB_TINYUSB_HOST, which the SDK headers use to
 # silently turn OFF stdio_usb defaults that every consumer still needs (see
-# TOM6809's pico/CMakeLists.txt for the full derivation):
+# the derivation, based on consumer real-hardware findings):
 #   - own device descriptors instead of none,
 #   - stdio_usb_init() still calls tusb_init() for rhport 0,
 #   - the background IRQ still pumps tud_task(), and

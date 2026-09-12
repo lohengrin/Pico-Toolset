@@ -1,9 +1,10 @@
 // Optional newlib syscall shim over FatFs, for consumers that want classic
 // POSIX/stdio file access (open/read/lseek/fstat, or fopen/fread/fseek on
 // top of them) instead of SdCard::read_file()'s whole-file-into-memory API.
-// Ported from PicoDoom's src/sd_stdio.c, generalized: any engine that seeks
+// Ported from a consumer project's src/sd_stdio.c, generalized: any engine
+// that seeks
 // around inside a file via libc (e.g. a WAD/archive format's directory
-// table) needs this, not just Doom.
+// table) needs this, not just one game engine.
 //
 // Compiled in only when PICO_TOOLSET_SDCARD_STDIO is ON (see this
 // component's CMakeLists.txt) -- overriding newlib's global weak syscalls

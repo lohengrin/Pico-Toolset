@@ -2,7 +2,7 @@
 
 // Known-good Ili9486Config presets for specific board+panel combinations.
 // Each preset here has been validated on real hardware by a consumer of
-// this toolset -- see the comment on each one for which project/board.
+// this toolset -- see the comment on each one for the board/wiring.
 //
 // Usage: pico_toolset::Ili9486 lcd; lcd.init(pico_toolset::configs::ili9486::kWaveshareRp2350PiZero);
 // To adapt a preset for a similar-but-not-identical board, copy it and
@@ -14,7 +14,7 @@ namespace pico_toolset::configs::ili9486 {
 
 // Waveshare RP2350-PiZero + its bundled 3.5" ILI9486 SPI LCD (the 16-bit
 // shift-register variant, not the 8080-parallel one). Validated on real
-// hardware by TOM6809 (github.com/lohengrin/TOM6809).
+// hardware.
 inline const Ili9486Config kWaveshareRp2350PiZero = {
     .spi_instance = spi1,
     .pin_sck = 10,

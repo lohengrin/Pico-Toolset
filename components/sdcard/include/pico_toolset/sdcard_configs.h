@@ -12,8 +12,7 @@ namespace pico_toolset::configs::sdcard {
 // wiring: CS=D3/GPIO43, MOSI=CMD/GPIO31, MISO=D0/GPIO40, SCK=CLK/GPIO30).
 // gpio_base=16 is required, not optional -- MISO (40) is outside PIO's
 // default 0-31 addressing window. PIO1/SM0: PIO0 is reserved for this
-// board's Pico-PIO-USB port. Validated on real hardware by TOM6809
-// (github.com/lohengrin/TOM6809).
+// board's Pico-PIO-USB port. Validated on real hardware.
 inline const SdCardConfig kWaveshareRp2350PiZero = {
     .spi_instance = nullptr,
     .pin_miso = 40,
@@ -28,11 +27,10 @@ inline const SdCardConfig kWaveshareRp2350PiZero = {
     .gpio_base = 16,
 };
 
-// TOM6809's custom "Pico DV" carrier board's uSD socket (SD-in-SPI-mode
+// The "Pico DV" carrier board's uSD socket (SD-in-SPI-mode
 // over its native SDIO wiring: CS=DAT3/GPIO22, MOSI=CMD/GPIO18,
 // MISO=DAT0/GPIO19, SCK=CLK/GPIO5). PIO1/SM0, to avoid colliding with this
-// board's I2S audio, which defaults to PIO0/SM0. Validated on real hardware
-// by TOM6809.
+// board's I2S audio, which defaults to PIO0/SM0. Validated on real hardware.
 inline const SdCardConfig kPicoDvCarrier = {
     .spi_instance = nullptr,
     .pin_miso = 19,

@@ -59,8 +59,8 @@ struct PsramStatus {
 // pico_toolset_usb_hid deliberately does NOT register its core1 as a
 // lockout victim (tried, reverted -- see the README's "Notes and gotchas"):
 // multicore_lockout's IRQ handler silently steals every word off the raw
-// inter-core FIFO, which breaks any consumer (this toolset's own PicoDoom/
-// TOM6809 examples included) that also uses multicore_fifo_push_blocking()/
+// inter-core FIFO, which breaks any consumer (this toolset's own consumer
+// examples included) that also uses multicore_fifo_push_blocking()/
 // pop_blocking() directly on that core, e.g. for a chunked display-blit
 // handoff. In practice this means: call psram_init() before launching any
 // core1 workload for full protection (the fallback interrupt-disable path

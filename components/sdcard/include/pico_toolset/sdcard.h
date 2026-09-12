@@ -66,7 +66,7 @@ struct SdCardConfig {
 // pointer to it for the mount's lifetime, so it can't be a stack/heap
 // temporary).
 //
-// Derived from TOM6809's real-hardware-validated driver, unifying its two
+// Derived from a real-hardware-validated driver, unifying its two
 // board-specific variants into one config-driven implementation (MIT).
 class SdCard {
 public:

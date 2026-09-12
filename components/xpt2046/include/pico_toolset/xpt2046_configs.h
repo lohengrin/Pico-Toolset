@@ -13,8 +13,7 @@ namespace pico_toolset::configs::xpt2046 {
 
 // Waveshare RP2350-PiZero + its bundled 3.5" LCD's resistive touch panel,
 // sharing the SPI1 bus with pico_toolset::configs::ili9486::kWaveshareRp2350PiZero
-// (ili9486_configs.h). Validated on real hardware by TOM6809
-// (github.com/lohengrin/TOM6809).
+// (ili9486_configs.h). Validated on real hardware.
 inline const Xpt2046Config kWaveshareRp2350PiZero = {
     .spi_instance = spi1,
     .pin_cs = 7,

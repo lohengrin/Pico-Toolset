@@ -6,7 +6,7 @@
  * owns the read index -- no locking needed as long as each side only ever
  * touches its own index.
  *
- * New file, not a vendored one -- part of TOM6809's HDMI-audio addition
+ * New file, not a vendored one -- this project's HDMI-audio addition
  * (see README.md and CMakeLists.txt's "PATCH
  * (hdmi-audio):" notes). Design follows rh1tech/frank-hdmi-audio's
  * frank_audio_ring.{c,h} (BSD-3-Clause, itself layered on Wren6991/PicoDVI),
@@ -23,8 +23,8 @@
  * while remaining includable from this project's C++ glue/tests too (hence
  * the extern "C" wrapper, matching dvi.h's own convention).
  */
-#ifndef TOM6809_AUDIO_RING_H
-#define TOM6809_AUDIO_RING_H
+#ifndef PICO_TOOLSET_AUDIO_RING_H
+#define PICO_TOOLSET_AUDIO_RING_H
 
 #include <stdint.h>
 
@@ -36,19 +36,19 @@
 #if defined(PICO_ON_DEVICE)
 #include "hardware/sync.h"
 #include "pico.h"
-#define TOM6809_AUDIO_RING_FUNC(name) __not_in_flash_func(name)
-#define TOM6809_AUDIO_RING_BARRIER() __dmb()
+#define PICO_TOOLSET_AUDIO_RING_FUNC(name) __not_in_flash_func(name)
+#define PICO_TOOLSET_AUDIO_RING_BARRIER() __dmb()
 #else
-#define TOM6809_AUDIO_RING_FUNC(name) name
+#define PICO_TOOLSET_AUDIO_RING_FUNC(name) name
 // Host builds are single-threaded test code exercising the ring's index
 // arithmetic directly, not real cross-core concurrency -- a compiler-only
 // memory barrier (preventing instruction reordering across it) is enough to
 // keep the read-then-write-index ordering the real device relies on, without
 // pulling in a hardware intrinsic that doesn't exist on x86_64/wasm.
 #if defined(__GNUC__) || defined(__clang__)
-#define TOM6809_AUDIO_RING_BARRIER() __asm__ __volatile__("" ::: "memory")
+#define PICO_TOOLSET_AUDIO_RING_BARRIER() __asm__ __volatile__("" ::: "memory")
 #else
-#define TOM6809_AUDIO_RING_BARRIER() ((void)0)
+#define PICO_TOOLSET_AUDIO_RING_BARRIER() ((void)0)
 #endif
 #endif
 
@@ -77,10 +77,10 @@ void audio_ring_set(audio_ring_t *ring, audio_sample_t *buffer, uint32_t size);
 // Frames the producer can safely write right now without overtaking the
 // consumer (size - 1 usable slots when fully empty -- one slot is always
 // reserved to disambiguate full from empty).
-uint32_t TOM6809_AUDIO_RING_FUNC(audio_ring_get_write_size)(const audio_ring_t *ring);
+uint32_t PICO_TOOLSET_AUDIO_RING_FUNC(audio_ring_get_write_size)(const audio_ring_t *ring);
 
 // Frames available for the consumer to read right now.
-uint32_t TOM6809_AUDIO_RING_FUNC(audio_ring_get_read_size)(const audio_ring_t *ring);
+uint32_t PICO_TOOLSET_AUDIO_RING_FUNC(audio_ring_get_read_size)(const audio_ring_t *ring);
 
 // Raw pointer to the ring's backing storage (index 0), for callers that want
 // to index by an offset returned from get_write_offset()/get_read_offset()
@@ -101,13 +101,13 @@ uint32_t audio_ring_get_read_offset(const audio_ring_t *ring);
 // data_packet.h's "RAM residency" note. advance_write() is core0-only
 // (queue_audio_samples()) and has no such constraint.
 void audio_ring_advance_write(audio_ring_t *ring, uint32_t n);
-void TOM6809_AUDIO_RING_FUNC(audio_ring_advance_read)(audio_ring_t *ring, uint32_t n);
+void PICO_TOOLSET_AUDIO_RING_FUNC(audio_ring_advance_read)(audio_ring_t *ring, uint32_t n);
 
 // Sets the write/read index directly (wrapping modulo `size` is the
 // caller's responsibility -- used once, at HDMI-audio init, to half-fill the
 // ring so the rate-matched producer/consumer pair starts in the middle of
 // the underrun/overflow window instead of right at empty; see
-// PicoHdmiAudioOutput's own doc comment for why that matters).
+// dvi_audio_init()'s own doc comment for why that matters).
 void audio_ring_set_write_offset(audio_ring_t *ring, uint32_t v);
 void audio_ring_set_read_offset(audio_ring_t *ring, uint32_t v);
 
@@ -115,4 +115,4 @@ void audio_ring_set_read_offset(audio_ring_t *ring, uint32_t v);
 }
 #endif
 
-#endif /* TOM6809_AUDIO_RING_H */
+#endif /* PICO_TOOLSET_AUDIO_RING_H */

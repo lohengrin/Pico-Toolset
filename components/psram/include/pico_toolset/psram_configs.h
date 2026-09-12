@@ -9,8 +9,7 @@
 
 namespace pico_toolset::configs::psram {
 
-// Waveshare RP2350-PiZero's onboard PSRAM chip. Validated on real hardware
-// by TOM6809 (github.com/lohengrin/TOM6809).
+// Waveshare RP2350-PiZero's onboard PSRAM chip. Validated on real hardware.
 inline constexpr PsramConfig kWaveshareRp2350PiZero = {
     .cs_pin = 47,
     .max_clock_hz = 30'000'000,
