@@ -55,8 +55,29 @@ extern "C" {
 #define CFG_TUSB_RHPORT0_MODE (OPT_MODE_DEVICE)
 #endif
 
-#ifndef CFG_TUSB_RHPORT1_MODE
-#define CFG_TUSB_RHPORT1_MODE (OPT_MODE_HOST)
+// Deliberately NOT defining CFG_TUSB_RHPORT1_MODE (OPT_MODE_HOST) here --
+// real-hardware finding (2026-09): this driver already brings up the PIO-USB
+// host explicitly via tuh_configure()/tuh_init(BOARD_TUH_RHPORT) with a
+// concrete rhport argument, a call path that does NOT consult
+// CFG_TUSB_RHPORT1_MODE / TUH_OPT_RHPORT at all. But defining it here makes
+// tusb.h's tusb_init(void) legacy macro treat BOTH rhports as configured
+// (`#if defined(TUD_OPT_RHPORT) || defined(TUH_OPT_RHPORT)`) -- and the Pico
+// SDK's own pico_stdio_usb calls exactly that zero-arg tusb_init() early in
+// boot (stdio_usb.c) to bring up the USB-CDC serial console, LONG before
+// this driver's own init() runs. That call then silently ALSO initializes
+// the host controller on rhport 1, using tinyusb's still-default
+// (unconfigured) pio_usb_configuration_t -- pin_dp defaults to GPIO 0, not
+// this project's real D+ pin. TinyUSB's tuh_rhport_init() is idempotent
+// (`if (tuh_rhport_is_active(rhport)) return true;`), so this driver's own
+// later, correctly-configured tuh_init() call is then silently skipped as
+// "already active" -- the host stack runs, tuh_task() polls fine, no panic,
+// but it's listening on the wrong physical pins and no device ever enumerates
+// (confirmed: GPIO 0/1 came up as PIO0 function while the real D+/D- pins
+// stayed unclaimed). Leaving CFG_TUSB_RHPORT1_MODE undefined avoids the
+// legacy auto-init path entirely, matching how this project's own driver
+// always initialized PIO-USB host mode before this component existed.
+#ifdef CFG_TUSB_RHPORT1_MODE
+#error "Do not define CFG_TUSB_RHPORT1_MODE -- see the comment above; it silently breaks PIO-USB host bring-up via pico_stdio_usb's own tusb_init() call."
 #endif
 
 // Host-side tuning (propagated from UsbHidConfig by the host's application).

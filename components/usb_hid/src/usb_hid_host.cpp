@@ -213,9 +213,6 @@ const usbh_class_driver_t kXInputDriver = {
 
 } // namespace
 
-// Endpoint re-arm for the devices we claimed. Called after every report.
-void rearm_hid(uint8_t dev_addr, uint8_t instance) { tuh_hid_receive_report(dev_addr, instance); }
-
 // Small registry of mounted keyboard dev_addrs so the keyboard count can be
 // decremented accurately on unplug (tuh_hid_umount_cb gives no protocol).
 constexpr uint8_t kMaxKeyboardRegs = 8;
@@ -248,7 +245,25 @@ UsbHidHost* UsbHidHost::s_instance = nullptr;
 
 extern "C" void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report,
                                  uint16_t desc_len) {
-    bool is_keyboard = tuh_hid_get_protocol(dev_addr, instance) == HID_ITF_PROTOCOL_KEYBOARD;
+    // Classification ported to exactly match TOM6809's own original
+    // PicoUsbHidInput.cpp (the proven, real-hardware-validated driver this
+    // component replaced) after two real-hardware regressions here:
+    //
+    // 1. tuh_hid_get_protocol() returns the negotiated BOOT(0)/REPORT(1)
+    //    protocol *mode*, not the interface's declared type --
+    //    tuh_hid_interface_protocol() is the one that returns
+    //    NONE(0)/KEYBOARD(1)/MOUSE(2). This host defaults new devices to
+    //    boot mode, so the original `get_protocol() ==
+    //    HID_ITF_PROTOCOL_KEYBOARD (1)` mistake compared "is this device in
+    //    report mode" against "is this a keyboard" -- always false, so no
+    //    keyboard interface was ever recognized as one.
+    // 2. is_joystick/is_mouse must be mutually exclusive with is_keyboard
+    //    (and with each other) the same way the original does it -- without
+    //    the exclusions, a device whose descriptor happens to trip more than
+    //    one heuristic could be mis-classified.
+    uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
+    bool is_keyboard = (itf_protocol == HID_ITF_PROTOCOL_KEYBOARD);
+
     // DualSense identified by VID/PID first, independent of the descriptor
     // heuristic below: its descriptor doesn't reliably trip
     // looks_like_joystick_report_descriptor() (TOM6809 real-hardware
@@ -257,10 +272,25 @@ extern "C" void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t con
     // match.
     uint16_t vid = 0, pid = 0;
     bool is_dualsense = tuh_vid_pid_get(dev_addr, &vid, &pid) && is_dualsense_vid_pid(vid, pid);
-    bool is_joystick = is_dualsense || looks_like_joystick_report_descriptor(desc_report, desc_len);
-    bool is_mouse = looks_like_mouse_report_descriptor(desc_report, desc_len);
+
+    // Boot protocol alone can't tell a real gamepad apart from any other
+    // non-keyboard, non-mouse HID interface (HID_ITF_PROTOCOL_NONE covers
+    // both) -- confirm against the device's own report descriptor instead.
+    bool is_joystick = !is_keyboard && itf_protocol != HID_ITF_PROTOCOL_MOUSE &&
+                        (is_dualsense || looks_like_joystick_report_descriptor(desc_report, desc_len));
+    // A real USB mouse: boot protocol MOUSE, or a descriptor whose top-level
+    // collection is (Generic Desktop, Mouse). Many mice never negotiate boot
+    // protocol MOUSE (itf_protocol stays NONE) -- the descriptor heuristic is
+    // what actually recognizes those, matching the original.
+    bool is_mouse = !is_keyboard && !is_joystick &&
+                    (itf_protocol == HID_ITF_PROTOCOL_MOUSE ||
+                     looks_like_mouse_report_descriptor(desc_report, desc_len));
     if (auto* self = UsbHidHost::instance())
         self->on_mount(dev_addr, instance, is_keyboard, is_joystick, is_mouse, is_dualsense);
+    // Re-arm the report queue unconditionally (matching the original) -- or
+    // no reports (not even the first) will ever be delivered, including for
+    // an interface on_mount() didn't recognize as anything.
+    tuh_hid_receive_report(dev_addr, instance);
 }
 
 extern "C" void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
@@ -270,19 +300,28 @@ extern "C" void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
 
 extern "C" void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report,
                                            uint16_t len) {
-    switch (tuh_hid_get_protocol(dev_addr, instance)) {
-        case HID_ITF_PROTOCOL_KEYBOARD:
-            if (auto* self = UsbHidHost::instance()) self->on_keyboard_report(report, len);
-            break;
-        case HID_ITF_PROTOCOL_MOUSE:
-            if (auto* self = UsbHidHost::instance()) self->on_mouse_report(report, len);
-            break;
-        default:
-            if (auto* self = UsbHidHost::instance())
-                self->on_gamepad_report(report, len, dev_addr, instance);
-            break;
+    if (auto* self = UsbHidHost::instance()) {
+        // Matches the original: dispatch keyboard by itf_protocol (reliable
+        // -- keyboards do negotiate boot protocol KEYBOARD), but dispatch
+        // mouse by the tracked dev_addr/instance from on_mount() rather than
+        // re-checking itf_protocol==MOUSE here. A mouse recognized via the
+        // descriptor heuristic (see tuh_hid_mount_cb above) never has
+        // itf_protocol==MOUSE, so re-deriving it at report time would send
+        // every one of its reports to on_gamepad_report() instead --
+        // confirmed on real hardware as the reason a mounted mouse's cursor
+        // never moved.
+        uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
+        if (itf_protocol == HID_ITF_PROTOCOL_KEYBOARD) {
+            self->on_keyboard_report(report, len);
+        } else if (self->matches_mouse(dev_addr, instance)) {
+            self->on_mouse_report(report, len);
+        } else {
+            self->on_gamepad_report(report, len, dev_addr, instance);
+        }
     }
-    rearm_hid(dev_addr, instance);
+    // Re-arm for the next report -- TinyUSB delivers exactly one report per
+    // tuh_hid_receive_report() call.
+    tuh_hid_receive_report(dev_addr, instance);
 }
 
 bool UsbHidHost::init(const UsbHidConfig& config) {
@@ -336,34 +375,28 @@ void UsbHidHost::host_stack_setup() {
 
     while (true) {
         tuh_task();
-        // TEMPORARY bring-up diagnostic -- see debug_core1_loop_count()'s own doc comment.
-        self->m_debug_loop_count++;
     }
 }
 
-void UsbHidHost::task() {
-    tuh_task();
-    // TEMPORARY bring-up diagnostic -- see debug_core1_loop_count()'s own doc comment.
-    if (UsbHidHost* self = instance()) self->m_debug_loop_count++;
-}
+void UsbHidHost::task() { tuh_task(); }
 
 // --- Keyboard ---
 
 void UsbHidHost::on_mount(uint8_t dev_addr, uint8_t instance, bool is_keyboard, bool is_joystick, bool is_mouse,
                           bool is_dualsense) {
+    // tuh_hid_mount_cb() re-arms the report queue unconditionally after this
+    // call returns (matching the original driver) -- no need to do it here
+    // per-branch, and the original never did.
     if (m_config.enable_keyboard && is_keyboard) {
         if (register_keyboard(dev_addr)) {
             __atomic_fetch_add(&m_keyboard_count, 1, __ATOMIC_RELAXED);
         }
-        tuh_hid_receive_report(dev_addr, instance);
     } else if (m_config.enable_mouse && is_mouse && m_mouse_dev_addr == 0) {
         m_mouse_dev_addr = dev_addr;
         m_mouse_instance = instance;
         m_mouse.present = true;
-        tuh_hid_receive_report(dev_addr, instance);
     } else if (m_config.enable_gamepad && is_joystick) {
         allocate_gamepad_slot(dev_addr, instance, false, is_dualsense);
-        tuh_hid_receive_report(dev_addr, instance);
     } else if (m_config.enable_keyboard || m_config.enable_mouse || m_config.enable_gamepad) {
         // Unrelated HID interface (e.g. a media-key collection) -- ignore.
     }
@@ -463,19 +496,29 @@ void UsbHidHost::push_typed_ascii(uint8_t ch) {
 // --- Mouse ---
 
 void UsbHidHost::on_mouse_report(const uint8_t* report, uint16_t len) {
+    // Boot protocol: TinyUSB enumerates every HID interface in boot protocol
+    // by default and this host never calls tuh_hid_set_protocol(), so the
+    // mouse report is always the fixed 3-byte boot layout -- byte0=buttons
+    // (bit0=left, bit1=right), byte1=dx, byte2=dy (signed 8-bit) -- with NO
+    // report-ID prefix (boot protocol reports are never numbered). Reports
+    // may be longer than 3 bytes (padding to endpoint size, a wheel byte);
+    // the extra bytes are ignored. Ported from TOM6809's own original driver
+    // after a real-hardware regression here: this component previously read
+    // dx/dy from bytes 1-2 but buttons from byte 3 (gated behind len>=5),
+    // which never matches a real boot-protocol mouse -- left-click never
+    // registered because that byte offset is never populated.
     if (len < 3) return;
+    uint8_t buttons = report[0];
     int8_t dx = static_cast<int8_t>(report[1]);
     int8_t dy = static_cast<int8_t>(report[2]);
+    m_mouse.left_button = (buttons & 0x01) != 0;
+    m_mouse.right_button = (buttons & 0x02) != 0;
     m_mouse.x += dx;
     m_mouse.y += dy;
     if (m_mouse.x < 0) m_mouse.x = 0;
     if (m_mouse.y < 0) m_mouse.y = 0;
-    if (m_mouse.x > 639) m_mouse.x = 639;
-    if (m_mouse.y > 479) m_mouse.y = 479;
-    if (len >= 5) {
-        m_mouse.left_button = (report[3] & 0x01) != 0;
-        m_mouse.right_button = (report[3] & 0x02) != 0;
-    }
+    if (m_mouse.x > m_config.mouse_max_x) m_mouse.x = m_config.mouse_max_x;
+    if (m_mouse.y > m_config.mouse_max_y) m_mouse.y = m_config.mouse_max_y;
 }
 
 UsbHidHost::MouseState UsbHidHost::mouse_state() const { return m_mouse; }
@@ -497,10 +540,6 @@ int UsbHidHost::allocate_gamepad_slot(uint8_t dev_addr, uint8_t instance, bool i
         return static_cast<int>(i);
     }
     return -1;
-}
-
-bool UsbHidHost::matches_mouse(uint8_t dev_addr, uint8_t instance) const {
-    return m_config.enable_mouse && m_mouse_dev_addr == dev_addr && m_mouse_instance == instance;
 }
 
 void UsbHidHost::on_gamepad_report(const uint8_t* report, uint16_t len, uint8_t dev_addr, uint8_t instance) {
@@ -568,13 +607,32 @@ void UsbHidHost::on_xinput_report(uint8_t dev_addr, const uint8_t* report, uint1
         if (b1 & 0x40) s.buttons |= kBtX;
         if (b1 & 0x80) s.buttons |= kBtY;
 
-        // analog sticks (bytes 4..7), triggers (bytes 8..9)
-        s.lx = static_cast<uint8_t>((report[4] + 128) / 2);  // 0..65535 -> 0..255
-        s.ly = static_cast<uint8_t>((report[5] + 128) / 2);
-        s.rx = static_cast<uint8_t>((report[6] + 128) / 2);
-        s.ry = static_cast<uint8_t>((report[7] + 128) / 2);
-        s.lt = static_cast<uint8_t>(report[8] / 257);
-        s.rt = static_cast<uint8_t>(report[9] / 257);
+        // Real-hardware regression fix, cross-checked against Linux's xpad
+        // driver and TOM6809's own original XInput parser: this component
+        // had the trigger and stick byte ranges swapped/misaligned. The
+        // actual wired Xbox 360 layout is byte4=LT, byte5=RT (single bytes,
+        // 0-255), bytes6-7=left stick X (int16 LE), bytes8-9=left stick Y,
+        // bytes10-11=right stick X, bytes12-13=right stick Y -- reading
+        // triggers as sticks (constant near-zero values map to just under
+        // this struct's 128-centered dead zone) is exactly what produced a
+        // constant "stick pushed up-left" reading regardless of actual input.
+        s.lt = report[4];
+        s.rt = report[5];
+        auto scale_axis = [](int16_t raw, bool invert) -> uint8_t {
+            int32_t v = invert ? -static_cast<int32_t>(raw) : raw;
+            return static_cast<uint8_t>((v >> 8) + 128);
+        };
+        int16_t lx16 = static_cast<int16_t>(report[6] | (report[7] << 8));
+        int16_t ly16 = static_cast<int16_t>(report[8] | (report[9] << 8));
+        int16_t rx16 = static_cast<int16_t>(report[10] | (report[11] << 8));
+        int16_t ry16 = static_cast<int16_t>(report[12] | (report[13] << 8));
+        // XInput's raw Y is positive-up; this struct's shared dead-zone
+        // convention (see PicoUsbHidInput::get_joystick_state()) treats
+        // higher values as "down", so the Y axes are inverted here to match.
+        s.lx = scale_axis(lx16, false);
+        s.ly = scale_axis(ly16, true);
+        s.rx = scale_axis(rx16, false);
+        s.ry = scale_axis(ry16, true);
         return;
     }
 }

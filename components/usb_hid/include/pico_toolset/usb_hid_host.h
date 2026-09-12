@@ -24,6 +24,12 @@ struct UsbHidConfig {
     bool     enable_gamepad = true;   // HID gamepads
     bool     enable_xinput = true;    // XInput pads (merged into GamepadState)
     uint8_t  max_gamepads = 4;        // Gamepad slots
+    // Absolute mouse cursor is clamped to [0, mouse_max_x] x [0, mouse_max_y]
+    // -- set these to the consuming app's own canonical cursor space (e.g.
+    // its display resolution minus 1). Defaults match TOM6809's 640x480
+    // canonical space.
+    int      mouse_max_x = 639;
+    int      mouse_max_y = 479;
     // Layout used by consume_typed_ascii_char(): an index into kKeymaps.
     // kDefaultKeymapIndex (PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP) by default;
     // pick any compiled-in layout at runtime, e.g. with keymap_by_name().
@@ -80,14 +86,6 @@ public:
     uint8_t connected_keyboard_count() const;
     uint8_t connected_gamepad_count() const;
 
-    // TEMPORARY bring-up diagnostic (2026-09): increments once per
-    // host_stack_setup() loop iteration (i.e. once per tuh_task() call) --
-    // read this before/after a delay to confirm the core owning the host
-    // stack is alive and looping at all, as opposed to having crashed/hung
-    // inside tuh_configure()/tuh_init() before ever reaching the loop.
-    // Remove once real-hardware testing confirms devices enumerate.
-    uint32_t debug_core1_loop_count() const { return m_debug_loop_count; }
-
     // Internal -- called by the free TinyUSB callbacks in the .cpp. Runs on
     // the core owning the stack.
     static UsbHidHost* instance() { return s_instance; }
@@ -100,6 +98,13 @@ public:
     void on_xinput_mount(uint8_t dev_addr);
     void on_xinput_report(uint8_t dev_addr, const uint8_t* report, uint16_t len);
     void on_xinput_unmount(uint8_t dev_addr);
+
+    // Whether dev_addr/instance is the currently-tracked mouse -- used by
+    // tuh_hid_report_received_cb() to route a mouse's reports regardless of
+    // its declared itf_protocol (see that callback's own doc comment).
+    bool matches_mouse(uint8_t dev_addr, uint8_t instance) const {
+        return m_mouse.present && m_mouse_dev_addr == dev_addr && m_mouse_instance == instance;
+    }
 
 private:
     struct HidLayout {
@@ -119,7 +124,6 @@ private:
     };
 
     int allocate_gamepad_slot(uint8_t dev_addr, uint8_t instance, bool is_xinput, bool is_dualsense = false);
-    bool matches_mouse(uint8_t dev_addr, uint8_t instance) const;
 
     void push_typed_ascii(uint8_t ch);
 
@@ -155,9 +159,6 @@ private:
 
     GamepadSlot m_gamepads[4]{};
     uint8_t m_gamepad_count = 0;
-
-    // TEMPORARY bring-up diagnostic -- see debug_core1_loop_count()'s own doc comment.
-    volatile uint32_t m_debug_loop_count = 0;
 };
 
 } // namespace pico_toolset
