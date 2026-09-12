@@ -771,9 +771,20 @@ void UsbHidHost::on_xinput_report(uint8_t dev_addr, const uint8_t* report, uint1
         // constant "stick pushed up-left" reading regardless of actual input.
         s.lt = report[4];
         s.rt = report[5];
+        // Real-hardware regression fix (2026-09): (v >> 8) + 128 ranges 0..256
+        // (raw is a signed 16-bit value, so v can reach +32768 after negating
+        // INT16_MIN for invert=true) -- the missing clamp let 256 silently
+        // wrap to 0 in the uint8_t cast, indistinguishable from the opposite
+        // extreme. Symptom on actual hardware: a moderate push one way read
+        // correctly, but pushing further in the SAME direction flipped the
+        // reading to the opposite extreme once the wrap threshold was
+        // crossed -- classic non-monotonic overflow, not a sign error.
         auto scale_axis = [](int16_t raw, bool invert) -> uint8_t {
             int32_t v = invert ? -static_cast<int32_t>(raw) : raw;
-            return static_cast<uint8_t>((v >> 8) + 128);
+            int32_t scaled = (v >> 8) + 128;
+            if (scaled < 0) scaled = 0;
+            if (scaled > 255) scaled = 255;
+            return static_cast<uint8_t>(scaled);
         };
         int16_t lx16 = static_cast<int16_t>(report[6] | (report[7] << 8));
         int16_t ly16 = static_cast<int16_t>(report[8] | (report[9] << 8));
