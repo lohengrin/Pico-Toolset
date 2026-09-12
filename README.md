@@ -13,6 +13,7 @@ independently.
 |-----------|--------|-------------|
 | SSD1306   | `pico_toolset_ssd1306`  | I2C monochrome OLED driver (128x64/128x32/...) with framebuffer, BMP blitting, basic primitives. |
 | ILI9486   | `pico_toolset_ili9486`  | 480x320 SPI TFT driver for Waveshare-style boards where the panel sits behind a 16-bit shift register; DMA-backed pixel streaming, backlight PWM. |
+| ST7789    | `pico_toolset_st7789`   | ST7789-family SPI TFT driver (e.g. the CrowPanel PICO HMI 2.8"'s 320x240 panel); config-driven geometry/MADCTL/inversion, DMA-backed pixel streaming, backlight PWM. |
 | XPT2046   | `pico_toolset_xpt2046`  | Resistive touch controller sharing an SPI bus with a display driver (e.g. ILI9486); raw ADC reads + a linear calibration helper. |
 | PSRAM     | `pico_toolset_psram`    | RP2350-only external PSRAM bring-up (QMI CS1), self-test, free-list allocator, `std::pmr` adapter. No-op on RP2040. |
 | USB HID   | `pico_toolset_usb_hid`  | PIO-USB TinyUSB host: keyboard/mouse/HID-gamepad + XInput + DualSense (VID/PID-detected), double-buffered cross-core state, unified `GamepadState`. |
@@ -28,7 +29,7 @@ standalone drivers.
 
 | Library | Target | Description |
 |---------|--------|-------------|
-| Screen   | `pico_toolset_screen`  | Pluggable `DisplayDriver` abstraction + slot-based widget composition, with SSD1306/ILI9486/Pimoroni adaptors. |
+| Screen   | `pico_toolset_screen`  | Pluggable `DisplayDriver` abstraction + slot-based widget composition (`RectWidget`/`TextWidget`/`BarWidget`/`HBarWidget`/`LineGraphWidget`), with SSD1306/ILI9486/ST7789/Pimoroni adaptors. |
 | Fault handler | `pico_toolset_fault_handler` | Cortex-M33 hard-fault handler that survives a watchdog reset to report PC/LR/CFSR on the *next* boot, instead of the SDK's default silent halt. No board wiring involved (core MCU + watchdog only), hence a library rather than a `components/` driver. |
 
 All code lives in namespace `pico_toolset` and targets C++20.
@@ -52,6 +53,7 @@ pico-toolset/
 ├── components/
 │   ├── ssd1306/   include/pico_toolset/ssd1306.h   src/  example/
 │   ├── ili9486/   include/pico_toolset/ili9486.h   src/  example/
+│   ├── st7789/    include/pico_toolset/st7789.h    src/  example/
 │   ├── xpt2046/   include/pico_toolset/*.h         src/  example/
 │   ├── psram/     include/pico_toolset/psram.h     src/  example/
 │   ├── i2s_audio/ include/pico_toolset/i2s_audio.h src/  example/
@@ -84,6 +86,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 |--------|---------|---------|
 | `PICO_TOOLSET_BUILD_SSD1306` | ON | Build SSD1306 driver + example |
 | `PICO_TOOLSET_BUILD_ILI9486` | ON | Build ILI9486 driver + example |
+| `PICO_TOOLSET_BUILD_ST7789`  | ON | Build ST7789 driver + example |
 | `PICO_TOOLSET_BUILD_XPT2046` | ON | Build XPT2046 touch driver + example |
 | `PICO_TOOLSET_BUILD_PSRAM`   | ON | Build PSRAM driver + example (RP2350 only) |
 | `PICO_TOOLSET_BUILD_USB_HID` | ON | Build PIO-USB HID host + example |
@@ -254,6 +257,19 @@ lcd.write_pixels(span_of_100x100_pixels);
 lcd.end_write();
 ```
 
+### ST7789
+
+```cpp
+#include "pico_toolset/st7789_configs.h"
+
+pico_toolset::St7789 lcd;
+lcd.init(pico_toolset::configs::st7789::kElecrowCrowPanelPicoHmi28);
+lcd.fill_solid(0x001F);                 // solid blue
+lcd.set_window(0, 0, 100, 100);
+lcd.write_pixels(span_of_100x100_pixels);
+lcd.end_write();
+```
+
 ### XPT2046 touch (shares a bus with a display driver)
 
 ```cpp
@@ -351,7 +367,7 @@ audio.queue_samples(frame);             // non-blocking; drops this call's audio
 ```cpp
 #include "pico_toolset/sdcard_configs.h"
 
-// Two presets exist -- pick the one matching your board, or copy and adjust.
+// Three presets exist -- pick the one matching your board, or copy and adjust.
 pico_toolset::SdCard sd;
 if (!sd.init(pico_toolset::configs::sdcard::kPicoDvCarrier)) { /* no card / mount failed -- sd.last_mount_result() has the FRESULT */ }
 for (const auto& name : sd.list_files({"txt", "bin"})) { /* ... */ }
@@ -562,7 +578,9 @@ screen.update();
   collide.
 - **Screen**: `Screen` does not own widgets -- keep them alive for its
   lifetime. `Ili9486Driver` needs a caller-owned RGB565 framebuffer (480x320x2
-  ≈ 300KB; allocate from PSRAM).
+  ≈ 300KB; allocate from PSRAM). `St7789Driver` likewise needs a caller-owned
+  RGB565 framebuffer (320x240x2 = 150KB -- on RP2040's 264KB SRAM with no
+  PSRAM, this is most of it; watch your total static+heap+stack budget).
 
 ## License
 

@@ -24,7 +24,7 @@ a human/agent) and commonly coexist here.
 | [`pico_dv_pico2.md`](pico_dv_pico2.md) | Same carrier + Pico 2 | Partial |
 | [`waveshare_rp2350_pizero.md`](waveshare_rp2350_pizero.md) | Waveshare RP2350-PiZero (HDMI, PSRAM, sdcard, USB HID) | Implemented |
 | [`waveshare_rp2350_pizero_lcd35a.md`](waveshare_rp2350_pizero_lcd35a.md) | Waveshare RP2350-PiZero + external Waveshare 3.5" RPi LCD (A) | Implemented |
-| [`crowpanel_pico_hmi_28.md`](crowpanel_pico_hmi_28.md) | CrowPanel PICO HMI 2.8" | Planned (no driver code yet) |
+| [`crowpanel_pico_hmi_28.md`](crowpanel_pico_hmi_28.md) | CrowPanel PICO HMI 2.8" | Implemented |
 
 ## Template for a new board doc
 

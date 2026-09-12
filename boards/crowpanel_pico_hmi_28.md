@@ -1,54 +1,69 @@
 # CrowPanel PICO HMI 2.8"
 
 ## Hardware
-Elecrow's CrowPanel PICO HMI 2.8" -- publicly known to combine a 2.8" HMI
-screen, an SD card slot, and UART0/UART1 breakouts on a Pico-form-factor
-carrier. Exact display controller (driver chip, interface -- SPI/parallel),
-touch capability, and full pinout are **not yet confirmed against this
-repo's own hardware** and are deliberately left out below rather than
-guessed.
+Elecrow's CrowPanel PICO HMI 2.8" -- a Pico-form-factor RP2040 carrier with a
+320x240 ST7789-family SPI TFT, an XPT2046 resistive touch controller, and a
+uSD ("TF") card slot, all three sharing SPI1 with separate CS lines. Also
+breaks out UART0/UART1 and I2C headers (no toolset component needed for
+those -- pico-sdk's own `hardware_uart`/`hardware_i2c` cover them directly).
 
 ## Status
-**Planned -- no driver code or validated presets exist for this board in
-this repo yet.** Per this repo's own convention (see `AGENTS.md`'s "only add
-a preset validated on real hardware" rule), no `<name>_configs.h` preset or
-`boards/` pico-sdk header will be added for this board until it's actually
-bench-tested.
+**Implemented.** Display, touch, and SD card all have real-hardware-derived
+presets. The display path was ported from a consumer's already-flying driver;
+touch and SD are new capabilities for this board -- bench-confirm both on
+first flash (see Notes/gotchas).
 
 ## Components & presets
-None yet. What's needed once hardware is available to validate against:
-- A new display-driver component (no existing driver in this repo is known
-  to match the panel's controller -- `ili9486` and `ssd1306` target
-  different, already-identified controllers).
-- Possibly a new touch-driver component, if the panel has touch and the
-  controller isn't XPT2046-compatible.
-- `pico_toolset_sdcard`: likely reusable as-is once this board's actual SD
-  pin wiring is known -- add a new `configs::sdcard::<PascalCaseName>`
-  preset once validated, following the pattern already used for the
-  Waveshare/Pico-DV presets (don't create a second `sdcard_configs.h`).
-- UART0/UART1: no dedicated toolset component exists for this -- pico-sdk's
-  own `pico_stdlib`/`hardware_uart` cover it directly; nothing to add here
-  unless a reusable abstraction turns out to be worth it.
+| Component | Preset | Purpose |
+|---|---|---|
+| `pico_toolset_st7789` | `configs::st7789::kElecrowCrowPanelPicoHmi28` | 320x240 SPI TFT (SPI1: SCK=10, MOSI=11, MISO=12, CS=9, DC=8, RESET=15, backlight PWM=18), DMA-backed pixel push |
+| `pico_toolset_xpt2046` | `configs::xpt2046::kElecrowCrowPanelPicoHmi28` | Built-in resistive touch, sharing SPI1 with the display (CS=16, PENIRQ=17) |
+| `pico_toolset_sdcard` | `configs::sdcard::kElecrowCrowPanelPicoHmi28` | uSD in native hardware-SPI mode (CS=22), sharing SPI1's SCK/MOSI/MISO with the display and touch |
 
 ## Resource map
-Not applicable yet -- no components are wired up for this board.
+- SPI1: shared by all three components (`st7789`, `xpt2046`, `sdcard`) --
+  MOSI=GPIO11/SCK=GPIO10/MISO=GPIO12 in common, each device selected by its
+  own CS (LCD=GPIO9, touch=GPIO16, SD=GPIO22). `St7789Driver::flush()`'s
+  `finish_pixels_dma()` drains the RX FIFO and waits out BSY before handing
+  the bus back, same contract as `Ili9486`+`xpt2046` document -- don't call
+  `Xpt2046Touch::read()` or any `SdCard` operation while an
+  `St7789`/`St7789Driver` write is still in flight.
+- No PIO/DMA/core/watchdog-scratch usage beyond the display's own DMA
+  channel (auto-claimed) -- SD card here uses `sdcard`'s native-hardware-SPI
+  path (`SdCardConfig::spi_instance = spi1`), not PIO-bit-banged SPI, so it
+  claims no PIO block.
+- Framebuffer: a 320x240 RGB565 `St7789Driver` framebuffer is 150KB -- most
+  of the RP2040's 264KB SRAM. Watch your total static+heap+stack budget if
+  you add much beyond the Screen/Widget composition this board's example
+  uses.
 
 ## Build
-Not applicable yet -- no example exists.
+```sh
+export PICO_SDK_PATH=/path/to/pico-sdk
+cmake -S examples -B examples-build
+cmake --build examples-build
+```
+Produces `examples-build/uf2/crowpanel_pico_hmi_28.uf2` (alongside the other
+combinations in the same pass). To build only this combination manually:
+```sh
+cmake -S examples/crowpanel_pico_hmi_28 -B build-crowpanel
+cmake --build build-crowpanel
+```
 
 ## Example
-None yet.
+[`examples/crowpanel_pico_hmi_28/`](../examples/crowpanel_pico_hmi_28/).
 
 ## Notes/gotchas
-- Do not invent pin numbers, presets, or a `boards/` pico-sdk header for
-  this board speculatively -- every other board doc in this directory
-  reflects real-hardware-validated presets, and this one should follow the
-  same bar once hardware is available.
-- When this board is bench-tested: add a real board-definition `.h` here if
-  it needs `PICO_BOARD`-level defaults (mirroring
-  [`waveshare_rp2350_pizero.h`](waveshare_rp2350_pizero.h)), add named
-  presets to the relevant `<name>_configs.h` files, add an
-  `examples/crowpanel_pico_hmi_28/` full-combination example following the
-  shape of the other `examples/*` directories, add it as a new leg in
-  [`../examples/CMakeLists.txt`](../examples/CMakeLists.txt)'s superbuild,
-  and flip this doc's Status to Implemented.
+- Touch and SD pin numbers came from the board's schematic, not yet from a
+  toolset consumer's bench-tested firmware -- confirm both work on real
+  hardware before relying on them (the display path, by contrast, is a
+  direct port of an already-working consumer driver and should just work).
+- The ST7789 init sequence's gamma/VCOM tuning table is currently only
+  validated for this exact 320x240 panel (`St7789Config::width == 320 &&
+  height == 240` in `components/st7789/src/st7789.cpp`). A different
+  CrowPanel panel size would need its own validated table added there, not
+  a guessed one.
+- `madctl = 0x70` (COL_ORDER | SWAP_XY | SCAN_ORDER) is this panel's
+  validated non-rotated orientation; a rotated mount needs a different,
+  bench-confirmed MADCTL value, not a computed rotation transform (this
+  driver doesn't attempt one -- see `St7789Config::madctl`'s doc comment).

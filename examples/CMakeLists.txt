@@ -11,7 +11,7 @@
 #
 # Produces, under examples-build/uf2/:
 #   pico_dv_pico1.uf2  pico_dv_pico1w.uf2  pico_dv_pico2.uf2
-#   waveshare_pizero.uf2  waveshare_pizero_lcd35a.uf2
+#   waveshare_pizero.uf2  waveshare_pizero_lcd35a.uf2  crowpanel_pico_hmi_28.uf2
 #
 # Prerequisites (env vars, same ones the rest of this toolset needs):
 #   PICO_SDK_PATH     -- required by every leg.
@@ -52,5 +52,6 @@ pico_toolset_example_leg(pico_dv_pico1w  pico_dv "-DPICO_BOARD=pico_w"  pico_dv_
 pico_toolset_example_leg(pico_dv_pico2   pico_dv "-DPICO_BOARD=pico2"   pico_dv_pico2)
 pico_toolset_example_leg(waveshare_pizero            waveshare_pizero            "" waveshare_pizero)
 pico_toolset_example_leg(waveshare_pizero_lcd35a     waveshare_pizero_lcd35a     "" waveshare_pizero_lcd35a)
+pico_toolset_example_leg(crowpanel_pico_hmi_28       crowpanel_pico_hmi_28       "" crowpanel_pico_hmi_28)
 
 add_custom_target(uf2s ALL DEPENDS ${PICO_TOOLSET_UF2_OUTPUTS})
