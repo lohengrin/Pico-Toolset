@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
+#include <span>
 
 #include "pico_toolset/display_driver.h"
 
@@ -84,6 +85,31 @@ private:
     Color m_bg = kColorBlack;
     const BitmapGlyph* m_font = nullptr;
     uint8_t m_font_height = 8;
+};
+
+// Blits an already-decoded RGB565 pixel array (row-major, `w*h` pixels) at
+// a fixed position, one set_pixel() per pixel -- driver-agnostic, so it
+// works over any DisplayDriver. This is the generic, chip-agnostic
+// counterpart to the pixel-blit portion of what a driver-specific
+// `bmp_show_image()` does; decoding a raw *file* format (e.g. a `.bmp`
+// header) into such an array stays the caller's job, not this widget's.
+// `pixels` must outlive every draw() call using it (stored by pointer, not
+// copied, same convention as TextWidget's `text`).
+class BitmapWidget : public Widget {
+public:
+    BitmapWidget(int x, int y, int w, int h, std::span<const uint16_t> pixels)
+        : m_x(x), m_y(y), m_w(w), m_h(h), m_pixels(pixels) {}
+
+    void draw(DisplayDriver& display) const override {
+        if (static_cast<size_t>(m_w) * static_cast<size_t>(m_h) > m_pixels.size()) return;
+        for (int y = 0; y < m_h; ++y)
+            for (int x = 0; x < m_w; ++x)
+                display.set_pixel(m_x + x, m_y + y, Color(m_pixels[static_cast<size_t>(y) * m_w + x]));
+    }
+
+private:
+    int m_x, m_y, m_w, m_h;
+    std::span<const uint16_t> m_pixels;
 };
 
 // Vertical value bar (0.0-1.0) with green/yellow/red thresholds and a

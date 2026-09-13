@@ -35,6 +35,7 @@ set(PICO_TOOLSET_BUILD_USB_HID ON)
 include(${TOOLSET_ROOT}/cmake/pico_fatfs.cmake)
 include(${TOOLSET_ROOT}/cmake/pico_pio_usb.cmake)
 
+add_subdirectory(${TOOLSET_ROOT}/components/driver_interfaces ${CMAKE_BINARY_DIR}/_toolset/driver_interfaces)
 add_subdirectory(${TOOLSET_ROOT}/components/ili9486  ${CMAKE_BINARY_DIR}/_toolset/ili9486)
 add_subdirectory(${TOOLSET_ROOT}/components/xpt2046  ${CMAKE_BINARY_DIR}/_toolset/xpt2046)
 add_subdirectory(${TOOLSET_ROOT}/components/psram    ${CMAKE_BINARY_DIR}/_toolset/psram)

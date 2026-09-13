@@ -7,6 +7,7 @@ target_include_directories(pico_toolset_xpt2046 PUBLIC
 target_link_libraries(pico_toolset_xpt2046 PUBLIC
     pico_stdlib
     hardware_spi
+    pico_toolset_driver_interfaces
 )
 target_link_libraries(pico_toolset_xpt2046 PRIVATE
     hardware_gpio

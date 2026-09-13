@@ -5,6 +5,8 @@
 
 #include "hardware/spi.h"
 
+#include "pico_toolset/display_panel.h"
+
 namespace pico_toolset {
 
 // Configuration for the ILI9486 SPI LCD (as used on Waveshare RP2350-PiZero
@@ -53,7 +55,12 @@ struct Ili9486Config {
 //      the one exception -- it streams as one continuous CS-low burst.
 //
 // Derived from a validated driver + DMA enhancement (MIT).
-class Ili9486 {
+//
+// Implements DisplayPanel (display_panel.h) -- the low-level windowed/DMA
+// streaming contract it shares with St7789 -- so callers that only need
+// that contract (not a framebuffer) can hold a DisplayPanel& instead of a
+// concrete Ili9486& and swap panels without changing call sites.
+class Ili9486 : public DisplayPanel {
 public:
     static constexpr int kWidth  = 480;
     static constexpr int kHeight = 320;
@@ -61,16 +68,19 @@ public:
     // Resets the panel and runs the ILI9486 init register sequence.
     bool init(const Ili9486Config& config);
 
+    [[nodiscard]] int width() const override { return kWidth; }
+    [[nodiscard]] int height() const override { return kHeight; }
+
     // Opens the RAMWR window (CASET/PASET, inclusive). CS stays asserted;
     // callers MUST call end_write() once done. No other SPI user (e.g. a
     // touch controller sharing the bus) may transfer in between.
-    void set_window(int x0, int y0, int x1, int y1);
+    void set_window(int x0, int y0, int x1, int y1) override;
 
     // Streams RGB565 pixels (already big-endian byte order on the wire) into
     // the window opened by set_window(). Callers must not overrun the window.
     // Blocks until the whole transfer (and its SPI-level cleanup) is done --
     // see start_pixels_dma() below for a non-blocking alternative.
-    void write_pixels(std::span<const uint16_t> pixels);
+    void write_pixels(std::span<const uint16_t> pixels) override;
 
     // Non-blocking pixel streaming, for callers that need to do other work
     // (e.g. a USB host stack's task()) while a large transfer is in flight
@@ -83,22 +93,22 @@ public:
     // false, or too high a pixel_freq_hz) -- pixels_busy() then always
     // reports false and finish_pixels_dma() is a no-op, so callers can use
     // this trio unconditionally regardless of config.
-    void start_pixels_dma(std::span<const uint16_t> pixels);
-    [[nodiscard]] bool pixels_busy() const;
-    void finish_pixels_dma();
+    void start_pixels_dma(std::span<const uint16_t> pixels) override;
+    [[nodiscard]] bool pixels_busy() const override;
+    void finish_pixels_dma() override;
 
     // Deasserts CS after a set_window()/write_pixels() (or
     // start_pixels_dma()/finish_pixels_dma()) sequence.
-    void end_write();
+    void end_write() override;
 
     // Fills the whole panel with one solid color.
-    void fill_solid(uint16_t rgb565);
+    void fill_solid(uint16_t rgb565) override;
 
     // PWM backlight control (0-255). No-op if pin_backlight is 255.
-    void set_backlight(uint8_t brightness);
+    void set_backlight(uint8_t brightness) override;
 
     // Accessor for sharing the SPI bus (e.g. with an XPT2046 touch).
-    [[nodiscard]] spi_inst_t* spi() const { return m_spi; }
+    [[nodiscard]] spi_inst_t* spi() const override { return m_spi; }
 
     // Live pixel-clock tuning, for finding a panel/wiring's real corruption
     // ceiling on actual hardware instead of guessing from a datasheet.

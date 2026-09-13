@@ -27,6 +27,7 @@ set(EXAMPLE_OUTPUT_NAME "crowpanel_pico_hmi_28" CACHE STRING "Base name for the 
 set(PICO_TOOLSET_BUILD_SDCARD ON)
 include(${TOOLSET_ROOT}/cmake/pico_fatfs.cmake)
 
+add_subdirectory(${TOOLSET_ROOT}/components/driver_interfaces ${CMAKE_BINARY_DIR}/_toolset/driver_interfaces)
 add_subdirectory(${TOOLSET_ROOT}/components/st7789  ${CMAKE_BINARY_DIR}/_toolset/st7789)
 add_subdirectory(${TOOLSET_ROOT}/components/xpt2046 ${CMAKE_BINARY_DIR}/_toolset/xpt2046)
 add_subdirectory(${TOOLSET_ROOT}/components/sdcard  ${CMAKE_BINARY_DIR}/_toolset/sdcard)

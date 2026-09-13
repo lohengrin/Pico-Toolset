@@ -32,6 +32,34 @@ component ships an `example/` program that doubles as a smoke test.
   consumer -- don't invent plausible-looking pin numbers.
 - **RP2040 + RP2350**: guard RP2350-only features (PSRAM) with `#if PICO_RP2350`
   and reflect it in CMake (`if(PICO_RP2350)`) so RP2040 builds stay valid.
+- **Dependency direction is one-way: `libs/` may depend on `components/`,
+  never the reverse.** A component must never `#include` anything from
+  `libs/`. `components/driver_interfaces` is itself a component (header-only,
+  no hardware), so other components depending on it is
+  components-depending-on-components, not a violation.
+- **Kind interfaces**: when a second implementation of a driver *kind*
+  appears (or a consumer needs to swap implementations), extract a small
+  interface rather than letting call sites hardcode the concrete type. Two
+  layers exist for this, at two different places, per the dependency rule
+  above:
+  - **Low-level, component-level** (`components/driver_interfaces`): for
+    drivers that share a real hardware-operation contract -- e.g.
+    `DisplayPanel` (windowed/DMA pixel streaming, implemented by `Ili9486`/
+    `St7789`) and `TouchPanel` (raw touch sampling, implemented by
+    `Xpt2046Touch`). Lives beside the components that implement it so they
+    never gain a `libs/` dependency.
+  - **Higher, `libs/`-level** (e.g. `libs/screen`'s `DisplayDriver`): for
+    consumers that want to render without caring which chip is
+    underneath -- framebuffer/widget-shaped, composed from a low-level
+    interface via an adaptor (`BufferedDisplay` wraps any `DisplayPanel&` +
+    a caller-owned framebuffer) rather than hand-rolled per concrete driver.
+  Either way: pure-virtual essentials + virtual-with-generic-default
+  conveniences (so a minimal implementer only needs the essentials), and
+  `init(Config&)` stays *outside* the interface -- config types are
+  driver-specific by design (see "Config struct for everything" above), so
+  callers always construct/initialize the concrete class first, then use it
+  through the interface type. Don't build a kind interface speculatively for
+  a driver with only one implementation and no consumer asking to swap it.
 - **Namespace**: all public API lives in `pico_toolset` (except `extern "C"`
   allocator functions for the PSRAM component).
 - **CMake target naming**: `pico_toolset_<name>`; examples are the

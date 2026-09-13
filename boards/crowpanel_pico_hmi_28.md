@@ -23,16 +23,16 @@ first flash (see Notes/gotchas).
 ## Resource map
 - SPI1: shared by all three components (`st7789`, `xpt2046`, `sdcard`) --
   MOSI=GPIO11/SCK=GPIO10/MISO=GPIO12 in common, each device selected by its
-  own CS (LCD=GPIO9, touch=GPIO16, SD=GPIO22). `St7789Driver::flush()`'s
+  own CS (LCD=GPIO9, touch=GPIO16, SD=GPIO22). `BufferedDisplay::flush()`'s
   `finish_pixels_dma()` drains the RX FIFO and waits out BSY before handing
   the bus back, same contract as `Ili9486`+`xpt2046` document -- don't call
   `Xpt2046Touch::read()` or any `SdCard` operation while an
-  `St7789`/`St7789Driver` write is still in flight.
+  `St7789`/`BufferedDisplay` write is still in flight.
 - No PIO/DMA/core/watchdog-scratch usage beyond the display's own DMA
   channel (auto-claimed) -- SD card here uses `sdcard`'s native-hardware-SPI
   path (`SdCardConfig::spi_instance = spi1`), not PIO-bit-banged SPI, so it
   claims no PIO block.
-- Framebuffer: a 320x240 RGB565 `St7789Driver` framebuffer is 150KB -- most
+- Framebuffer: a 320x240 RGB565 `BufferedDisplay` framebuffer is 150KB -- most
   of the RP2040's 264KB SRAM. Watch your total static+heap+stack budget if
   you add much beyond the Screen/Widget composition this board's example
   uses.

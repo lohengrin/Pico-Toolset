@@ -4,7 +4,7 @@
 // See ../../boards/crowpanel_pico_hmi_28.md.
 #include "pico_toolset/st7789.h"
 #include "pico_toolset/st7789_configs.h"
-#include "pico_toolset/st7789_driver.h"
+#include "pico_toolset/buffered_display.h"
 #include "pico_toolset/xpt2046.h"
 #include "pico_toolset/xpt2046_configs.h"
 #include "pico_toolset/sdcard.h"
@@ -15,10 +15,10 @@
 
 #include <cstdio>
 
+using pico_toolset::BufferedDisplay;
 using pico_toolset::Screen;
 using pico_toolset::SdCard;
 using pico_toolset::St7789;
-using pico_toolset::St7789Driver;
 using pico_toolset::TextWidget;
 using pico_toolset::Xpt2046Touch;
 
@@ -37,7 +37,7 @@ int main() {
     bool lcd_ok = lcd.init(pico_toolset::configs::st7789::kElecrowCrowPanelPicoHmi28);
     printf("ST7789 init %s\n", lcd_ok ? "ok" : "FAILED");
 
-    St7789Driver driver(lcd, s_framebuffer);
+    BufferedDisplay driver(lcd, s_framebuffer);
     Screen screen(driver);
 
     TextWidget status(4, 4, "CrowPanel PICO HMI 2.8", pico_toolset::kColorWhite,

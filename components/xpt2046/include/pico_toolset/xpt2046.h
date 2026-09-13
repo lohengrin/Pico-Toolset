@@ -4,6 +4,8 @@
 
 #include "hardware/spi.h"
 
+#include "pico_toolset/touch_panel.h"
+
 namespace pico_toolset {
 
 // Configuration for an XPT2046-compatible resistive touch controller sharing
@@ -45,13 +47,16 @@ struct Xpt2046Config {
 // for mapping them into pixel space.
 //
 // Derived from a real-hardware-validated driver (MIT).
-class Xpt2046Touch {
+//
+// Implements TouchPanel (touch_panel.h) so callers that only need a raw
+// touch reading can hold a TouchPanel& instead of a concrete
+// Xpt2046Touch& and swap touch controllers without changing call sites.
+class Xpt2046Touch : public TouchPanel {
 public:
-    struct RawSample {
-        bool     pressed = false;
-        uint16_t raw_x   = 0;
-        uint16_t raw_y   = 0;
-    };
+    // Alias kept for source compatibility with existing callers that name
+    // Xpt2046Touch::RawSample directly -- identical to the shared
+    // pico_toolset::TouchSample (touch_panel.h).
+    using RawSample = TouchSample;
 
     // Configures the CS/IRQ GPIOs. Does not touch the SPI peripheral itself
     // -- config.spi_instance must already be spi_init()'d by whatever else
@@ -62,7 +67,7 @@ public:
     // Polls PENIRQ first (cheap, avoids an SPI transaction on every idle
     // poll); if pressed, reads raw X/Y over SPI at the configured
     // touch-appropriate baud rate.
-    [[nodiscard]] RawSample read();
+    [[nodiscard]] RawSample read() override;
 
 private:
     [[nodiscard]] uint16_t read_channel(uint8_t control_byte);

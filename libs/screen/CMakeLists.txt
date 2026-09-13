@@ -11,10 +11,15 @@ else()
     set(SCREEN_EXTRA_FLAGS "")
 endif()
 
-# Header-only component: the abstraction + adaptor drivers.
+# Header-only component: the abstraction + adaptor drivers. BufferedDisplay
+# (buffered_display.h) wraps a components/driver_interfaces DisplayPanel&,
+# hence the dependency.
 add_library(pico_toolset_screen INTERFACE)
 target_include_directories(pico_toolset_screen INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/include
+)
+target_link_libraries(pico_toolset_screen INTERFACE
+    pico_toolset_driver_interfaces
 )
 target_compile_features(pico_toolset_screen INTERFACE cxx_std_20)
 

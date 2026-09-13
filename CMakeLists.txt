@@ -62,6 +62,10 @@ option(PICO_TOOLSET_BUILD_SCREEN   "Build Screen abstraction"             ON)
 # Screen backend selector.
 option(PICO_TOOLSET_SCREEN_PIMORONI "Use Pimoroni PicoGraphics backend"   OFF)
 
+# Header-only DisplayPanel/TouchPanel interfaces (no build option -- always
+# available; ili9486/st7789/xpt2046 depend on it unconditionally).
+add_subdirectory(components/driver_interfaces)
+
 if(PICO_TOOLSET_BUILD_SSD1306)
     add_subdirectory(components/ssd1306)
 endif()

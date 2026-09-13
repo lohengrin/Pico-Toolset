@@ -11,6 +11,7 @@ independently.
 
 | Component | Target | Description |
 |-----------|--------|-------------|
+| Driver interfaces | `pico_toolset_driver_interfaces` | Header-only, dependency-free `DisplayPanel`/`TouchPanel` interfaces -- the low-level windowed/DMA-streaming and raw-touch-sampling contracts `ILI9486`/`ST7789`/`XPT2046` implement so callers can swap chips without rewriting call sites. See AGENTS.md's "Kind interfaces". |
 | SSD1306   | `pico_toolset_ssd1306`  | I2C monochrome OLED driver (128x64/128x32/...) with framebuffer, BMP blitting, basic primitives. |
 | ILI9486   | `pico_toolset_ili9486`  | 480x320 SPI TFT driver for Waveshare-style boards where the panel sits behind a 16-bit shift register; DMA-backed pixel streaming, backlight PWM. |
 | ST7789    | `pico_toolset_st7789`   | ST7789-family SPI TFT driver (e.g. the CrowPanel PICO HMI 2.8"'s 320x240 panel); config-driven geometry/MADCTL/inversion, DMA-backed pixel streaming, backlight PWM. |
@@ -29,7 +30,7 @@ standalone drivers.
 
 | Library | Target | Description |
 |---------|--------|-------------|
-| Screen   | `pico_toolset_screen`  | Pluggable `DisplayDriver` abstraction + slot-based widget composition (`RectWidget`/`TextWidget`/`BarWidget`/`HBarWidget`/`LineGraphWidget`), with SSD1306/ILI9486/ST7789/Pimoroni adaptors. |
+| Screen   | `pico_toolset_screen`  | Pluggable `DisplayDriver` abstraction + slot-based widget composition (`RectWidget`/`TextWidget`/`BitmapWidget`/`BarWidget`/`HBarWidget`/`LineGraphWidget`). `BufferedDisplay` adapts any `DisplayPanel` (ILI9486/ST7789) + a caller-owned framebuffer; `Ssd1306Driver`/`PimoroniDriver` adapt those directly. |
 | Fault handler | `pico_toolset_fault_handler` | Cortex-M33 hard-fault handler that survives a watchdog reset to report PC/LR/CFSR on the *next* boot, instead of the SDK's default silent halt. No board wiring involved (core MCU + watchdog only), hence a library rather than a `components/` driver. |
 
 All code lives in namespace `pico_toolset` and targets C++20.
@@ -51,6 +52,7 @@ pico-toolset/
 │   ├── pico-toolset.cmake    # helper for FetchContent consumers
 │   └── pico_pio_usb.cmake    # makes Pico-PIO-USB available (submodule or fetch)
 ├── components/
+│   ├── driver_interfaces/ include/pico_toolset/{display_panel.h,touch_panel.h}  (header-only)
 │   ├── ssd1306/   include/pico_toolset/ssd1306.h   src/  example/
 │   ├── ili9486/   include/pico_toolset/ili9486.h   src/  example/
 │   ├── st7789/    include/pico_toolset/st7789.h    src/  example/
@@ -580,10 +582,11 @@ screen.update();
   `watchdog_hw->scratch[0]`/`[1]` for a different purpose, or the two will
   collide.
 - **Screen**: `Screen` does not own widgets -- keep them alive for its
-  lifetime. `Ili9486Driver` needs a caller-owned RGB565 framebuffer (480x320x2
-  ≈ 300KB; allocate from PSRAM). `St7789Driver` likewise needs a caller-owned
-  RGB565 framebuffer (320x240x2 = 150KB -- on RP2040's 264KB SRAM with no
-  PSRAM, this is most of it; watch your total static+heap+stack budget).
+  lifetime. `BufferedDisplay` needs a caller-owned RGB565 framebuffer sized
+  for whichever `DisplayPanel` it wraps -- e.g. 480x320x2 ≈ 300KB for an
+  ILI9486 (allocate from PSRAM), or 320x240x2 = 150KB for a 320x240 ST7789
+  panel (on RP2040's 264KB SRAM with no PSRAM, this is most of it; watch
+  your total static+heap+stack budget).
 
 ## License
 
