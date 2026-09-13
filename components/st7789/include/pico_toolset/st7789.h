@@ -24,7 +24,7 @@ struct St7789Config {
     uint8_t     pin_mosi;               // SPI MOSI
     uint8_t     pin_cs;                 // Chip Select
     uint8_t     pin_dc;                 // Data/Command
-    uint8_t     pin_reset;              // Hardware reset
+    uint8_t     pin_reset = 255;        // Hardware reset pin (255 = none -- rely on the panel's software SWRESET only)
     uint8_t     pin_backlight = 255;    // Backlight PWM pin (255 = none)
 
     uint16_t width;                     // Panel width in the wired rotation

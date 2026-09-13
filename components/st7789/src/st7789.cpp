@@ -61,8 +61,10 @@ bool St7789::init(const St7789Config& config) {
     gpio_set_dir(m_pin_cs, GPIO_OUT);
     gpio_put(m_pin_cs, 1);
 
-    gpio_init(config.pin_reset);
-    gpio_set_dir(config.pin_reset, GPIO_OUT);
+    if (config.pin_reset != 255) {
+        gpio_init(config.pin_reset);
+        gpio_set_dir(config.pin_reset, GPIO_OUT);
+    }
 
     if (m_pin_backlight != 255) {
         pwm_config cfg = pwm_get_default_config();
@@ -81,12 +83,16 @@ bool St7789::init(const St7789Config& config) {
         }
     }
 
-    // Panel reset sequence -- matches the validated consumer driver's timing.
-    gpio_put(config.pin_reset, true);
-    sleep_ms(5);
-    gpio_put(config.pin_reset, false);
-    sleep_ms(20);
-    gpio_put(config.pin_reset, true);
+    // Hardware reset sequence (skipped if the panel has no dedicated reset
+    // pin -- e.g. Pimoroni's Pico Display Pack, which relies on the SWRESET
+    // command below instead). Timing matches the validated consumer driver.
+    if (config.pin_reset != 255) {
+        gpio_put(config.pin_reset, true);
+        sleep_ms(5);
+        gpio_put(config.pin_reset, false);
+        sleep_ms(20);
+        gpio_put(config.pin_reset, true);
+    }
 
     write_command(kCmdSwReset);
     sleep_ms(150);
@@ -110,11 +116,11 @@ bool St7789::init(const St7789Config& config) {
     const uint8_t frctrl2[] = {0x0f};
     write_command(kCmdFrctrl2, frctrl2, 1);
 
-    // Gamma/VCOM tuning tables: the 320x240 variant validated on the
-    // CrowPanel PICO HMI 2.8". A different panel geometry (e.g. 240x240)
-    // needs its own validated table -- add it as a second branch here (keyed
-    // off config.width/height, same as the consumer driver this was ported
-    // from) only once actually bench-tested; don't invent one speculatively.
+    // Gamma/VCOM tuning tables, keyed off config.width/height (same as the
+    // consumer driver this was ported from): 320x240 validated on the
+    // CrowPanel PICO HMI 2.8", 240x135 on Pimoroni's Pico Display Pack. A
+    // different panel geometry needs its own validated table added the same
+    // way -- only once actually bench-tested; don't invent one speculatively.
     if (config.width == 320 && config.height == 240) {
         const uint8_t gctrl[] = {0x35};
         write_command(kCmdGctrl, gctrl, 1);
@@ -125,6 +131,28 @@ bool St7789::init(const St7789Config& config) {
         write_command(kCmdGmctrp1, gmctrp1, 14);
         const uint8_t gmctrn1[] = {0xD0, 0x08, 0x10, 0x08, 0x06, 0x06, 0x39, 0x44,
                                     0x51, 0x0B, 0x16, 0x14, 0x2F, 0x31};
+        write_command(kCmdGmctrn1, gmctrn1, 14);
+    }
+
+    // Pimoroni Pico Display Pack (1.14", 240x135) -- second validated
+    // gamma/VCOM table, ported from the same consumer driver. Overrides
+    // VRHS (set once already above for the 320x240 panel) and writes an
+    // undocumented vendor register (0xd6) the original driver also sets
+    // unconditionally for this panel with no further explanation.
+    if (config.width == 240 && config.height == 135) {
+        const uint8_t vrhs[] = {0x00};
+        write_command(kCmdVrhs, vrhs, 1);
+        const uint8_t gctrl[] = {0x75};
+        write_command(kCmdGctrl, gctrl, 1);
+        const uint8_t vcoms[] = {0x3D};
+        write_command(kCmdVcoms, vcoms, 1);
+        const uint8_t reg_0xd6[] = {0xa1};
+        write_command(0xd6, reg_0xd6, 1);
+        const uint8_t gmctrp1[] = {0x70, 0x04, 0x08, 0x09, 0x09, 0x05, 0x2A, 0x33,
+                                    0x41, 0x07, 0x13, 0x13, 0x29, 0x2f};
+        write_command(kCmdGmctrp1, gmctrp1, 14);
+        const uint8_t gmctrn1[] = {0x70, 0x03, 0x09, 0x0A, 0x09, 0x06, 0x2B, 0x34,
+                                    0x41, 0x07, 0x12, 0x14, 0x28, 0x2E};
         write_command(kCmdGmctrn1, gmctrn1, 14);
     }
 

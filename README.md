@@ -259,6 +259,9 @@ lcd.end_write();
 
 ### ST7789
 
+Two presets exist (`kElecrowCrowPanelPicoHmi28`, `kPimoroniPicoDisplayPack`)
+-- pick the one matching your board, or copy and adjust:
+
 ```cpp
 #include "pico_toolset/st7789_configs.h"
 
