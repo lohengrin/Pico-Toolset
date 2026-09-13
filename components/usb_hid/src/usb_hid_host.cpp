@@ -10,6 +10,7 @@
 #include "host/usbh_pvt.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace pico_toolset {
@@ -368,8 +369,23 @@ bool UsbHidHost::init(const UsbHidConfig& config) {
 
     if (m_config.run_on_core1) {
         multicore_reset_core1();
-        static uint32_t core1_stack[4096]; // 16 KB stack
-        multicore_launch_core1_with_stack(core1_entry, core1_stack, sizeof(core1_stack));
+        // Heap-allocated, not a function-local `static` array: a `static`
+        // here is a fixed .bss reservation that exists in the binary
+        // whether or not this branch ever runs at runtime (C++ local
+        // statics are allocated storage unconditionally; only their
+        // *construction* is guarded) -- wasting 16KB of SRAM permanently
+        // on every consumer that sets run_on_core1=false (e.g. HDMI
+        // builds, see the else branch below), even though they never take
+        // this path. Confirmed: PicoDoom's HDMI variant had only ~16KB of
+        // free SRAM left for WAD loading with this as a static; moving it
+        // here (allocated only when actually used) gave that back.
+        static uint32_t* core1_stack = nullptr;
+        if (!core1_stack) {
+            core1_stack = static_cast<uint32_t*>(malloc(4096 * sizeof(uint32_t))); // 16 KB stack
+            if (!core1_stack)
+                panic("UsbHidHost::init: failed to allocate core1 stack");
+        }
+        multicore_launch_core1_with_stack(core1_entry, core1_stack, 4096 * sizeof(uint32_t));
     } else {
         // Shares core0 with the caller's own loop (e.g. HDMI builds, where
         // core1 belongs exclusively to the DVI driver) -- host_stack_setup()
