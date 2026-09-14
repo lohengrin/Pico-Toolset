@@ -308,6 +308,16 @@ pico_toolset::PsramResource res;        // std::pmr::memory_resource
 std::pmr::vector<uint8_t> big(&res);
 ```
 
+`psram_qspi_sweep_example` (`pico_toolset_psram`, RP2350 only) finds the
+highest safe clock for the flash + PSRAM QSPI bus: it raises `clk_sys` one
+PLL-attainable step at a time, re-tunes the PSRAM M1 window per step with
+`psram_set_clock_hz()`, and verifies both chips' XIP windows with
+cache-coherent pattern tests (the RP2350 XIP cache is not read-only and will
+lie to you if left alone). It is built with `copy_to_ram` so a step that
+breaks QSPI is reported and rolled back instead of crashing the CPU on a bad
+instruction fetch. Sweep range/margin live in its `SweepConfig`; the board's
+`cs_pin` still comes from `configs::psram::*`.
+
 ### USB HID host
 
 ```cpp
