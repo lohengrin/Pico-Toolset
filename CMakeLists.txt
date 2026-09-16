@@ -46,6 +46,7 @@ endif()
 option(PICO_TOOLSET_BUILD_SSD1306  "Build SSD1306 OLED driver"            ON)
 option(PICO_TOOLSET_BUILD_ILI9486  "Build ILI9486 SPI LCD driver"         ON)
 option(PICO_TOOLSET_BUILD_ST7789   "Build ST7789 SPI LCD driver"          ON)
+option(PICO_TOOLSET_BUILD_ST7796   "Build ST7796U SPI LCD driver"         ON)
 option(PICO_TOOLSET_BUILD_XPT2046  "Build XPT2046 resistive touch driver" ON)
 option(PICO_TOOLSET_BUILD_PSRAM    "Build PSRAM driver (RP2350 only)"     ON)
 option(PICO_TOOLSET_BUILD_USB_HID  "Build PIO-USB HID host"               ON)
@@ -63,7 +64,7 @@ option(PICO_TOOLSET_BUILD_SCREEN   "Build Screen abstraction"             ON)
 option(PICO_TOOLSET_SCREEN_PIMORONI "Use Pimoroni PicoGraphics backend"   OFF)
 
 # Header-only DisplayPanel/TouchPanel interfaces (no build option -- always
-# available; ili9486/st7789/xpt2046 depend on it unconditionally).
+# available; ili9486/st7789/st7796/xpt2046 depend on it unconditionally).
 add_subdirectory(components/driver_interfaces)
 
 if(PICO_TOOLSET_BUILD_SSD1306)
@@ -74,6 +75,9 @@ if(PICO_TOOLSET_BUILD_ILI9486)
 endif()
 if(PICO_TOOLSET_BUILD_ST7789)
     add_subdirectory(components/st7789)
+endif()
+if(PICO_TOOLSET_BUILD_ST7796)
+    add_subdirectory(components/st7796)
 endif()
 if(PICO_TOOLSET_BUILD_XPT2046)
     add_subdirectory(components/xpt2046)

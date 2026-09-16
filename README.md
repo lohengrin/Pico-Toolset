@@ -11,11 +11,12 @@ independently.
 
 | Component | Target | Description |
 |-----------|--------|-------------|
-| Driver interfaces | `pico_toolset_driver_interfaces` | Header-only, dependency-free `DisplayPanel`/`TouchPanel` interfaces -- the low-level windowed/DMA-streaming and raw-touch-sampling contracts `ILI9486`/`ST7789`/`XPT2046` implement so callers can swap chips without rewriting call sites. See AGENTS.md's "Kind interfaces". |
+| Driver interfaces | `pico_toolset_driver_interfaces` | Header-only, dependency-free `DisplayPanel`/`TouchPanel` interfaces -- the low-level windowed/DMA-streaming and raw-touch-sampling contracts `ILI9486`/`ST7789`/`ST7796U`/`XPT2046` implement so callers can swap chips without rewriting call sites. See AGENTS.md's "Kind interfaces". |
 | SSD1306   | `pico_toolset_ssd1306`  | I2C monochrome OLED driver (128x64/128x32/...) with framebuffer, BMP blitting, basic primitives. |
 | ILI9486   | `pico_toolset_ili9486`  | 480x320 SPI TFT driver for Waveshare-style boards where the panel sits behind a 16-bit shift register; DMA-backed pixel streaming, backlight PWM. |
 | ST7789    | `pico_toolset_st7789`   | ST7789-family SPI TFT driver (e.g. the CrowPanel PICO HMI 2.8"'s 320x240 panel); config-driven geometry/MADCTL/inversion, DMA-backed pixel streaming, backlight PWM. |
-| XPT2046   | `pico_toolset_xpt2046`  | Resistive touch controller sharing an SPI bus with a display driver (e.g. ILI9486); raw ADC reads + a linear calibration helper. |
+| ST7796U   | `pico_toolset_st7796`   | ST7796U SPI TFT driver (e.g. a 480x320 Waveshare-wiring-compatible panel replacing an ILI9486 board); direct SPI (no shift-register bridge), config-driven geometry/MADCTL, live SPI-clock tuning, DMA-backed pixel streaming, backlight PWM. |
+| XPT2046   | `pico_toolset_xpt2046`  | Resistive touch controller sharing an SPI bus with a display driver (e.g. ILI9486/ST7796U); raw ADC reads + a linear calibration helper. |
 | PSRAM     | `pico_toolset_psram`    | RP2350-only external PSRAM bring-up (QMI CS1), self-test, free-list allocator, `std::pmr` adapter. No-op on RP2040. |
 | USB HID   | `pico_toolset_usb_hid`  | PIO-USB TinyUSB host: keyboard/mouse/HID-gamepad + XInput + DualSense (VID/PID-detected), double-buffered cross-core state, unified `GamepadState`. |
 | I2S audio | `pico_toolset_i2s_audio` | Float-sample I2S DAC output (e.g. PCM5100A) via pico-extras' `pico_audio_i2s`; non-blocking queue, config-driven pins/DMA channel/PIO SM. OFF by default -- needs pico-extras set up by the consumer (see below). |
@@ -56,6 +57,7 @@ pico-toolset/
 │   ├── ssd1306/   include/pico_toolset/ssd1306.h   src/  example/
 │   ├── ili9486/   include/pico_toolset/ili9486.h   src/  example/
 │   ├── st7789/    include/pico_toolset/st7789.h    src/  example/
+│   ├── st7796/    include/pico_toolset/st7796.h    src/  example/
 │   ├── xpt2046/   include/pico_toolset/*.h         src/  example/
 │   ├── psram/     include/pico_toolset/psram.h     src/  example/
 │   ├── i2s_audio/ include/pico_toolset/i2s_audio.h src/  example/
@@ -89,6 +91,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_SSD1306` | ON | Build SSD1306 driver + example |
 | `PICO_TOOLSET_BUILD_ILI9486` | ON | Build ILI9486 driver + example |
 | `PICO_TOOLSET_BUILD_ST7789`  | ON | Build ST7789 driver + example |
+| `PICO_TOOLSET_BUILD_ST7796`  | ON | Build ST7796U driver + example |
 | `PICO_TOOLSET_BUILD_XPT2046` | ON | Build XPT2046 touch driver + example |
 | `PICO_TOOLSET_BUILD_PSRAM`   | ON | Build PSRAM driver + example (RP2350 only) |
 | `PICO_TOOLSET_BUILD_USB_HID` | ON | Build PIO-USB HID host + example |
@@ -273,6 +276,25 @@ lcd.fill_solid(0x001F);                 // solid blue
 lcd.set_window(0, 0, 100, 100);
 lcd.write_pixels(span_of_100x100_pixels);
 lcd.end_write();
+```
+
+### ST7796U
+
+```cpp
+#include "pico_toolset/st7796_configs.h"
+
+pico_toolset::St7796 lcd;
+lcd.init(pico_toolset::configs::st7796::kWaveshareRp2350PiZero);
+lcd.fill_solid(0x001F);                 // solid blue
+lcd.set_window(0, 0, 100, 100);
+lcd.write_pixels(span_of_100x100_pixels);
+lcd.end_write();
+
+// Live clock tuning once the panel's real corruption ceiling is known --
+// spec ceiling is 125MHz on the Waveshare-wiring-compatible board this was
+// validated on, but start conservative (the preset's default) and raise it
+// bench-tested, not from the datasheet alone.
+lcd.set_pixel_clock_hz(50'000'000);
 ```
 
 ### XPT2046 touch (shares a bus with a display driver)
