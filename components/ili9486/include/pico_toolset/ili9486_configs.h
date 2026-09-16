@@ -27,13 +27,7 @@ inline const Ili9486Config kWaveshareRp2350PiZero = {
     .pin_rst = 25,
     .pin_backlight = 255, // no PWM backlight pin wired on this board
     .spi_freq_hz = 8'000'000,
-    // 33MHz is only genuinely achievable (rather than silently landing on
-    // 24MHz, clk_peri/2's ceiling) because this preset's consumer ties
-    // clk_peri to clk_sys (PICO_CLOCK_ADJUST_PERI_CLOCK_WITH_SYS_CLOCK) --
-    // see the LCD profile's own clk_sys override for why. At clk_peri=
-    // 264MHz this divides out exactly (prescale=2, postdiv=4, 264/8=33).
-    // Real-hardware-confirmed on this board.
-    .pixel_freq_hz = 33'000'000,
+    .pixel_freq_hz = 25'000'000,
     .use_dma = true,
     .dma_channel = -1, // auto-claim
 };
