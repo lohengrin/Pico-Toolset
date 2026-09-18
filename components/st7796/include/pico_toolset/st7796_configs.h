@@ -13,20 +13,20 @@
 
 namespace pico_toolset::configs::st7796 {
 
-// Waveshare RP2350-PiZero + an external 3.5" ST7796U SPI LCD wired over the
-// board's GPIO/SPI header, replacing an ILI9486 panel on the same wiring
-// (the board itself has no built-in screen -- its own display path is the
-// PIO-driven HDMI/DVI output, see pico_toolset_dvi_hdmi). Pins are carried
-// over unchanged from the validated configs::ili9486::kWaveshareRp2350PiZero
-// preset (same board, same GPIO/SPI header, only the panel's controller
-// chip changed) -- NOT yet independently hardware-validated for the ST7796U
-// panel itself: bench-confirm on first flash, in particular `madctl` (the
-// value below, 0x28 = MV|BGR, mirrors ILI9486's landscape orientation on
-// this board bit-for-bit, since both controllers share the same MADCTL bit
-// assignments -- but confirm the image isn't mirrored/rotated before
-// trusting it) and `spi_freq_hz` (kept at the ILI9486 preset's
-// already-validated 33.33MHz rather than this panel's much higher 125MHz
-// spec ceiling -- raise it once bench-tested, see St7796::set_pixel_clock_hz()).
+// Waveshare RP2350-PiZero + a SunFounder 3.5" 480x320 IPS SPI LCD
+// (ST7796U + XPT2046 touch) wired over the board's GPIO/SPI header,
+// replacing an ILI9486 panel on the same wiring (the board itself has no
+// built-in screen -- its own display path is the PIO-driven HDMI/DVI
+// output, see pico_toolset_dvi_hdmi). Pins carried over unchanged from the
+// validated configs::ili9486::kWaveshareRp2350PiZero preset (same board,
+// same GPIO/SPI header, only the panel's controller chip changed) --
+// hardware-validated 2026-09. `madctl` (MV|BGR, via St7796Orientation) gives
+// correct landscape orientation with no mirroring; `invert_colors=true` is
+// this specific panel's own requirement (not every ST7796U panel needs it --
+// see St7796Config::invert_colors). `spi_freq_hz` is kept at the ILI9486
+// preset's already-validated 33.33MHz rather than this panel's much higher
+// 125MHz spec ceiling -- raise it once bench-tested, see
+// St7796::set_pixel_clock_hz().
 inline const St7796Config kWaveshareRp2350PiZero = {
     .spi_instance = spi1,
     .pin_sck = 10,
@@ -40,7 +40,9 @@ inline const St7796Config kWaveshareRp2350PiZero = {
     .height = 320,
     .col_offset = 0,
     .row_offset = 0,
-    .madctl = 0x28, // MV|BGR -- landscape, matching the ILI9486 preset's orientation; bench-confirm
+    .madctl = St7796Orientation{.swap_row_column = true,
+                                 .color_order = St7796ColorOrder::Bgr}.to_madctl_byte(),
+    .invert_colors = true, // this panel batch needs it -- see St7796Config's doc comment
     .spi_freq_hz = 33'333'333, // matches the validated ILI9486 preset's achieved rate; raise once bench-tested
     .use_dma = true,
     .dma_channel = -1, // auto-claim

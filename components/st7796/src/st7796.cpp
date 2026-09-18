@@ -11,24 +11,34 @@ namespace pico_toolset {
 
 namespace {
 
-// ST7796U command bytes used here.
-constexpr uint8_t kCmdSwReset = 0x01;
-constexpr uint8_t kCmdSlpOut = 0x11;
-constexpr uint8_t kCmdDispOn = 0x29;
-constexpr uint8_t kCmdCaset = 0x2A;
-constexpr uint8_t kCmdRaset = 0x2B;
-constexpr uint8_t kCmdRamwr = 0x2C;
-constexpr uint8_t kCmdMadctl = 0x36;
-constexpr uint8_t kCmdColmod = 0x3A;
-constexpr uint8_t kCmdInvCtr = 0xB4;   // column inversion
-constexpr uint8_t kCmdDfuncCtr = 0xB6; // display function control
-constexpr uint8_t kCmdPwctr2 = 0xC1;   // power control 2
-constexpr uint8_t kCmdPwctr3 = 0xC2;   // power control 3
-constexpr uint8_t kCmdVmctr1 = 0xC5;   // VCOM control
-constexpr uint8_t kCmdDoca = 0xE8;     // display output ctrl adjust
-constexpr uint8_t kCmdGmctrp1 = 0xE0;  // gamma "+"
-constexpr uint8_t kCmdGmctrn1 = 0xE1;  // gamma "-"
-constexpr uint8_t kCmdCmdSet = 0xF0;   // command set control (extended command enable/disable)
+// ST7796U command bytes used here, named and numbered after the ST7796S
+// datasheet's own command sections (Sitronix, doc rev 2014/11 -- see
+// docs/ST7796s.pdf in the PicoDoom repo this driver was consolidated
+// against). Section numbers refer to that document.
+constexpr uint8_t kCmdSwReset = 0x01;    // §9.2.1  SWRESET: Software Reset
+constexpr uint8_t kCmdSlpOut = 0x11;     // §9.2.11 SLPOUT: Sleep Out
+constexpr uint8_t kCmdInvOff = 0x20;     // §9.2.16 INVOFF: Display Inversion Off
+constexpr uint8_t kCmdInvOn = 0x21;      // §9.2.17 INVON: Display Inversion On
+constexpr uint8_t kCmdDispOn = 0x29;     // §9.2.19 DISPON: Display On
+constexpr uint8_t kCmdCaset = 0x2A;      // §9.2.20 CASET: Column Address Set
+constexpr uint8_t kCmdRaset = 0x2B;      // §9.2.21 RASET: Row Address Set
+constexpr uint8_t kCmdRamwr = 0x2C;      // §9.2.22 RAMWR: Memory Write
+constexpr uint8_t kCmdMadctl = 0x36;     // §9.2.28 MADCTL: Memory Data Access Control
+constexpr uint8_t kCmdColmod = 0x3A;     // §9.2.32 COLMOD: Interface Pixel Format
+constexpr uint8_t kCmdInvCtr = 0xB4;     // Display Inversion Control (column inversion)
+constexpr uint8_t kCmdEntryMode = 0xB7;  // Entry Mode Set
+constexpr uint8_t kCmdPwctr1 = 0xC0;     // Power Control 1
+constexpr uint8_t kCmdPwctr2 = 0xC1;     // Power Control 2
+constexpr uint8_t kCmdPwctr3 = 0xC2;     // Power Control 3
+constexpr uint8_t kCmdVmctr1 = 0xC5;     // VCOM Control
+constexpr uint8_t kCmdDoca = 0xE8;       // Display Output Ctrl Adjust
+constexpr uint8_t kCmdGmctrp1 = 0xE0;    // Positive Gamma Control
+constexpr uint8_t kCmdGmctrn1 = 0xE1;    // Negative Gamma Control
+constexpr uint8_t kCmdCmdSet = 0xF0;     // Command Set Control (extended command set I/II enable/disable)
+
+// COLMOD (3Ah) value: 16 bits/pixel on both the RGB and MCU interface
+// nibbles (see St7796Config's doc comment on why this isn't a config knob).
+constexpr uint8_t kColmod16Bit = 0x55;
 
 } // namespace
 
@@ -48,12 +58,25 @@ bool St7796::init(const St7796Config& config) {
     gpio_set_function(config.pin_sck, GPIO_FUNC_SPI);
     gpio_set_function(config.pin_mosi, GPIO_FUNC_SPI);
     gpio_set_function(config.pin_miso, GPIO_FUNC_SPI);
+    // Max drive strength + fast slew on the pins this bridge-style board
+    // needs clean edges from (SCK/MOSI/DC/CS below -- MISO is an input, no
+    // driver settings apply). RP2350 defaults to its weakest (2mA) setting;
+    // this board's bridge-chip input trace needs stronger edges than that
+    // to register reliably.
+    gpio_set_drive_strength(config.pin_sck, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_slew_rate(config.pin_sck, GPIO_SLEW_RATE_FAST);
+    gpio_set_drive_strength(config.pin_mosi, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_slew_rate(config.pin_mosi, GPIO_SLEW_RATE_FAST);
 
     gpio_init(m_pin_dc);
     gpio_set_dir(m_pin_dc, GPIO_OUT);
+    gpio_set_drive_strength(m_pin_dc, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_slew_rate(m_pin_dc, GPIO_SLEW_RATE_FAST);
 
     gpio_init(m_pin_cs);
     gpio_set_dir(m_pin_cs, GPIO_OUT);
+    gpio_set_drive_strength(m_pin_cs, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_slew_rate(m_pin_cs, GPIO_SLEW_RATE_FAST);
     gpio_put(m_pin_cs, 1);
 
     if (config.pin_rst != 255) {
@@ -80,14 +103,16 @@ bool St7796::init(const St7796Config& config) {
 
     // Hardware reset sequence (skipped if the panel has no dedicated reset
     // pin -- rely on the SWRESET command below instead). Timing matches
-    // Ili9486's validated reset sequence for the same board family.
+    // Ili9486's validated (real-hardware) reset sequence for the same board
+    // family -- generous 500ms holds, not the datasheet-minimum 120ms this
+    // file used before.
     if (config.pin_rst != 255) {
         gpio_put(config.pin_rst, true);
-        sleep_ms(5);
+        sleep_ms(500);
         gpio_put(config.pin_rst, false);
-        sleep_ms(20);
+        sleep_ms(500);
         gpio_put(config.pin_rst, true);
-        sleep_ms(120);
+        sleep_ms(500);
     }
 
     write_command(kCmdSwReset);
@@ -95,9 +120,18 @@ bool St7796::init(const St7796Config& config) {
     write_command(kCmdSlpOut);
     sleep_ms(120);
 
-    // Register sequence below is ST7796U's own manufacturer-recommended
-    // init (ported from a widely-used, real-panel-validated reference --
-    // TFT_eSPI's ST7796 driver -- not invented from the datasheet alone).
+    // Register sequence below is byte-for-byte the one SunFounder's own
+    // Linux fbtft overlay sends to this exact panel (extracted from their
+    // published mhs35ips-overlay.dtb's `init` property) -- prefer this
+    // vendor-validated table over a datasheet/TFT_eSPI-derived one whenever
+    // they disagree, since it's proven on the identical controller+panel
+    // combination this driver targets.
+    const uint8_t madctl[] = {config.madctl};
+    write_command(kCmdMadctl, madctl, 1);
+
+    const uint8_t colmod[] = {kColmod16Bit};
+    write_command(kCmdColmod, colmod, 1);
+
     // Enable the extended command set (partI+partII) to reach the
     // power/gamma registers that follow; disabled again at the end.
     const uint8_t cmdset_en1[] = {0xC3};
@@ -105,35 +139,30 @@ bool St7796::init(const St7796Config& config) {
     const uint8_t cmdset_en2[] = {0x96};
     write_command(kCmdCmdSet, cmdset_en2, 1);
 
-    const uint8_t colmod[] = {0x55}; // 16 bits per pixel, both interfaces
-    write_command(kCmdColmod, colmod, 1);
-
     const uint8_t invctr[] = {0x01}; // 1-dot inversion
     write_command(kCmdInvCtr, invctr, 1);
 
-    const uint8_t dfunctr[] = {0x80, 0x02, 0x3B};
-    write_command(kCmdDfuncCtr, dfunctr, 3);
+    const uint8_t entrymode[] = {0xC6};
+    write_command(kCmdEntryMode, entrymode, 1);
+
+    const uint8_t pwctr1[] = {0x80, 0x45};
+    write_command(kCmdPwctr1, pwctr1, 2);
+    const uint8_t pwctr2[] = {0x13};
+    write_command(kCmdPwctr2, pwctr2, 1);
+    const uint8_t pwctr3[] = {0xA7};
+    write_command(kCmdPwctr3, pwctr3, 1);
+    const uint8_t vmctr1[] = {0x0A};
+    write_command(kCmdVmctr1, vmctr1, 1);
 
     const uint8_t doca[] = {0x40, 0x8A, 0x00, 0x00, 0x29, 0x19, 0xA5, 0x33};
     write_command(kCmdDoca, doca, 8);
 
-    const uint8_t pwctr2[] = {0x06};
-    write_command(kCmdPwctr2, pwctr2, 1);
-    const uint8_t pwctr3[] = {0xA7};
-    write_command(kCmdPwctr3, pwctr3, 1);
-    const uint8_t vmctr1[] = {0x18};
-    write_command(kCmdVmctr1, vmctr1, 1);
-
-    sleep_ms(120);
-
-    const uint8_t gmctrp1[] = {0xF0, 0x09, 0x0B, 0x06, 0x04, 0x15, 0x2F, 0x54,
-                                0x42, 0x3C, 0x17, 0x14, 0x18, 0x1B};
+    const uint8_t gmctrp1[] = {0xD0, 0x08, 0x0F, 0x06, 0x06, 0x33, 0x30, 0x33,
+                                0x47, 0x17, 0x13, 0x13, 0x2B, 0x31};
     write_command(kCmdGmctrp1, gmctrp1, 14);
-    const uint8_t gmctrn1[] = {0xE0, 0x09, 0x0B, 0x06, 0x04, 0x03, 0x2B, 0x43,
-                                0x42, 0x3B, 0x16, 0x14, 0x17, 0x1B};
+    const uint8_t gmctrn1[] = {0xD0, 0x0A, 0x11, 0x0B, 0x09, 0x07, 0x2F, 0x33,
+                                0x47, 0x38, 0x15, 0x16, 0x2C, 0x32};
     write_command(kCmdGmctrn1, gmctrn1, 14);
-
-    sleep_ms(120);
 
     const uint8_t cmdset_dis1[] = {0x3C};
     write_command(kCmdCmdSet, cmdset_dis1, 1);
@@ -142,11 +171,13 @@ bool St7796::init(const St7796Config& config) {
 
     sleep_ms(120);
 
+    // Panel-specific (see St7796Config::invert_colors's doc comment) --
+    // send explicitly either way rather than relying on the reset default,
+    // since that default isn't guaranteed consistent across ST7796U panel
+    // batches/vendors.
+    write_command(config.invert_colors ? kCmdInvOn : kCmdInvOff);
     write_command(kCmdDispOn);
     sleep_ms(100);
-
-    const uint8_t madctl[] = {config.madctl};
-    write_command(kCmdMadctl, madctl, 1);
 
     if (m_pin_backlight != 255) {
         sleep_ms(50); // let the init sequence settle before lighting up
@@ -156,14 +187,34 @@ bool St7796::init(const St7796Config& config) {
     return true;
 }
 
+// Wire protocol: this board's LCD header sits behind a SPI-to-parallel
+// bridge chip, like the ILI9486 panel this driver was originally validated
+// next to -- confirmed by SunFounder's own published mhs35ips-overlay.dtb,
+// which drives this exact board via Linux's fbtft "ilitek,ili9486" driver
+// with `buswidth=8, regwidth=16`: every logical register value (the
+// command byte, and separately each data/parameter byte) is padded to a
+// 16-bit big-endian quantity (leading 0x00) over an 8-bit SPI bus -- see
+// fbtft's fbtft_write_reg16_bus8()/define_fbtft_write_reg() (fbtft-bus.c
+// upstream), which also asserts CS ONCE for the whole logical register
+// write (command byte, then all its data bytes, D/C toggled low-then-high
+// in between) rather than pulsing CS per individual byte -- hardware-
+// confirmed 2026-09: real SunFounder ST7796U panel, this exact sequence.
+// Bulk pixel data (after RAMWR) is NOT padded this way -- see
+// set_window()/write_pixels() below, which switch to a continuous, unpadded
+// CS-low burst once the bridge is in pixel-streaming mode.
 void St7796::write_command(uint8_t cmd, const uint8_t* data, size_t len) {
-    gpio_put(m_pin_dc, 0);
     gpio_put(m_pin_cs, 0);
-    spi_write_blocking(m_spi, &cmd, 1);
+
+    gpio_put(m_pin_dc, 0);
+    const uint8_t cmd_buf[2] = {0x00, cmd};
+    spi_write_blocking(m_spi, cmd_buf, 2);
 
     if (data != nullptr && len > 0) {
         gpio_put(m_pin_dc, 1);
-        spi_write_blocking(m_spi, data, len);
+        for (size_t i = 0; i < len; ++i) {
+            const uint8_t data_buf[2] = {0x00, data[i]};
+            spi_write_blocking(m_spi, data_buf, 2);
+        }
     }
 
     gpio_put(m_pin_cs, 1);
@@ -185,12 +236,14 @@ void St7796::set_window(int x0, int y0, int x1, int y1) {
                                static_cast<uint8_t>(ye >> 8), static_cast<uint8_t>(ye & 0xFF)};
     write_command(kCmdRaset, raset, 4);
 
-    gpio_put(m_pin_dc, 0);
-    gpio_put(m_pin_cs, 0);
-    const uint8_t ramwr = kCmdRamwr;
-    spi_write_blocking(m_spi, &ramwr, 1);
+    write_command(kCmdRamwr); // own CS pulse, no data -- see write_command()'s doc comment
+
+    // Pixel data is NOT byte-padded like commands/parameters are -- reopen
+    // CS low here for a continuous, unpadded burst (write_pixels()/
+    // end_write() below), matching Ili9486::set_window()'s identical
+    // RAMWR-then-raw-burst transition.
     gpio_put(m_pin_dc, 1);
-    // CS stays asserted; pixel data follows in the same burst (write_pixels()/end_write()).
+    gpio_put(m_pin_cs, 0);
 }
 
 void St7796::end_write() {

@@ -9,6 +9,41 @@
 
 namespace pico_toolset {
 
+// MADCTL (36h) "RGB-BGR Order" bit, per the ST7796S datasheet's "Memory Data
+// Access Control" section.
+enum class St7796ColorOrder : uint8_t {
+    Rgb = 0,
+    Bgr = 1,
+};
+
+// Every bit MADCTL (36h) defines (datasheet §9.2.28), bundled as named flags
+// instead of a hand-picked hex value. Compose the actual register value with
+// to_madctl_byte() and assign it to St7796Config::madctl -- e.g.:
+//   .madctl = St7796Orientation{.swap_row_column = true,
+//                                .color_order = St7796ColorOrder::Bgr}.to_madctl_byte()
+// A raw value can still be used directly (some panels' validated
+// orientation is easier to carry forward as the bare byte from an existing
+// working config than to decompose) -- this is an alternative, equally
+// valid way to fill the same field, not a replacement for it.
+struct St7796Orientation {
+    bool row_address_decrement = false;          // MY  (D7): '1' = bottom-to-top
+    bool column_address_decrement = false;       // MX  (D6): '1' = right-to-left
+    bool swap_row_column = false;                // MV  (D5): '1' = row/column exchange (landscape<->portrait)
+    bool vertical_refresh_bottom_to_top = false; // ML  (D4)
+    St7796ColorOrder color_order = St7796ColorOrder::Rgb; // RGB (D3)
+    bool horizontal_refresh_right_to_left = false; // MH (D2)
+
+    [[nodiscard]] constexpr uint8_t to_madctl_byte() const {
+        return static_cast<uint8_t>(
+            (row_address_decrement ? 0x80 : 0x00) |
+            (column_address_decrement ? 0x40 : 0x00) |
+            (swap_row_column ? 0x20 : 0x00) |
+            (vertical_refresh_bottom_to_top ? 0x10 : 0x00) |
+            (color_order == St7796ColorOrder::Bgr ? 0x08 : 0x00) |
+            (horizontal_refresh_right_to_left ? 0x04 : 0x00));
+    }
+};
+
 // Configuration for the ST7796U SPI TFT LCD (as used on Waveshare
 // RP2350-PiZero style carrier boards, replacing an ILI9486 panel wired the
 // same way -- same MISO-sharing-with-touch requirement, same reset/backlight
@@ -35,7 +70,21 @@ struct St7796Config {
     uint16_t height;                    // Panel height in the wired rotation
     uint16_t col_offset = 0;            // CASET start offset (panel RAM can be larger than the visible area)
     uint16_t row_offset = 0;            // RASET start offset
-    uint8_t  madctl = 0x00;             // Orientation/color-order register value -- panel+rotation specific
+    // MADCTL (36h) value -- see St7796Orientation above for a named,
+    // bit-by-bit way to build this instead of a bare hex constant.
+    uint8_t  madctl = 0x00;
+    // Display Inversion (INVON 21h / INVOFF 20h, datasheet §9.2.16-17) --
+    // whether this panel's specific color/electrode polarity needs
+    // inversion to render correctly (as opposed to a photo-negative or
+    // washed-out image). Panel-specific; the SunFounder ST7796U preset
+    // needs this true, but not every ST7796U panel will.
+    bool     invert_colors = true;
+    // COLMOD (3Ah) is fixed at 16-bit/pixel (RGB565, "55h") internally --
+    // not exposed here, since write_pixels()/fill_solid() and the whole
+    // pico_toolset::DisplayPanel contract this driver implements are
+    // RGB565-only throughout; the 18-bit/24-bit modes COLMOD also supports
+    // (datasheet §9.2.32) have no data path in this driver to use them
+    // through, so offering them as a config knob would just be a footgun.
 
     // One SPI clock for both commands and pixel data (ST7796U is a direct
     // SPI-wired panel, not behind ILI9486's shift-register bridge, so there
@@ -55,16 +104,17 @@ struct St7796Config {
 };
 
 // Driver for the ST7796U SPI TFT LCD (RGB565), landscape-oriented boards
-// like the Waveshare 3.5" panel this was written against.
+// like the Waveshare/SunFounder 3.5" panels this was written against.
 //
-// WIRE PROTOCOL: a command byte is sent with D/C low, CS pulsed low around
-// it; any parameter/pixel data that follows is sent with D/C high in the
-// same CS-low span. Pixel data streams as one continuous CS-low burst.
-// CASET/RASET are each a single 4-byte burst (not ILI9486's
-// one-byte-at-a-time-with-0x00-padding shift-register scheme) -- same wire
-// shape as St7789, which this driver's structure mirrors closely (ST7796U
-// is a Sitronix-family controller like ST7789, sharing MADCTL/COLMOD/
-// CASET/RASET/RAMWR command codes).
+// WIRE PROTOCOL: this targets boards where the LCD header sits behind a
+// SPI-to-parallel bridge chip (confirmed on the SunFounder 3.5" IPS panel
+// via its vendor Linux driver, fbtft "ilitek,ili9486" with
+// buswidth=8/regwidth=16), NOT a raw direct-to-controller SPI wire. Every
+// command byte and every parameter/data byte is individually padded to a
+// 16-bit quantity (leading 0x00) -- see write_command()'s doc comment in
+// st7796.cpp for the full rationale and CS discipline. Bulk pixel data
+// (after RAMWR) is NOT padded this way -- it streams as one continuous,
+// unpadded CS-low burst once set_window() has opened the write.
 //
 // Implements DisplayPanel (display_panel.h) -- the low-level windowed/DMA
 // streaming contract it shares with Ili9486/St7789 -- so callers that only
