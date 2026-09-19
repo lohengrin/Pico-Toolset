@@ -179,6 +179,19 @@ void LvglDisplayAdapter::add_touch(TouchPanel& touch, const LvglTouchCalibration
     lv_indev_t* indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, touch_read_cb);
+#ifdef PICO_TOOLSET_LVGL_TOUCH_DEBUG
+    // Red dot at the point LVGL believes was touched: if it is not under the
+    // finger, the picture is mirrored/rotated relative to LVGL's coordinates.
+    lv_obj_t* dot = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(dot, 12, 12);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_border_width(dot, 0, 0);
+    lv_obj_set_style_translate_x(dot, -6, 0);
+    lv_obj_set_style_translate_y(dot, -6, 0);
+    lv_obj_remove_flag(dot, LV_OBJ_FLAG_CLICKABLE);
+    lv_indev_set_cursor(indev, dot);
+#endif
 }
 
 void LvglDisplayAdapter::tick() {
