@@ -23,10 +23,16 @@ namespace pico_toolset::configs::st7796 {
 // hardware-validated 2026-09. `madctl` (MV|BGR, via St7796Orientation) gives
 // correct landscape orientation with no mirroring; `invert_colors=true` is
 // this specific panel's own requirement (not every ST7796U panel needs it --
-// see St7796Config::invert_colors). `spi_freq_hz` is kept at the ILI9486
-// preset's already-validated 33.33MHz rather than this panel's much higher
-// 125MHz spec ceiling -- raise it once bench-tested, see
-// St7796::set_pixel_clock_hz().
+// see St7796Config::invert_colors). `spi_freq_hz` is 132MHz, validated on
+// real hardware: SPI's fastest divide (prescale 2, postdiv 1, i.e.
+// clk_peri/2) off a 264MHz clk_peri -- so it only takes effect when the
+// consumer runs clk_sys at 264MHz AND ties clk_peri to it
+// (PICO_CLOCK_ADJUST_PERI_CLOCK_WITH_SYS_CLOCK); off the stock 48MHz
+// clk_peri, spi_set_baudrate() caps at 24MHz whatever is requested here.
+// For any other clock, call St7796::set_pixel_clock_hz() (the panel's spec
+// ceiling is ~125MHz). `use_dma` is false because St7796::init() gates
+// DMA off above 80MHz (m_use_dma), so this rate always ran on the
+// synchronous write path -- stated explicitly so the preset says what runs.
 inline const St7796Config kWaveshareRp2350PiZero = {
     .spi_instance = spi1,
     .pin_sck = 10,
@@ -43,8 +49,8 @@ inline const St7796Config kWaveshareRp2350PiZero = {
     .madctl = St7796Orientation{.swap_row_column = true,
                                  .color_order = St7796ColorOrder::Bgr}.to_madctl_byte(),
     .invert_colors = true, // this panel batch needs it -- see St7796Config's doc comment
-    .spi_freq_hz = 33'333'333, // matches the validated ILI9486 preset's achieved rate; raise once bench-tested
-    .use_dma = true,
+    .spi_freq_hz = 132'000'000, // clk_peri/2 at clk_peri=264MHz -- see the comment above
+    .use_dma = false,           // St7796::init() disables DMA above 80MHz anyway
     .dma_channel = -1, // auto-claim
 };
 
