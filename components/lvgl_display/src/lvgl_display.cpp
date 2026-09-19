@@ -32,6 +32,7 @@ void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     panel.write_pixels(std::span<const uint16_t>(pixels, count));
     panel.end_write();
     lv_display_flush_ready(disp);
+    if (LvglDisplayAdapter::s_idle_hook) LvglDisplayAdapter::s_idle_hook();
 }
 
 int32_t map(double v, double in_min, double in_max, double out_max) {
@@ -82,6 +83,7 @@ void LvglDisplayAdapter::tick() {
     lv_tick_inc(now - m_last_tick_ms);
     m_last_tick_ms = now;
     lv_timer_handler();
+    if (s_idle_hook) s_idle_hook();
 }
 
 } // namespace pico_toolset

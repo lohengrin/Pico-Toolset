@@ -41,7 +41,13 @@ public:
     // Call from the main loop as often as possible.
     void tick();
 
+    // Called after every flushed tile and every tick(): lets the consumer
+    // keep servicing something time-sensitive (e.g. a USB device stack)
+    // while a large redraw is in progress.
+    void set_idle_hook(void (*hook)()) { s_idle_hook = hook; }
+
     [[nodiscard]] lv_display_t* display() const { return m_display; }
+    static inline void (*s_idle_hook)() = nullptr;
 
 private:
     lv_display_t* m_display = nullptr;
