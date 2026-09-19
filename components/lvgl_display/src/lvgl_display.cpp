@@ -3,7 +3,6 @@
 #include "pico/stdlib.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <cstring>
 #include <span>
 
@@ -94,15 +93,7 @@ int32_t map(double v, double in_min, double in_max, double out_max) {
 
 void touch_read_cb(lv_indev_t*, lv_indev_data_t* data) {
     const TouchSample raw = g_touch.touch->read();
-#ifdef PICO_TOOLSET_LVGL_TOUCH_DEBUG
-    static bool was_pressed = false;
-    static int32_t last_x = -100, last_y = -100;
-#endif
     if (!raw.pressed) {
-#ifdef PICO_TOOLSET_LVGL_TOUCH_DEBUG
-        if (was_pressed) printf("touch released\n");
-        was_pressed = false;
-#endif
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
@@ -112,17 +103,6 @@ void touch_read_cb(lv_indev_t*, lv_indev_data_t* data) {
     data->point.x = map(h, c.raw_h_min, c.raw_h_max, g_touch.width - 1);
     data->point.y = map(v, c.raw_v_min, c.raw_v_max, g_touch.height - 1);
     data->state = LV_INDEV_STATE_PRESSED;
-#ifdef PICO_TOOLSET_LVGL_TOUCH_DEBUG
-    // On press, and while dragging whenever the mapped point moves >= 4 px.
-    const int32_t dx = data->point.x - last_x, dy = data->point.y - last_y;
-    if (!was_pressed || dx * dx + dy * dy >= 16) {
-        printf("touch raw=(%u,%u) swap=%d -> point=(%ld,%ld) of %dx%d\n", raw.raw_x, raw.raw_y, c.swap_axes,
-               static_cast<long>(data->point.x), static_cast<long>(data->point.y), g_touch.width, g_touch.height);
-        last_x = data->point.x;
-        last_y = data->point.y;
-    }
-    was_pressed = true;
-#endif
 }
 
 } // namespace
@@ -179,19 +159,6 @@ void LvglDisplayAdapter::add_touch(TouchPanel& touch, const LvglTouchCalibration
     lv_indev_t* indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, touch_read_cb);
-#ifdef PICO_TOOLSET_LVGL_TOUCH_DEBUG
-    // Red dot at the point LVGL believes was touched: if it is not under the
-    // finger, the picture is mirrored/rotated relative to LVGL's coordinates.
-    lv_obj_t* dot = lv_obj_create(lv_layer_top());
-    lv_obj_set_size(dot, 12, 12);
-    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(dot, lv_palette_main(LV_PALETTE_RED), 0);
-    lv_obj_set_style_border_width(dot, 0, 0);
-    lv_obj_set_style_translate_x(dot, -6, 0);
-    lv_obj_set_style_translate_y(dot, -6, 0);
-    lv_obj_remove_flag(dot, LV_OBJ_FLAG_CLICKABLE);
-    lv_indev_set_cursor(indev, dot);
-#endif
 }
 
 void LvglDisplayAdapter::tick() {
