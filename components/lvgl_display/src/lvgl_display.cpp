@@ -64,9 +64,22 @@ struct Framebuffer8 {
     int width = 0, height = 0;
 } g_fb8;
 
-// RGB565 -> RRRGGGBB (top 3/3/2 bits).
-inline uint8_t to_rgb332(uint16_t p) {
-    return static_cast<uint8_t>(((p >> 8) & 0xE0) | ((p >> 6) & 0x1C) | ((p >> 3) & 0x03));
+// RGB565 -> RRRGGGBB with 4x4 ordered dithering. Plain truncation drops the
+// low bits of every channel; since blue keeps only 2 bits (steps of 64) and red
+// and green 3 (steps of 32), a dark neutral grey came out with a strong colour
+// cast (blue floored to 0, red/green kept). Dithering spreads the error over
+// neighbouring pixels so flat areas average to the right colour.
+constexpr uint8_t kBayer4[16] = {0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5};
+
+inline uint8_t to_rgb332_dithered(uint16_t p, int x, int y) {
+    const unsigned m = kBayer4[((y & 3) << 2) | (x & 3)];
+    const unsigned r8 = ((p >> 8) & 0xF8) | (p >> 13);
+    const unsigned g8 = ((p >> 3) & 0xFC) | ((p >> 9) & 0x03);
+    const unsigned b8 = ((p << 3) & 0xF8) | ((p >> 2) & 0x07);
+    const unsigned r = std::min(7u, (r8 + m * 2) >> 5);
+    const unsigned g = std::min(7u, (g8 + m * 2) >> 5);
+    const unsigned b = std::min(3u, (b8 + m * 4) >> 6);
+    return static_cast<uint8_t>((r << 5) | (g << 2) | b);
 }
 
 void flush_fb8_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
@@ -77,7 +90,7 @@ void flush_fb8_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
         const auto* src = reinterpret_cast<const uint16_t*>(px_map) + (x1 - area->x1) + static_cast<size_t>(y1 - area->y1) * area_w;
         uint8_t* dst = g_fb8.pixels + static_cast<size_t>(y1) * g_fb8.width + x1;
         for (int y = y1; y <= y2; ++y) {
-            for (int x = 0; x <= x2 - x1; ++x) dst[x] = to_rgb332(src[x]);
+            for (int x = x1; x <= x2; ++x) dst[x - x1] = to_rgb332_dithered(src[x - x1], x, y);
             src += area_w;
             dst += g_fb8.width;
         }
