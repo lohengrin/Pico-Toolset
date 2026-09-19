@@ -172,9 +172,14 @@ int32_t tud_msc_write10_cb(uint8_t, uint32_t lba, uint32_t offset, uint8_t* buff
     return bd.write(bd.ctx, lba, buffer, bufsize / 512) ? static_cast<int32_t>(bufsize) : -1;
 }
 
+bool tud_msc_is_writable_cb(uint8_t) { return true; }
+
+// Commands TinyUSB doesn't handle itself. SYNCHRONIZE CACHE is sent by
+// hosts after writes; failing it makes them report the write as failed and
+// remount read-only, so acknowledge it (writes are synchronous here).
 int32_t tud_msc_scsi_cb(uint8_t lun, const uint8_t scsi_cmd[16], void*, uint16_t) {
+    if (scsi_cmd[0] == 0x35 /* SYNCHRONIZE CACHE (10) */) return 0;
     tud_msc_set_sense(lun, SCSI_SENSE_ILLEGAL_REQUEST, 0x20, 0x00);
-    (void)scsi_cmd;
     return -1;
 }
 
