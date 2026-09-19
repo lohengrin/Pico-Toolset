@@ -11,3 +11,11 @@ target_link_libraries(pico_toolset_lvgl_display PUBLIC
     lvgl::lvgl
 )
 target_compile_features(pico_toolset_lvgl_display PUBLIC cxx_std_20)
+
+# Optional: LVGL input devices for the USB HID host (keyboard/mouse/gamepad).
+# Separate target so consumers without the HID component don't pull in the
+# TinyUSB host stack.
+if(TARGET pico_toolset_usb_hid)
+    add_library(pico_toolset_lvgl_hid STATIC src/lvgl_hid.cpp)
+    target_link_libraries(pico_toolset_lvgl_hid PUBLIC pico_toolset_lvgl_display pico_toolset_usb_hid)
+endif()

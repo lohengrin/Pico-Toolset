@@ -16,7 +16,7 @@ namespace {
 UsbCompositeConfig g_config;
 char g_serial[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
 
-enum { ITF_CDC = 0, ITF_CDC_DATA, ITF_MSC, ITF_RESET, ITF_COUNT };
+enum { ITF_CDC = 0, ITF_CDC_DATA, ITF_RESET, ITF_MSC, ITF_COUNT };
 static_assert(ITF_RESET == PICO_USB_RESET_MS_OS_20_DESCRIPTOR_ITF, "keep CMake's reset interface number in sync");
 enum { EP_CDC_NOTIF = 0x81, EP_CDC_OUT = 0x02, EP_CDC_IN = 0x82, EP_MSC_OUT = 0x03, EP_MSC_IN = 0x83 };
 enum { STR_LANG, STR_MANUF, STR_PRODUCT, STR_SERIAL, STR_CDC, STR_MSC, STR_RESET };
@@ -26,10 +26,11 @@ constexpr uint16_t kConfigTotalLen = TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TU
 const uint8_t kConfigDescriptor[] = {
     TUD_CONFIG_DESCRIPTOR(1, ITF_COUNT, 0, kConfigTotalLen, 0x00, 100),
     TUD_CDC_DESCRIPTOR(ITF_CDC, STR_CDC, EP_CDC_NOTIF, 8, EP_CDC_OUT, EP_CDC_IN, 64),
-    TUD_MSC_DESCRIPTOR(ITF_MSC, STR_MSC, EP_MSC_OUT, EP_MSC_IN, 64),
     // Vendor reset interface: lets picotool reboot the device into BOOTSEL
-    // (or back to flash) over USB, no BOOTSEL button needed.
+    // (or back to flash) over USB, no BOOTSEL button needed. Interface 2 to
+    // match pico_stdio_usb / usb_hid's PICO_USB_RESET_MS_OS_20_DESCRIPTOR_ITF.
     TUD_RPI_RESET_DESCRIPTOR(ITF_RESET, STR_RESET),
+    TUD_MSC_DESCRIPTOR(ITF_MSC, STR_MSC, EP_MSC_OUT, EP_MSC_IN, 64),
 };
 
 tusb_desc_device_t g_device_descriptor = {
