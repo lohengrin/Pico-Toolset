@@ -22,7 +22,7 @@ struct UsbCompositeConfig {
     const char* msc_vendor = "Pico";           // <= 8 chars
     const char* msc_product = "Storage";       // <= 16 chars
     uint16_t vid = 0x2E8A;                     // Raspberry Pi
-    uint16_t pid = 0x100A;                     // development PID -- override for a product
+    uint16_t pid = 0x000A;                     // pico-sdk CDC PID: covered by picotool's stock udev rules (60-picotool.rules) -- override for a product
     bool install_stdio = true;                 // route printf/getchar over the CDC interface
 };
 
