@@ -38,6 +38,11 @@ public:
     // engine re-reads continuously) instead of pushing to a DisplayPanel.
     bool init_framebuffer(uint16_t* framebuffer, int width, int height, const LvglDisplayConfig& config);
 
+    // Same, for an 8-bit RRRGGGBB (RGB332) framebuffer -- half the memory,
+    // for RAM-tight chips (RP2040) driving DVI in 8bpp. LVGL still renders
+    // RGB565 into the tile buffer; the flush converts.
+    bool init_framebuffer_rgb332(uint8_t* framebuffer, int width, int height, const LvglDisplayConfig& config);
+
     // Registers a pointer input device fed by `touch`. `panel` size (from
     // init) is the mapping target.
     void add_touch(TouchPanel& touch, const LvglTouchCalibration& calibration);

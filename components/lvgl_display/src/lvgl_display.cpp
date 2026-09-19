@@ -3,6 +3,7 @@
 #include "pico/stdlib.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <span>
 
@@ -59,6 +60,33 @@ void flush_fb_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     if (LvglDisplayAdapter::s_idle_hook) LvglDisplayAdapter::s_idle_hook();
 }
 
+struct Framebuffer8 {
+    uint8_t* pixels = nullptr;
+    int width = 0, height = 0;
+} g_fb8;
+
+// RGB565 -> RRRGGGBB (top 3/3/2 bits).
+inline uint8_t to_rgb332(uint16_t p) {
+    return static_cast<uint8_t>(((p >> 8) & 0xE0) | ((p >> 6) & 0x1C) | ((p >> 3) & 0x03));
+}
+
+void flush_fb8_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
+    const int x1 = std::max<int>(area->x1, 0), y1 = std::max<int>(area->y1, 0);
+    const int x2 = std::min<int>(area->x2, g_fb8.width - 1), y2 = std::min<int>(area->y2, g_fb8.height - 1);
+    if (x2 >= x1 && y2 >= y1) {
+        const size_t area_w = static_cast<size_t>(area->x2 - area->x1 + 1);
+        const auto* src = reinterpret_cast<const uint16_t*>(px_map) + (x1 - area->x1) + static_cast<size_t>(y1 - area->y1) * area_w;
+        uint8_t* dst = g_fb8.pixels + static_cast<size_t>(y1) * g_fb8.width + x1;
+        for (int y = y1; y <= y2; ++y) {
+            for (int x = 0; x <= x2 - x1; ++x) dst[x] = to_rgb332(src[x]);
+            src += area_w;
+            dst += g_fb8.width;
+        }
+    }
+    lv_display_flush_ready(disp);
+    if (LvglDisplayAdapter::s_idle_hook) LvglDisplayAdapter::s_idle_hook();
+}
+
 int32_t map(double v, double in_min, double in_max, double out_max) {
     const double t = (v - in_min) / (in_max - in_min) * out_max;
     return static_cast<int32_t>(std::clamp(t, 0.0, out_max));
@@ -70,6 +98,9 @@ void touch_read_cb(lv_indev_t*, lv_indev_data_t* data) {
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
+#ifdef PICO_TOOLSET_LVGL_TOUCH_DEBUG
+    printf("touch raw_x=%u raw_y=%u\n", raw.raw_x, raw.raw_y);
+#endif
     const auto& c = g_touch.cal;
     const uint16_t h = c.swap_axes ? raw.raw_y : raw.raw_x;
     const uint16_t v = c.swap_axes ? raw.raw_x : raw.raw_y;
@@ -108,6 +139,21 @@ bool LvglDisplayAdapter::init_framebuffer(uint16_t* framebuffer, int width, int 
     lv_display_set_buffers(m_display, config.draw_buffer, nullptr, config.draw_buffer_pixels * sizeof(uint16_t),
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(m_display, flush_fb_cb);
+    m_last_tick_ms = to_ms_since_boot(get_absolute_time());
+    return true;
+}
+
+bool LvglDisplayAdapter::init_framebuffer_rgb332(uint8_t* framebuffer, int width, int height, const LvglDisplayConfig& config) {
+    if (!framebuffer || !config.draw_buffer || config.draw_buffer_pixels == 0) return false;
+    lv_init();
+    g_fb8 = {framebuffer, width, height};
+    m_width = width;
+    m_height = height;
+    m_display = lv_display_create(width, height);
+    lv_display_set_color_format(m_display, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_buffers(m_display, config.draw_buffer, nullptr, config.draw_buffer_pixels * sizeof(uint16_t),
+                           LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_flush_cb(m_display, flush_fb8_cb);
     m_last_tick_ms = to_ms_since_boot(get_absolute_time());
     return true;
 }
