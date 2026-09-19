@@ -55,6 +55,10 @@ option(PICO_TOOLSET_BUILD_USB_HID  "Build PIO-USB HID host"               ON)
 # project() by the consumer -- this component can't set that up itself. See
 # the README's "I2S audio (pico-extras)" section.
 option(PICO_TOOLSET_BUILD_I2S_AUDIO "Build I2S audio output (needs pico-extras)" OFF)
+option(PICO_TOOLSET_BUILD_USB_COMPOSITE "Build USB device composite (CDC + MSC + picotool reset) + example" ON)
+# OFF by default: needs LVGL (see cmake/pico_lvgl.cmake) and the consumer's own lv_conf.h
+# (LV_CONF_PATH) before this component can configure.
+option(PICO_TOOLSET_BUILD_LVGL_DISPLAY "Build LVGL v9 display/touch/HID bridge (needs LV_CONF_PATH)" OFF)
 option(PICO_TOOLSET_BUILD_SDCARD   "Build SD card (FatFs/pico_fatfs) driver" ON)
 option(PICO_TOOLSET_BUILD_RESET_BUTTONS "Build debounced-buttons + tagged-watchdog-reboot helper" ON)
 option(PICO_TOOLSET_BUILD_DVI_HDMI "Build PIO-based DVI/HDMI video (+ optional digital audio)" ON)
@@ -89,6 +93,11 @@ if(PICO_TOOLSET_BUILD_USB_HID)
     include(cmake/pico_pio_usb.cmake)
     add_subdirectory(components/usb_hid)
 endif()
+# usb_composite after usb_hid: it defines its "_hid" variant only if
+# pico_toolset_usb_hid already exists (one shared tusb_config.h -- see its README).
+if(PICO_TOOLSET_BUILD_USB_COMPOSITE)
+    add_subdirectory(components/usb_composite)
+endif()
 if(PICO_TOOLSET_BUILD_I2S_AUDIO)
     add_subdirectory(components/i2s_audio)
 endif()
@@ -101,6 +110,10 @@ if(PICO_TOOLSET_BUILD_RESET_BUTTONS)
 endif()
 if(PICO_TOOLSET_BUILD_DVI_HDMI)
     add_subdirectory(components/dvi_hdmi)
+endif()
+if(PICO_TOOLSET_BUILD_LVGL_DISPLAY)
+    include(cmake/pico_lvgl.cmake)
+    add_subdirectory(components/lvgl_display)
 endif()
 if(PICO_TOOLSET_BUILD_FAULT_HANDLER)
     add_subdirectory(libs/fault_handler)

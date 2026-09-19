@@ -60,6 +60,12 @@ component ships an `example/` program that doubles as a smoke test.
   callers always construct/initialize the concrete class first, then use it
   through the interface type. Don't build a kind interface speculatively for
   a driver with only one implementation and no consumer asking to swap it.
+- **One `tusb_config.h` per build**: `usb_hid`, `usb_composite` and any
+  consumer share TinyUSB, whose core compiles into the final executable.
+  Firmware that is both a USB device and a PIO-USB host must link
+  `pico_toolset_usb_composite_hid` (built against `usb_hid`'s config), never
+  the device-only variant next to `usb_hid`. `usb_composite` therefore must be
+  added after `usb_hid` in any CMake that uses both.
 - **Namespace**: all public API lives in `pico_toolset` (except `extern "C"`
   allocator functions for the PSRAM component).
 - **CMake target naming**: `pico_toolset_<name>`; examples are the

@@ -21,6 +21,8 @@ independently.
 | USB HID   | `pico_toolset_usb_hid`  | PIO-USB TinyUSB host: keyboard/mouse/HID-gamepad + XInput + DualSense (VID/PID-detected), double-buffered cross-core state, unified `GamepadState`. |
 | I2S audio | `pico_toolset_i2s_audio` | Float-sample I2S DAC output (e.g. PCM5100A) via pico-extras' `pico_audio_i2s`; non-blocking queue, config-driven pins/DMA channel/PIO SM. OFF by default -- needs pico-extras set up by the consumer (see below). |
 | SD card   | `pico_toolset_sdcard`   | FatFs R0.15 (elehobica/pico_fatfs) over native or PIO-bit-banged SPI; config-driven pins/PIO/gpio_base, `list_files()`/`read_file()`/`read_file_pmr()`. |
+| USB composite | `pico_toolset_usb_composite` (+ `_hid` variant) | TinyUSB *device* composite on the native port: CDC serial (optional stdio driver) + MSC over a caller-supplied block device + the picotool vendor reset interface (reboot to BOOTSEL / flash without the button). A `_hid` variant shares one `tusb_config.h` with `usb_hid` for firmware that is device *and* PIO-USB host. See its README. |
+| LVGL display | `pico_toolset_lvgl_display` (+ `pico_toolset_lvgl_hid`) | LVGL v9 bridge: any `DisplayPanel` (SPI TFTs) or a caller-owned RGB565 framebuffer (DVI scanout) as an LVGL display, `TouchPanel` as a pointer, and (optional `_hid` target) USB keyboard/mouse/gamepad as keypad + pointer. OFF by default (needs LVGL via `cmake/pico_lvgl.cmake` and the consumer's `lv_conf.h`). See its README. |
 | Reset buttons | `pico_toolset_reset_buttons` | N debounced, active-HIGH momentary buttons + a generic tagged-watchdog-reboot pair (`watchdog_reboot_with_tag()`/`consume_pending_watchdog_tag()`), reusable for any "boot straight into mode X" use case. |
 | DVI/HDMI  | `pico_toolset_dvi_hdmi` | PIO-based DVI/TMDS serialiser + encoder (no HSTX needed -- works on any GPIO set a board wires to its connector), with optional HDMI data-island digital audio (CEA-861 InfoFrames/ACR/audio-sample packets) and a core1 IRQ-handler-headroom measurement tool. See "Credits and third-party code" below for full provenance. |
 
@@ -64,6 +66,8 @@ pico-toolset/
 │   ├── sdcard/    include/pico_toolset/sdcard.h    src/  example/
 │   ├── reset_buttons/ include/pico_toolset/reset_buttons.h src/ example/
 │   ├── usb_hid/   include/pico_toolset/*.h  src/  example/  tusb_config.h
+│   ├── usb_composite/ include/  config/tusb_config.h  src/  example/
+│   ├── lvgl_display/  include/pico_toolset/{lvgl_display,lvgl_hid}.h  src/
 │   └── dvi_hdmi/  dvi.h dvi.c ... (flat, vendored -- see its own README.md)
 └── libs/
     ├── screen/         include/pico_toolset/*.h  example/
@@ -96,6 +100,8 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_PSRAM`   | ON | Build PSRAM driver + example (RP2350 only) |
 | `PICO_TOOLSET_BUILD_USB_HID` | ON | Build PIO-USB HID host + example |
 | `PICO_TOOLSET_BUILD_I2S_AUDIO` | OFF | Build I2S audio output + example (needs pico-extras, see below) |
+| `PICO_TOOLSET_BUILD_USB_COMPOSITE` | ON | Build the USB CDC+MSC+reset composite device + RAM-disk example |
+| `PICO_TOOLSET_BUILD_LVGL_DISPLAY` | OFF | Build the LVGL bridge (set `LV_CONF_PATH` first) |
 | `PICO_TOOLSET_BUILD_SDCARD`  | ON | Build SD card (FatFs/pico_fatfs) driver + example |
 | `PICO_TOOLSET_SDCARD_STDIO`  | OFF | Also install POSIX/stdio newlib syscalls (`fopen`/`fread`/...) over FatFs |
 | `PICO_TOOLSET_BUILD_RESET_BUTTONS` | ON | Build debounced-buttons + tagged-watchdog-reboot helper + example |
