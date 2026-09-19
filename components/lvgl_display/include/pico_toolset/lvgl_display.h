@@ -33,6 +33,11 @@ public:
     // has no draw buffer.
     bool init(DisplayPanel& panel, const LvglDisplayConfig& config);
 
+    // Framebuffer variant: renders into a caller-owned RGB565 framebuffer of
+    // width x height pixels (native byte order, e.g. one a DVI/HDMI scanout
+    // engine re-reads continuously) instead of pushing to a DisplayPanel.
+    bool init_framebuffer(uint16_t* framebuffer, int width, int height, const LvglDisplayConfig& config);
+
     // Registers a pointer input device fed by `touch`. `panel` size (from
     // init) is the mapping target.
     void add_touch(TouchPanel& touch, const LvglTouchCalibration& calibration);
@@ -52,6 +57,7 @@ public:
 private:
     lv_display_t* m_display = nullptr;
     DisplayPanel* m_panel = nullptr;
+    int m_width = 0, m_height = 0;
     uint32_t m_last_tick_ms = 0;
 };
 
