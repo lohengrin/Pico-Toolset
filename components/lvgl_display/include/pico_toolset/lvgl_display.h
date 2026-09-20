@@ -56,6 +56,18 @@ public:
     // while a large redraw is in progress.
     void set_idle_hook(void (*hook)()) { s_idle_hook = hook; }
 
+    // Observes every rendered tile before it is pushed to the panel/framebuffer:
+    // `pixels` is the tile in LVGL's native RGB565 (area->x1..x2 by y1..y2, row-major,
+    // tightly packed). For screenshots: invalidate the screen and collect the tiles.
+    // Pass nullptr to remove. Runs inside the flush: keep it short, no LVGL calls.
+    using FlushTap = void (*)(void* ctx, const lv_area_t* area, const uint16_t* pixels);
+    static void set_flush_tap(FlushTap tap, void* ctx) {
+        s_flush_tap = tap;
+        s_flush_tap_ctx = ctx;
+    }
+    static inline FlushTap s_flush_tap = nullptr;
+    static inline void* s_flush_tap_ctx = nullptr;
+
     [[nodiscard]] lv_display_t* display() const { return m_display; }
     static inline void (*s_idle_hook)() = nullptr;
 

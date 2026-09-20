@@ -17,6 +17,9 @@ struct TouchCtx {
 } g_touch;
 
 void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
+    if (LvglDisplayAdapter::s_flush_tap) {
+        LvglDisplayAdapter::s_flush_tap(LvglDisplayAdapter::s_flush_tap_ctx, area, reinterpret_cast<const uint16_t*>(px_map));
+    }
     auto& panel = *static_cast<DisplayPanel*>(lv_display_get_user_data(disp));
     const size_t count = static_cast<size_t>(area->x2 - area->x1 + 1) * static_cast<size_t>(area->y2 - area->y1 + 1);
     auto* pixels = reinterpret_cast<uint16_t*>(px_map);
@@ -42,6 +45,9 @@ struct Framebuffer {
 } g_fb;
 
 void flush_fb_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
+    if (LvglDisplayAdapter::s_flush_tap) {
+        LvglDisplayAdapter::s_flush_tap(LvglDisplayAdapter::s_flush_tap_ctx, area, reinterpret_cast<const uint16_t*>(px_map));
+    }
     const int x1 = std::max<int>(area->x1, 0), y1 = std::max<int>(area->y1, 0);
     const int x2 = std::min<int>(area->x2, g_fb.width - 1), y2 = std::min<int>(area->y2, g_fb.height - 1);
     if (x2 >= x1 && y2 >= y1) {
@@ -83,6 +89,9 @@ inline uint8_t to_rgb332_dithered(uint16_t p, int x, int y) {
 }
 
 void flush_fb8_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
+    if (LvglDisplayAdapter::s_flush_tap) {
+        LvglDisplayAdapter::s_flush_tap(LvglDisplayAdapter::s_flush_tap_ctx, area, reinterpret_cast<const uint16_t*>(px_map));
+    }
     const int x1 = std::max<int>(area->x1, 0), y1 = std::max<int>(area->y1, 0);
     const int x2 = std::min<int>(area->x2, g_fb8.width - 1), y2 = std::min<int>(area->y2, g_fb8.height - 1);
     if (x2 >= x1 && y2 >= y1) {
