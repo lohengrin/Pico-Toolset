@@ -74,6 +74,31 @@ std::vector<std::string> SdCard::list_files(const std::vector<std::string>& exte
     return result;
 }
 
+bool SdCard::list_dir(const std::string& path, const std::vector<std::string>& extensions,
+                      std::vector<FileInfo>& out, size_t max_entries, bool* truncated, bool skip_hidden) const {
+    out.clear();
+    if (truncated) *truncated = false;
+    if (!m_mounted) return false;
+
+    DIR dir;
+    if (f_opendir(&dir, path.c_str()) != FR_OK) return false;
+
+    FILINFO info;
+    while (f_readdir(&dir, &info) == FR_OK && info.fname[0] != '\0') {
+        if (skip_hidden && ((info.fattrib & (AM_HID | AM_SYS)) || info.fname[0] == '.')) continue;
+        const bool is_dir = (info.fattrib & AM_DIR) != 0;
+        std::string name(info.fname);
+        if (!is_dir && std::find(extensions.begin(), extensions.end(), extension_of(name)) == extensions.end()) continue;
+        if (max_entries != 0 && out.size() >= max_entries) {
+            if (truncated) *truncated = true;
+            break;
+        }
+        out.push_back(FileInfo{std::move(name), is_dir ? 0u : static_cast<uint32_t>(info.fsize), is_dir});
+    }
+    f_closedir(&dir);
+    return true;
+}
+
 std::vector<SdCard::FileInfo> SdCard::list_file_info(const std::vector<std::string>& extensions, size_t max_entries,
                                                      bool* truncated, bool skip_hidden) const {
     std::vector<FileInfo> result;
@@ -93,7 +118,7 @@ std::vector<SdCard::FileInfo> SdCard::list_file_info(const std::vector<std::stri
             if (truncated) *truncated = true;
             break;
         }
-        result.push_back(FileInfo{std::move(name), static_cast<uint32_t>(info.fsize)});
+        result.push_back(FileInfo{std::move(name), static_cast<uint32_t>(info.fsize), false});
     }
     f_closedir(&dir);
     return result;

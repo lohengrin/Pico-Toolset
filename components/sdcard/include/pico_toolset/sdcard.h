@@ -83,6 +83,7 @@ public:
     struct FileInfo {
         std::string name;
         uint32_t size = 0;
+        bool is_dir = false;
     };
 
     // Like list_files(), but with each file's size (taken from the directory
@@ -94,6 +95,14 @@ public:
     [[nodiscard]] std::vector<FileInfo> list_file_info(const std::vector<std::string>& extensions,
                                                        size_t max_entries = 0, bool* truncated = nullptr,
                                                        bool skip_hidden = true) const;
+
+    // One directory level: `path` ("" = root, else "dir/sub", no leading or trailing
+    // slash). Returns the sub-directories (always, whatever `extensions`) and the
+    // files whose extension is in `extensions`, in directory order; same hidden-file
+    // skipping and `max_entries`/`truncated` semantics as list_file_info(). Returns
+    // false if the directory cannot be opened (missing, card not mounted).
+    bool list_dir(const std::string& path, const std::vector<std::string>& extensions, std::vector<FileInfo>& out,
+                  size_t max_entries = 0, bool* truncated = nullptr, bool skip_hidden = true) const;
 
     // Reads a whole file from the SD root by name into memory. Returns an
     // empty vector on failure (file missing, read error, card not mounted).
