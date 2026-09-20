@@ -35,9 +35,38 @@ namespace {
 struct SdFile {
     FIL file;
     bool open;
+    BYTE mode; // FA_* flags it was opened with
 };
 
 SdFile g_files[PICO_TOOLSET_SDCARD_STDIO_MAX_FDS];
+
+// FatFs result -> errno, so callers can tell "no such file" from "no card" from
+// "read-only" (the shim used to fail with errno 0).
+int errno_from_fresult(FRESULT res)
+{
+    switch (res) {
+    case FR_OK: return 0;
+    case FR_NO_FILE:
+    case FR_NO_PATH: return ENOENT;
+    case FR_INVALID_NAME:
+    case FR_INVALID_PARAMETER: return EINVAL;
+    case FR_DENIED:
+    case FR_LOCKED: return EACCES;
+    case FR_WRITE_PROTECTED: return EROFS;
+    case FR_EXIST: return EEXIST;
+    case FR_DISK_ERR:
+    case FR_INT_ERR: return EIO;
+    case FR_NOT_READY:
+    case FR_NOT_ENABLED:
+    case FR_INVALID_DRIVE: return ENODEV;
+    case FR_NO_FILESYSTEM: return ENOTSUP;
+    case FR_NOT_ENOUGH_CORE: return ENOMEM;
+    case FR_TOO_MANY_OPEN_FILES: return EMFILE;
+    case FR_INVALID_OBJECT: return EBADF;
+    case FR_TIMEOUT: return ETIMEDOUT;
+    default: return EIO;
+    }
+}
 
 } // namespace
 
@@ -65,12 +94,17 @@ int _open(const char* path, int flags, ...)
 
     for (int i = 0; i < PICO_TOOLSET_SDCARD_STDIO_MAX_FDS; i++) {
         if (!g_files[i].open) {
-            if (f_open(&g_files[i].file, path, mode) != FR_OK)
+            const FRESULT res = f_open(&g_files[i].file, path, mode);
+            if (res != FR_OK) {
+                errno = errno_from_fresult(res);
                 return -1;
+            }
             g_files[i].open = true;
+            g_files[i].mode = mode;
             return 3 + i;
         }
     }
+    errno = EMFILE;
     return -1;
 }
 
@@ -83,6 +117,7 @@ int _close(int fd)
         return -1;
     FRESULT res = f_close(&g_files[i].file);
     g_files[i].open = false;
+    if (res != FR_OK) errno = errno_from_fresult(res);
     return res == FR_OK ? 0 : -1;
 }
 
@@ -95,8 +130,11 @@ int _read(int fd, char* buf, int len)
         return -1;
 
     UINT got = 0;
-    if (f_read(&g_files[i].file, buf, (UINT)len, &got) != FR_OK)
+    const FRESULT res = f_read(&g_files[i].file, buf, (UINT)len, &got);
+    if (res != FR_OK) {
+        errno = errno_from_fresult(res);
         return -1;
+    }
     return (int)got;
 }
 
@@ -111,8 +149,12 @@ int _write(int fd, const char* buf, int len)
         return -1;
 
     UINT done = 0;
-    if (f_write(&g_files[i].file, buf, (UINT)len, &done) != FR_OK)
+    const FRESULT res = f_write(&g_files[i].file, buf, (UINT)len, &done);
+    if (res != FR_OK) {
+        errno = errno_from_fresult(res);
         return -1;
+    }
+    if (done < (UINT)len) errno = ENOSPC; // short write: the volume is full
     return (int)done;
 }
 
@@ -131,10 +173,15 @@ off_t _lseek(int fd, off_t pos, int whence)
     }
 
     int64_t target = (int64_t)base + pos;
-    if (target < 0)
+    if (target < 0) {
+        errno = EINVAL;
         return -1;
-    if (f_lseek(&g_files[i].file, (FSIZE_t)target) != FR_OK)
+    }
+    const FRESULT res = f_lseek(&g_files[i].file, (FSIZE_t)target);
+    if (res != FR_OK) {
+        errno = errno_from_fresult(res);
         return -1;
+    }
     return (off_t)target;
 }
 
@@ -147,7 +194,8 @@ int _fstat(int fd, struct stat* st)
         return -1;
 
     memset(st, 0, sizeof(*st));
-    st->st_mode = S_IFREG | 0444;
+    // Permission bits follow how the file was opened, not a blanket 0444.
+    st->st_mode = S_IFREG | ((g_files[i].mode & FA_WRITE) ? 0666 : 0444);
     st->st_size = (off_t)f_size(&g_files[i].file);
     return 0;
 }
@@ -158,11 +206,16 @@ int _stat(const char* path, struct stat* st)
         return -1;
 
     FILINFO info;
-    if (f_stat(path, &info) != FR_OK)
+    const FRESULT res = f_stat(path, &info);
+    if (res != FR_OK) {
+        errno = errno_from_fresult(res);
         return -1;
+    }
 
     memset(st, 0, sizeof(*st));
-    st->st_mode = (info.fattrib & AM_DIR) ? S_IFDIR : S_IFREG;
+    // FAT's read-only attribute maps to the permission bits (0444 vs 0666).
+    const mode_t perms = (info.fattrib & AM_RDO) ? 0444 : 0666;
+    st->st_mode = (info.fattrib & AM_DIR) ? (S_IFDIR | (perms | 0111)) : (S_IFREG | perms);
     st->st_size = (off_t)info.fsize;
     return 0;
 }

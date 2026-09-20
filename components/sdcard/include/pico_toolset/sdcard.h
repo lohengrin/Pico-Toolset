@@ -80,6 +80,21 @@ public:
     // dot) is one of `extensions`. Root only -- no subdirectory traversal.
     [[nodiscard]] std::vector<std::string> list_files(const std::vector<std::string>& extensions) const;
 
+    struct FileInfo {
+        std::string name;
+        uint32_t size = 0;
+    };
+
+    // Like list_files(), but with each file's size (taken from the directory
+    // read itself -- no per-file stat, so it stays linear in the number of
+    // files). Hidden and system files, and names starting with '.' (macOS
+    // "._x.bin" sidecars, ...), are skipped unless `skip_hidden` is false.
+    // `max_entries` (0 = unlimited) bounds memory on small chips: when the
+    // listing stops early, *truncated (if given) is set.
+    [[nodiscard]] std::vector<FileInfo> list_file_info(const std::vector<std::string>& extensions,
+                                                       size_t max_entries = 0, bool* truncated = nullptr,
+                                                       bool skip_hidden = true) const;
+
     // Reads a whole file from the SD root by name into memory. Returns an
     // empty vector on failure (file missing, read error, card not mounted).
     [[nodiscard]] std::vector<uint8_t> read_file(const std::string& filename) const;

@@ -74,6 +74,31 @@ std::vector<std::string> SdCard::list_files(const std::vector<std::string>& exte
     return result;
 }
 
+std::vector<SdCard::FileInfo> SdCard::list_file_info(const std::vector<std::string>& extensions, size_t max_entries,
+                                                     bool* truncated, bool skip_hidden) const {
+    std::vector<FileInfo> result;
+    if (truncated) *truncated = false;
+    if (!m_mounted) return result;
+
+    DIR dir;
+    if (f_opendir(&dir, "") != FR_OK) return result;
+
+    FILINFO info;
+    while (f_readdir(&dir, &info) == FR_OK && info.fname[0] != '\0') {
+        if (info.fattrib & AM_DIR) continue;
+        if (skip_hidden && ((info.fattrib & (AM_HID | AM_SYS)) || info.fname[0] == '.')) continue;
+        std::string name(info.fname);
+        if (std::find(extensions.begin(), extensions.end(), extension_of(name)) == extensions.end()) continue;
+        if (max_entries != 0 && result.size() >= max_entries) {
+            if (truncated) *truncated = true;
+            break;
+        }
+        result.push_back(FileInfo{std::move(name), static_cast<uint32_t>(info.fsize)});
+    }
+    f_closedir(&dir);
+    return result;
+}
+
 std::vector<uint8_t> SdCard::read_file(const std::string& filename) const {
     std::vector<uint8_t> data;
     if (!m_mounted) return data;

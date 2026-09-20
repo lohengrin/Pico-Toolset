@@ -14,6 +14,9 @@ namespace pico_toolset {
 namespace {
 
 UsbCompositeConfig g_config;
+bool g_ejected = false;
+bool g_media_changed = false;
+uint32_t g_cached_blocks = 0; // capacity of the current medium; 0 = not read yet
 char g_serial[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
 
 enum { ITF_CDC = 0, ITF_CDC_DATA, ITF_RESET, ITF_MSC, ITF_COUNT };
@@ -104,6 +107,14 @@ void usb_composite_task() { tud_task(); }
 
 bool usb_composite_cdc_connected() { return tud_cdc_connected(); }
 
+void usb_composite_media_changed() {
+    g_media_changed = true;
+    g_ejected = false;
+    g_cached_blocks = 0;
+}
+
+bool usb_composite_ejected() { return g_ejected; }
+
 } // namespace pico_toolset
 
 // TinyUSB device callbacks --------------------------------------------------
@@ -152,40 +163,82 @@ void tud_msc_inquiry_cb(uint8_t, uint8_t vendor_id[8], uint8_t product_id[16], u
     memcpy(product_rev, "1.0 ", 4);
 }
 
-bool tud_msc_test_unit_ready_cb(uint8_t) {
+bool tud_msc_test_unit_ready_cb(uint8_t lun) {
     const auto& bd = g_config.block_device;
+    if (pico_toolset::g_ejected) {
+        tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3A, 0x00); // medium not present
+        return false;
+    }
+    if (pico_toolset::g_media_changed) {
+        pico_toolset::g_media_changed = false;
+        pico_toolset::g_cached_blocks = 0;
+        tud_msc_set_sense(lun, SCSI_SENSE_UNIT_ATTENTION, 0x28, 0x00); // not ready to ready change: media may have changed
+        return false;
+    }
     if (bd.ready && bd.ready(bd.ctx)) return true;
-    tud_msc_set_sense(0, SCSI_SENSE_NOT_READY, 0x3A, 0x00); // medium not present
+    pico_toolset::g_cached_blocks = 0;
+    tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3A, 0x00); // medium not present
     return false;
 }
 
 void tud_msc_capacity_cb(uint8_t, uint32_t* block_count, uint16_t* block_size) {
     const auto& bd = g_config.block_device;
-    *block_count = (bd.block_count && bd.ready && bd.ready(bd.ctx)) ? bd.block_count(bd.ctx) : 0;
     *block_size = 512;
+    *block_count = 0; // 0 makes TinyUSB answer "medium not present"
+    if (pico_toolset::g_ejected || !bd.block_count || !bd.ready || !bd.ready(bd.ctx)) return;
+
+    // The capacity is asked for constantly by some hosts and costs a card
+    // command each time: read it once per medium, never cache a failure.
+    if (pico_toolset::g_cached_blocks == 0) pico_toolset::g_cached_blocks = bd.block_count(bd.ctx);
+    *block_count = pico_toolset::g_cached_blocks;
 }
 
-bool tud_msc_start_stop_cb(uint8_t, uint8_t, bool, bool) { return true; }
+// Eject ("safely remove"): flush first, then report no medium. A host "load"
+// (start + load_eject) brings it back and tells the host it may have changed.
+bool tud_msc_start_stop_cb(uint8_t, uint8_t, bool start, bool load_eject) {
+    const auto& bd = g_config.block_device;
+    if (load_eject && !start) {
+        if (bd.sync) bd.sync(bd.ctx);
+        pico_toolset::g_ejected = true;
+    } else if (load_eject && start) {
+        pico_toolset::usb_composite_media_changed();
+    }
+    return true;
+}
 
 int32_t tud_msc_read10_cb(uint8_t, uint32_t lba, uint32_t offset, void* buffer, uint32_t bufsize) {
     const auto& bd = g_config.block_device;
-    if (offset != 0 || (bufsize % 512) != 0 || !bd.read) return -1;
-    return bd.read(bd.ctx, lba, static_cast<uint8_t*>(buffer), bufsize / 512) ? static_cast<int32_t>(bufsize) : -1;
+    if (offset != 0 || (bufsize % 512) != 0 || !bd.read || pico_toolset::g_ejected) return -1;
+    const uint32_t count = bufsize / 512;
+    if (pico_toolset::g_cached_blocks != 0 && lba + count > pico_toolset::g_cached_blocks) return -1; // past the end
+    return bd.read(bd.ctx, lba, static_cast<uint8_t*>(buffer), count) ? static_cast<int32_t>(bufsize) : -1;
 }
 
 int32_t tud_msc_write10_cb(uint8_t, uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t bufsize) {
     const auto& bd = g_config.block_device;
-    if (offset != 0 || (bufsize % 512) != 0 || !bd.write) return -1;
-    return bd.write(bd.ctx, lba, buffer, bufsize / 512) ? static_cast<int32_t>(bufsize) : -1;
+    if (offset != 0 || (bufsize % 512) != 0 || !bd.write || pico_toolset::g_ejected) return -1;
+    const uint32_t count = bufsize / 512;
+    if (pico_toolset::g_cached_blocks != 0 && lba + count > pico_toolset::g_cached_blocks) return -1; // past the end
+    return bd.write(bd.ctx, lba, buffer, count) ? static_cast<int32_t>(bufsize) : -1;
 }
 
-bool tud_msc_is_writable_cb(uint8_t) { return true; }
+// Reported in MODE SENSE and enforced on WRITE(10): TinyUSB answers DATA
+// PROTECT (write protected) when this is false.
+bool tud_msc_is_writable_cb(uint8_t) {
+    const auto& bd = g_config.block_device;
+    return !pico_toolset::g_ejected && (!bd.writable || bd.writable(bd.ctx));
+}
 
-// Commands TinyUSB doesn't handle itself. SYNCHRONIZE CACHE is sent by
-// hosts after writes; failing it makes them report the write as failed and
-// remount read-only, so acknowledge it (writes are synchronous here).
+// Commands TinyUSB doesn't handle itself. SYNCHRONIZE CACHE is sent by hosts
+// after writes; failing it makes them report the write as failed and remount
+// read-only, so it succeeds -- but only once the backend really flushed.
 int32_t tud_msc_scsi_cb(uint8_t lun, const uint8_t scsi_cmd[16], void*, uint16_t) {
-    if (scsi_cmd[0] == 0x35 /* SYNCHRONIZE CACHE (10) */) return 0;
+    if (scsi_cmd[0] == 0x35 /* SYNCHRONIZE CACHE (10) */) {
+        const auto& bd = g_config.block_device;
+        if (!bd.sync || bd.sync(bd.ctx)) return 0;
+        tud_msc_set_sense(lun, SCSI_SENSE_MEDIUM_ERROR, 0x0C, 0x00); // write error
+        return -1;
+    }
     tud_msc_set_sense(lun, SCSI_SENSE_ILLEGAL_REQUEST, 0x20, 0x00);
     return -1;
 }
