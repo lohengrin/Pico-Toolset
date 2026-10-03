@@ -65,6 +65,11 @@ public:
     void set_position(int x, int y) { m_x = x; m_y = y; }
     void set_color(Color fg) { m_fg = fg; }
     void set_transparent(bool t) { m_transparent = t; }
+    // Draw each glyph pixel as the inverse of whatever is already on the display
+    // under it (literal per-pixel inversion: legible over any mix of colors,
+    // including across the edge of a bar). Implies transparent. Needs a driver
+    // with read_pixel(); otherwise the foreground color is used.
+    void set_invert(bool inv) { m_invert = inv; }
 
     // Rendered size in pixels (including the 1px letter spacing, scaled).
     int text_width() const {
@@ -92,13 +97,23 @@ public:
                 uint8_t row = g.data[r];
                 for (uint8_t c = 0; c < g.width; ++c) {
                     bool on = (row >> (g.width - 1 - c)) & 1;
-                    if (!on && m_transparent) continue;
+                    if (!on && (m_transparent || m_invert)) continue;
+                    const int px = cx + c * m_scale;
+                    const int py = m_y + r * m_scale;
+                    if (m_invert) {
+                        for (int dy = 0; dy < m_scale; ++dy)
+                            for (int dx = 0; dx < m_scale; ++dx) {
+                                Color under;
+                                display.set_pixel(px + dx, py + dy,
+                                                  display.read_pixel(px + dx, py + dy, under) ? under.inverted() : m_fg);
+                            }
+                        continue;
+                    }
                     Color col = on ? m_fg : m_bg;
                     if (m_scale == 1)
-                        display.set_pixel(cx + c, m_y + r, col);
+                        display.set_pixel(px, py, col);
                     else
-                        display.fill_rect(cx + c * m_scale, m_y + r * m_scale,
-                                          cx + (c + 1) * m_scale - 1, m_y + (r + 1) * m_scale - 1, col);
+                        display.fill_rect(px, py, px + m_scale - 1, py + m_scale - 1, col);
                 }
             }
             cx += (g.width + 1) * m_scale; // 1-pixel letter spacing
@@ -124,6 +139,7 @@ private:
     uint8_t m_font_height = 8;
     uint8_t m_scale = 1;
     bool m_transparent = false;
+    bool m_invert = false;
 };
 
 // Blits an already-decoded RGB565 pixel array (row-major, `w*h` pixels) at

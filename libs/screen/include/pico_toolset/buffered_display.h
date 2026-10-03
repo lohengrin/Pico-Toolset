@@ -41,6 +41,12 @@ public:
         mark_dirty(x, y);
     }
 
+    [[nodiscard]] bool read_pixel(int x, int y, Color& out) const override {
+        if (x < 0 || y < 0 || x >= width() || y >= height()) return false;
+        out = Color(m_fb[static_cast<size_t>(y) * width() + static_cast<size_t>(x)]);
+        return true;
+    }
+
     void fill_rect(int x0, int y0, int x1, int y1, Color color) override {
         x0 = std::max(0, x0);
         y0 = std::max(0, y0);
