@@ -262,6 +262,17 @@ public:
     // Color of the label shown while the graph is empty (default white).
     void set_label_color(Color c) { m_label_color = c; }
 
+    // Autoscale: the vertical range follows the largest value in the history
+    // (with 10 % headroom), but never goes below `min_scale`.
+    void set_autoscale(double min_scale) { m_autoscale = true; m_min_scale = min_scale; }
+
+    // Small caption in the top-left corner, in a dimmed version of the graph color.
+    void set_title(const char* title) { m_title = title; }
+
+    // Custom text for the latest value (default "%.1f"), e.g. "1.2 MB/s".
+    using ValueFormatter = void (*)(double value, char* buf, size_t size);
+    void set_value_formatter(ValueFormatter f) { m_formatter = f; }
+
     // `value` is expected in [0, scale]; it is clamped to the graph height.
     void push_value(double value) {
         m_values.push_back(value);
@@ -279,19 +290,35 @@ public:
             return;
         }
 
+        double scale = m_scale;
+        if (m_autoscale) {
+            double peak = 0.0;
+            for (double v : m_values) peak = std::max(peak, v);
+            scale = std::max(m_min_scale, peak * 1.1);
+        }
+
         const int base = m_y + m_h - 1;
         const Color fill = m_color.scaled(1, 3);
         int i = 0;
         for (double v : m_values) {
-            int top = base - static_cast<int>(std::clamp(v / m_scale, 0.0, 1.0) * (m_h - 1));
+            int top = base - static_cast<int>(std::clamp(v / scale, 0.0, 1.0) * (m_h - 1));
             int x = m_x + i++;
             if (top < base) display.draw_line(x, base, x, top + 1, fill);
             display.set_pixel(x, top, m_color);
         }
 
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%.1f", m_values.back());
+        if (m_title) {
+            TextWidget title(m_x + 3, m_y + 3, m_title, m_color.scaled(2, 3), kColorBlack, m_font, m_font_height, 1);
+            title.set_transparent(true);
+            title.draw(display);
+        }
+
+        char buf[24];
+        if (m_formatter) m_formatter(m_values.back(), buf, sizeof(buf));
+        else snprintf(buf, sizeof(buf), "%.1f", m_values.back());
         TextWidget value(0, 0, buf, m_color.inverted(), kColorBlack, m_font, m_font_height, m_text_scale);
+        if (m_text_scale > 1 && value.text_width() > m_w - 4)   // too wide: fall back to 1x
+            value = TextWidget(0, 0, buf, m_color.inverted(), kColorBlack, m_font, m_font_height, 1);
         value.set_transparent(true);
         value.set_centered(cx, m_y + m_h / 2);
         value.draw(display);
@@ -306,6 +333,10 @@ private:
     uint8_t m_font_height;
     uint8_t m_text_scale;
     Color m_label_color = kColorWhite;
+    bool m_autoscale = false;
+    double m_min_scale = 1.0;
+    const char* m_title = nullptr;
+    ValueFormatter m_formatter = nullptr;
     std::deque<double> m_values;
 };
 
