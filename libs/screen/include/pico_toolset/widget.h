@@ -166,7 +166,12 @@ public:
     }
 
     // Per-frame max-hold decay (never falls below the current value).
-    void tick() { m_max_hold = std::max(m_value, m_max_hold - kMaxHoldDecay); }
+    // Returns true if the marker moved, i.e. the bar needs redrawing.
+    bool tick() {
+        const float old = m_max_hold;
+        m_max_hold = std::max(m_value, m_max_hold - kMaxHoldDecay);
+        return m_max_hold != old;
+    }
 
     // Thresholds are the value at which the bar switches from the low to
     // mid color, and mid to high color, respectively.
