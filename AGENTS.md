@@ -97,6 +97,13 @@ component ships an `example/` program that doubles as a smoke test.
   launching any core1 workload; only have a core1 loop opt into
   `flash_safe_execute_core_init()` itself if it's confirmed not to use the
   raw FIFO for anything of its own.
+- **Flash store region is reserved by the consumer**: `pico_toolset_flash_store`
+  uses the last N sectors of flash (default 2); the consuming app must keep its
+  own image out of them (shorten the linker script's FLASH region by that
+  reserve). Its flash erase/program follows the flash rule above: through
+  `flash_safe_execute()` if core1 is a registered victim, otherwise an
+  interrupt-disable (core1 assumed not to be running) -- never with
+  unregistered code on core1.
 - **Watchdog scratch registers are a shared resource**: `watchdog_hw->scratch[0..7]` is one flat, repo-wide namespace (8 words), not per-component storage -- reset_buttons and fault_handler both use it (to survive a `watchdog_reboot()`) and a consumer can link both. Before claiming a scratch index for a new use, check the allocation table in the top-level README (also mirrored in `libs/fault_handler/include/pico_toolset/fault_handler.h`) and extend it -- never reuse an index another component already owns, and remember `scratch[4]` is reserved by the SDK's own watchdog bookkeeping.
 - **No dependencies beyond pico-sdk** unless declared: SSD1306/ILI9486/
   ST7789/ST7796/XPT2046/PSRAM/reset_buttons/Screen use pico-sdk only. SD card uses

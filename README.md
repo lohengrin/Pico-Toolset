@@ -25,6 +25,7 @@ independently.
 | LVGL display | `pico_toolset_lvgl_display` (+ `pico_toolset_lvgl_hid`) | LVGL v9 bridge: any `DisplayPanel` (SPI TFTs) or a caller-owned RGB565 framebuffer (DVI scanout) as an LVGL display, `TouchPanel` as a pointer, and (optional `_hid` target) USB keyboard/mouse/gamepad as keypad + pointer. OFF by default (needs LVGL via `cmake/pico_lvgl.cmake` and the consumer's `lv_conf.h`). See its README. |
 | Reset buttons | `pico_toolset_reset_buttons` | N debounced momentary buttons (active-HIGH or active-LOW, `held_mask()`) + a generic tagged-watchdog-reboot pair (`watchdog_reboot_with_tag()`/`consume_pending_watchdog_tag()`), reusable for any "boot straight into mode X" use case. |
 | RGB LED   | `pico_toolset_rgb_led`  | PWM RGB LED on three GPIOs (8-bit color, gamma 2.8, active-high/low); validated preset for the Pimoroni Pico Display Pack. |
+| Flash store | `pico_toolset_flash_store` | Tiny power-fail-safe settings store (one <=240-byte blob) in the last flash sectors: CRC-checked append-only records, 16 per sector, erase only when a sector fills; flash ops via `flash_safe_execute()`. The app must reserve that range in its linker script. |
 | DVI/HDMI  | `pico_toolset_dvi_hdmi` | PIO-based DVI/TMDS serialiser + encoder (no HSTX needed -- works on any GPIO set a board wires to its connector), with optional HDMI data-island digital audio (CEA-861 InfoFrames/ACR/audio-sample packets) and a core1 IRQ-handler-headroom measurement tool. See "Credits and third-party code" below for full provenance. |
 
 ## Libraries
@@ -67,6 +68,7 @@ pico-toolset/
 │   ├── sdcard/    include/pico_toolset/sdcard.h    src/  example/
 │   ├── reset_buttons/ include/pico_toolset/reset_buttons.h src/ example/
 │   ├── rgb_led/   include/pico_toolset/rgb_led.h   src/  example/
+│   ├── flash_store/ include/pico_toolset/flash_store.h src/ example/
 │   ├── usb_hid/   include/pico_toolset/*.h  src/  example/  tusb_config.h
 │   ├── usb_composite/ include/  config/tusb_config.h  src/  example/
 │   ├── lvgl_display/  include/pico_toolset/{lvgl_display,lvgl_hid}.h  src/
@@ -107,6 +109,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_SDCARD`  | ON | Build SD card (FatFs/pico_fatfs) driver + example |
 | `PICO_TOOLSET_SDCARD_STDIO`  | OFF | Also install POSIX/stdio newlib syscalls (`fopen`/`fread`/...) over FatFs |
 | `PICO_TOOLSET_BUILD_RGB_LED` | ON | Build PWM RGB LED driver + example |
+| `PICO_TOOLSET_BUILD_FLASH_STORE` | ON | Build the flash settings store + example |
 | `PICO_TOOLSET_BUILD_RESET_BUTTONS` | ON | Build debounced-buttons + tagged-watchdog-reboot helper + example |
 | `PICO_TOOLSET_BUILD_DVI_HDMI` | ON | Build PIO-based DVI/HDMI video + example |
 | `PICO_TOOLSET_DVI_HDMI_AUDIO` | OFF | Enable HDMI data-island digital audio (see `components/dvi_hdmi/README.md`) |
