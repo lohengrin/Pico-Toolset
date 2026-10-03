@@ -109,6 +109,10 @@ inline constexpr uint8_t kFont5x8Rows[95][8] = {
     {0x08, 0x15, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00}, // 0x7E ~
 };
 
+// Degree sign, stored in the last glyph slot (index 95, 0x7F). TextWidget maps
+// the UTF-8 sequence for '\u00b0' (0xC2 0xB0) to it.
+inline constexpr uint8_t kDegreeRows[8] = {0x06, 0x09, 0x09, 0x06, 0x00, 0x00, 0x00, 0x00};
+
 struct GlyphFont {
     BitmapGlyph glyphs[96] {};
 };
@@ -117,11 +121,12 @@ namespace detail {
 constexpr GlyphFont make_font5x8() {
     GlyphFont f{};
     for (int i = 0; i < 95; ++i) f.glyphs[i] = {5, 8, kFont5x8Rows[i]};
+    f.glyphs[95] = {5, 8, kDegreeRows};
     return f;
 }
 } // namespace detail
 
-// 96 glyphs indexed by (ASCII - 0x20); the last slot (0x7F) is unused (width 0).
+// 96 glyphs indexed by (ASCII - 0x20); the last slot holds the degree sign.
 inline constexpr GlyphFont kGlyphFont5x8 = detail::make_font5x8();
 
 // Fetch the glyph for an ASCII char (zero-width glyph for undefined/out-of-

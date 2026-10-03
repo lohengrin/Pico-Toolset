@@ -69,11 +69,10 @@ public:
     // Rendered size in pixels (including the 1px letter spacing, scaled).
     int text_width() const {
         int w = 0;
-        for (const char* p = m_text; *p != '\0'; ++p) {
-            uint8_t code = static_cast<uint8_t>(*p);
-            if (code < 0x20 || code > 0x7E) continue;
-            const BitmapGlyph& g = m_font[code - 0x20];
-            w += (g.width == 0 || g.data == nullptr ? 1 : g.width + 1) * m_scale;
+        for (const char* p = m_text; *p != '\0';) {
+            const BitmapGlyph* g = next_glyph(p);
+            if (!g) continue;
+            w += (g->width == 0 || g->data == nullptr ? 1 : g->width + 1) * m_scale;
         }
         return w > 0 ? w - m_scale : 0;
     }
@@ -84,10 +83,10 @@ public:
 
     void draw(DisplayDriver& display) const override {
         int cx = m_x;
-        for (const char* p = m_text; *p != '\0'; ++p) {
-            uint8_t code = static_cast<uint8_t>(*p);
-            if (code < 0x20 || code > 0x7E) continue;
-            const BitmapGlyph& g = m_font[code - 0x20];
+        for (const char* p = m_text; *p != '\0';) {
+            const BitmapGlyph* gp = next_glyph(p);
+            if (!gp) continue;
+            const BitmapGlyph& g = *gp;
             if (g.width == 0 || g.data == nullptr) { cx += m_scale; continue; }
             for (uint8_t r = 0; r < g.height; ++r) {
                 uint8_t row = g.data[r];
@@ -107,6 +106,16 @@ public:
     }
 
 private:
+    // Consumes one character at p and returns its glyph (nullptr if it has
+    // none). Printable ASCII maps directly; the UTF-8 degree sign (0xC2 0xB0)
+    // maps to font slot 95, which kGlyphFont5x8 fills with a degree glyph.
+    const BitmapGlyph* next_glyph(const char*& p) const {
+        uint8_t code = static_cast<uint8_t>(*p++);
+        if (code == 0xC2 && static_cast<uint8_t>(*p) == 0xB0) { ++p; return &m_font[95]; }
+        if (code < 0x20 || code > 0x7E) return nullptr;
+        return &m_font[code - 0x20];
+    }
+
     int m_x = 0, m_y = 0;
     const char* m_text = "";
     Color m_fg = kColorWhite;
