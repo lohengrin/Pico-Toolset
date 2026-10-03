@@ -82,6 +82,7 @@ private:
 
     FlashStoreConfig m_cfg{};
     FlashIo m_io{};
+    uint8_t m_page_buf[kPageSize];   // scratch for building a record (not on the stack)
     uint32_t m_seq = 0;       // 0 = no record
     size_t m_newest = 0;      // page index of the newest record (valid if m_seq != 0)
 };

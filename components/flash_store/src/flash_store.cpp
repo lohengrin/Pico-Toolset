@@ -107,9 +107,9 @@ bool FlashStore::save(std::span<const uint8_t> data) {
     if (data.size() > kMaxPayload) return false;
 
     if (m_seq != 0) {                                 // identical to the newest record: nothing to do
-        uint8_t current[kMaxPayload];
-        size_t n;
-        if (load(current, n) && n == data.size() && std::memcmp(current, data.data(), n) == 0)
+        uint32_t seq; size_t n;
+        if (valid(m_newest, seq, n) && n == data.size()
+            && std::memcmp(page(m_newest) + kHeaderSize, data.data(), n) == 0)
             return true;
     }
 
@@ -117,8 +117,8 @@ bool FlashStore::save(std::span<const uint8_t> data) {
     if (!pick_target(target)) return false;
 
     const uint32_t seq = m_seq + 1 == 0 ? 1 : m_seq + 1;   // never 0 (0 = "no record")
-    uint8_t buf[kPageSize];
-    std::memset(buf, 0xFF, sizeof buf);
+    uint8_t* const buf = m_page_buf;     // member scratch: keeps this call's stack small
+    std::memset(buf, 0xFF, kPageSize);
     const uint16_t len = static_cast<uint16_t>(data.size());
     const uint16_t reserved = 0;
     const uint32_t magic = kMagic;
