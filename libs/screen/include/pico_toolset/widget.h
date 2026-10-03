@@ -65,11 +65,13 @@ public:
     void set_position(int x, int y) { m_x = x; m_y = y; }
     void set_color(Color fg) { m_fg = fg; }
     void set_transparent(bool t) { m_transparent = t; }
-    // Draw each glyph pixel as the inverse of whatever is already on the display
-    // under it (literal per-pixel inversion: legible over any mix of colors,
-    // including across the edge of a bar). Implies transparent. Needs a driver
-    // with read_pixel(); otherwise the foreground color is used.
-    void set_invert(bool inv) { m_invert = inv; }
+    // Two-tone text: glyph pixels left of display column `split_x` use `before`,
+    // the others use `after` (e.g. text laid over a progress bar, in one color
+    // over the filled part and another over the rest -- a glyph crossing the
+    // boundary changes color exactly there). Implies transparent.
+    void set_split_colors(int split_x, Color before, Color after) {
+        m_split = true; m_split_x = split_x; m_before = before; m_after = after;
+    }
 
     // Rendered size in pixels (including the 1px letter spacing, scaled).
     int text_width() const {
@@ -97,16 +99,13 @@ public:
                 uint8_t row = g.data[r];
                 for (uint8_t c = 0; c < g.width; ++c) {
                     bool on = (row >> (g.width - 1 - c)) & 1;
-                    if (!on && (m_transparent || m_invert)) continue;
+                    if (!on && (m_transparent || m_split)) continue;
                     const int px = cx + c * m_scale;
                     const int py = m_y + r * m_scale;
-                    if (m_invert) {
+                    if (m_split) {
                         for (int dy = 0; dy < m_scale; ++dy)
-                            for (int dx = 0; dx < m_scale; ++dx) {
-                                Color under;
-                                display.set_pixel(px + dx, py + dy,
-                                                  display.read_pixel(px + dx, py + dy, under) ? under.inverted() : m_fg);
-                            }
+                            for (int dx = 0; dx < m_scale; ++dx)
+                                display.set_pixel(px + dx, py + dy, px + dx < m_split_x ? m_before : m_after);
                         continue;
                     }
                     Color col = on ? m_fg : m_bg;
@@ -139,7 +138,9 @@ private:
     uint8_t m_font_height = 8;
     uint8_t m_scale = 1;
     bool m_transparent = false;
-    bool m_invert = false;
+    bool m_split = false;
+    int m_split_x = 0;
+    Color m_before, m_after;
 };
 
 // Blits an already-decoded RGB565 pixel array (row-major, `w*h` pixels) at
@@ -237,10 +238,12 @@ public:
 
     // Current fill color (low/mid/high according to the value).
     Color color() const { return color_for(m_value); }
+    // Width in pixels of the filled part (the fill covers x .. x + fill_width() - 1).
+    int fill_width() const { return std::max(1, static_cast<int>(m_w * m_value)); }
 
     void draw(DisplayDriver& display) const override {
         display.draw_thick_line(m_x, m_y, m_x + m_w - 1, m_y, m_thickness, m_track);
-        int fill_w = std::max(1, static_cast<int>(m_w * m_value));
+        const int fill_w = fill_width();
         display.draw_thick_line(m_x, m_y, m_x + fill_w - 1, m_y, m_thickness, color_for(m_value));
     }
 

@@ -55,11 +55,6 @@ public:
                 set_pixel(x, y, color);
     }
 
-    // Read back a pixel previously written. Returns false if this driver cannot
-    // (write-only panels) -- callers must then fall back to a fixed color.
-    // Buffered drivers (BufferedDisplay) implement it from their framebuffer.
-    [[nodiscard]] virtual bool read_pixel(int /*x*/, int /*y*/, Color& /*out*/) const { return false; }
-
     // Push any pending buffered changes to the physical panel.
     virtual void flush() {}
 
