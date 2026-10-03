@@ -44,6 +44,11 @@ struct FlashIo {
 // flash_safe_execute() when core1 is a registered victim, see
 // flash_store_rp.cpp -- do not use it with unregistered code running on core1).
 //
+// SDK note: flash_range_erase/program hard_assert(offset + size <=
+// PICO_FLASH_SIZE_BYTES), so the app's PICO_FLASH_SIZE_BYTES must cover the
+// store's region (keep it the real flash size; shorten only the linker region,
+// not that macro -- a bootloader helper that lowers it makes every save panic).
+//
 // RP2350 note: reads go through XIP at the physical offset, so under
 // PicoBoot's flash address translation (normal-build apps) they would not see
 // the physical tail; link the app into the partition instead.
