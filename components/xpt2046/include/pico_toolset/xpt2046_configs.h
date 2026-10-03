@@ -36,8 +36,7 @@ inline const Xpt2046Config kWaveshareRp2350PiZero = {
 // with the panel's ST7789 display (configs::st7789::kElecrowCrowPanelPicoHmi28)
 // and its uSD card (configs::sdcard::kElecrowCrowPanelPicoHmi28) -- each on
 // its own CS line (touch CS=GP16, PENIRQ=GP17). Pins from the board's
-// schematic; bench-confirm on first flash (this board's touch path is new,
-// unlike its already-flying display).
+// schematic; validated on real hardware.
 inline const Xpt2046Config kElecrowCrowPanelPicoHmi28 = {
     .spi_instance = spi1,
     .pin_cs = 16,

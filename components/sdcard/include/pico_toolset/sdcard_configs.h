@@ -49,8 +49,7 @@ inline const SdCardConfig kPicoDvCarrier = {
 // hardware SPI with the panel's ST7789 display and XPT2046 touch (each on
 // its own CS line: LCD=GP9, touch=GP16, SD=GP22), unlike the two presets
 // above which use PIO-bit-banged SPI on a dedicated bus. Pins from the
-// board's schematic; bench-confirm on first flash (this board's SD path is
-// new, unlike its already-flying display).
+// board's schematic; validated on real hardware.
 inline const SdCardConfig kElecrowCrowPanelPicoHmi28 = {
     .spi_instance = spi1,
     .pin_miso = 12,

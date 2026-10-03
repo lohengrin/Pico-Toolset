@@ -8,10 +8,9 @@ breaks out UART0/UART1 and I2C headers (no toolset component needed for
 those -- pico-sdk's own `hardware_uart`/`hardware_i2c` cover them directly).
 
 ## Status
-**Implemented.** Display, touch, and SD card all have real-hardware-derived
-presets. The display path was ported from a consumer's already-flying driver;
-touch and SD are new capabilities for this board -- bench-confirm both on
-first flash (see Notes/gotchas).
+**Implemented and validated on real hardware.** Display, touch, and SD card
+all work on a physical CrowPanel PICO HMI 2.8" (PiCoMonitor runs the display
+path; touch and SD were bench-tested with this repo's example).
 
 ## Components & presets
 | Component | Preset | Purpose |
@@ -54,10 +53,8 @@ cmake --build build-crowpanel
 [`examples/crowpanel_pico_hmi_28/`](../examples/crowpanel_pico_hmi_28/).
 
 ## Notes/gotchas
-- Touch and SD pin numbers came from the board's schematic, not yet from a
-  toolset consumer's bench-tested firmware -- confirm both work on real
-  hardware before relying on them (the display path, by contrast, is a
-  direct port of an already-working consumer driver and should just work).
+- Touch and SD pin numbers came from the board's schematic and have since
+  been confirmed working on real hardware, alongside the display.
 - The ST7789 init sequence's gamma/VCOM tuning table is currently only
   validated for this exact 320x240 panel (`St7789Config::width == 320 &&
   height == 240` in `components/st7789/src/st7789.cpp`). A different
