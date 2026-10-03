@@ -16,24 +16,33 @@ namespace {
 constexpr uint32_t kRebootMagic = 0xB00110C0;
 } // namespace
 
-bool DebouncedButtons::init(std::span<const uint8_t> pins, int debounce_frames) {
+bool DebouncedButtons::init(const ButtonsConfig& config) {
+    return init(std::span<const uint8_t>(config.pins.data(), config.count), config.debounce_frames,
+                config.active_low);
+}
+
+bool DebouncedButtons::init(std::span<const uint8_t> pins, int debounce_frames, bool active_low) {
     if (pins.size() > static_cast<size_t>(kMaxButtons)) return false;
 
     m_count = static_cast<int>(pins.size());
     m_debounce_frames = debounce_frames;
+    m_active_low = active_low;
     for (int i = 0; i < m_count; ++i) {
         m_pins[i] = pins[i];
         m_press_streak[i] = 0;
         gpio_init(m_pins[i]);
         gpio_set_dir(m_pins[i], GPIO_IN);
-        gpio_pull_down(m_pins[i]); // active-HIGH: closes to 3V3, not GND
+        if (m_active_low)
+            gpio_pull_up(m_pins[i]);   // active-LOW: closes to GND
+        else
+            gpio_pull_down(m_pins[i]); // active-HIGH: closes to 3V3, not GND
     }
     return true;
 }
 
 int DebouncedButtons::poll() {
     for (int i = 0; i < m_count; ++i) {
-        bool pressed = gpio_get(m_pins[i]); // active-high
+        bool pressed = gpio_get(m_pins[i]) != m_active_low;
         m_press_streak[i] = pressed ? m_press_streak[i] + 1 : 0;
         if (m_press_streak[i] == m_debounce_frames) {
             return i; // fires once: the streak keeps growing past this on later polls
@@ -42,10 +51,18 @@ int DebouncedButtons::poll() {
     return -1;
 }
 
+uint8_t DebouncedButtons::held_mask() const {
+    uint8_t mask = 0;
+    for (int i = 0; i < m_count; ++i)
+        if (m_press_streak[i] >= m_debounce_frames)
+            mask |= static_cast<uint8_t>(1u << i);
+    return mask;
+}
+
 std::string DebouncedButtons::raw_state() const {
     std::string state;
     for (int i = 0; i < m_count; ++i) {
-        state += gpio_get(m_pins[i]) ? '1' : '0'; // active-high: '1' = pressed
+        state += (gpio_get(m_pins[i]) != m_active_low) ? '1' : '0'; // '1' = pressed
     }
     return state;
 }

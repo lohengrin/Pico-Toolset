@@ -1,22 +1,37 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <span>
 #include <string>
 
 namespace pico_toolset {
 
-// Debounced, momentary, active-HIGH (pull-down) buttons -- e.g. a small
-// bank of model/mode-select buttons on a carrier board. Config-driven: no
-// hardcoded pin count or debounce time.
+// Wiring of a button bank; see reset_buttons_configs.h for validated
+// per-board presets. `pins` order defines the button indices.
+struct ButtonsConfig {
+    std::array<uint8_t, 8> pins;
+    uint8_t count;       // number of valid entries in `pins` (<= 8)
+    bool    active_low;  // true: pressed = pin LOW (pull-up, button to GND); false: pressed = HIGH (pull-down)
+    int     debounce_frames;
+};
+
+// Debounced, momentary buttons, active-HIGH (pull-down, the default) or
+// active-LOW (pull-up) -- e.g. a small bank of model/mode-select buttons on
+// a carrier board. Config-driven: no hardcoded pin count or debounce time.
 class DebouncedButtons {
 public:
     static constexpr int kMaxButtons = 8;
 
-    // Configures each of `pins` as a pulled-down input. Copies `pins` into
-    // internal fixed storage (no heap) -- at most kMaxButtons. Returns
-    // false (and configures nothing) if pins.size() > kMaxButtons.
-    bool init(std::span<const uint8_t> pins, int debounce_frames = 3);
+    // Configures each of `pins` as a pulled-down (or, with active_low,
+    // pulled-up) input. Copies `pins` into internal fixed storage (no
+    // heap) -- at most kMaxButtons. Returns false (and configures
+    // nothing) if pins.size() > kMaxButtons.
+    bool init(std::span<const uint8_t> pins, int debounce_frames = 3, bool active_low = false);
+    bool init(const ButtonsConfig& config);
+
+    // Bit i set = button i is currently (debounced) held down; valid after poll().
+    [[nodiscard]] uint8_t held_mask() const;
 
     // Call once per frame/poll cycle. Returns the index (into the `pins`
     // passed to init()) of a button whose debounce threshold was JUST
@@ -35,6 +50,7 @@ private:
     int     m_press_streak[kMaxButtons] = {};
     int     m_count = 0;
     int     m_debounce_frames = 3;
+    bool    m_active_low = false;
 };
 
 // Reboot into a tagged mode, using the RP2040/RP2350 watchdog's scratch

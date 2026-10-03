@@ -170,6 +170,9 @@ manual smoke tests of the examples on hardware.
 
 - SSD1306: David Schramm's rpi-pico-ssd1306 (MIT).
 - ILI9486: a validated SPI driver + DMA enhancement (MIT).
+- RGB LED: Pimoroni's MIT-licensed RGBLED behavior (gamma 2.8 table, 16-bit PWM,
+  active-low inversion) rewritten without the Pimoroni dependency; validated
+  on the Pico Display Pack through PiCoMonitor.
 - ST7789: ported from a consumer's local fork of Pimoroni's MIT-licensed
   ST7789 driver (itself extended by that consumer for a non-Pimoroni,
   320x240 panel variant -- the `ELECROW` type in the original, alongside the
