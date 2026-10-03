@@ -245,6 +245,9 @@ public:
         : m_x(x), m_y(y), m_w(w), m_h(h), m_scale(scale), m_color(color), m_label(label),
           m_font(font), m_font_height(font_height), m_text_scale(text_scale) {}
 
+    // Color of the label shown while the graph is empty (default white).
+    void set_label_color(Color c) { m_label_color = c; }
+
     // `value` is expected in [0, scale]; it is clamped to the graph height.
     void push_value(double value) {
         m_values.push_back(value);
@@ -255,7 +258,7 @@ public:
     void draw(DisplayDriver& display) const override {
         const int cx = m_x + m_w / 2;
         if (m_values.empty()) {
-            TextWidget label(0, 0, m_label, kColorWhite, kColorBlack, m_font, m_font_height, m_text_scale);
+            TextWidget label(0, 0, m_label, m_label_color, kColorBlack, m_font, m_font_height, m_text_scale);
             label.set_transparent(true);
             label.set_centered(cx, m_y + m_h / 2);
             label.draw(display);
@@ -288,6 +291,7 @@ private:
     const BitmapGlyph* m_font;
     uint8_t m_font_height;
     uint8_t m_text_scale;
+    Color m_label_color = kColorWhite;
     std::deque<double> m_values;
 };
 
