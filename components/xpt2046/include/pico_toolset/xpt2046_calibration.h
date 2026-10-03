@@ -1,6 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+
+#include "pico_toolset/touch_panel.h"
 
 namespace pico_toolset {
 
@@ -43,6 +46,20 @@ struct Xpt2046Calibration {
 inline double touch_calibration_linear_map(double v, double in_min, double in_max, double out_min, double out_max) {
     double t = (v - in_min) / (in_max - in_min);
     return out_min + t * (out_max - out_min);
+}
+
+// Maps a touch sample to display pixel coordinates (clamped to 0..width-1 /
+// 0..height-1) using `cal`. Returns false if the sample is not a press.
+inline bool xpt2046_to_pixel(const TouchSample& sample, const Xpt2046Calibration& cal,
+                             int width, int height, int& x, int& y) {
+    if (!sample.pressed) return false;
+    const double raw_h = cal.swap_axes ? sample.raw_y : sample.raw_x;
+    const double raw_v = cal.swap_axes ? sample.raw_x : sample.raw_y;
+    const double fx = touch_calibration_linear_map(raw_h, cal.raw_h_min, cal.raw_h_max, 0.0, width - 1.0);
+    const double fy = touch_calibration_linear_map(raw_v, cal.raw_v_min, cal.raw_v_max, 0.0, height - 1.0);
+    x = static_cast<int>(std::clamp(fx, 0.0, width - 1.0) + 0.5);
+    y = static_cast<int>(std::clamp(fy, 0.0, height - 1.0) + 0.5);
+    return true;
 }
 
 } // namespace pico_toolset

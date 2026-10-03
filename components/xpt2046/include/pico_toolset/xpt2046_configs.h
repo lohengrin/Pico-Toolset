@@ -8,6 +8,7 @@
 // so the two never disagree about which bus they share.
 
 #include "pico_toolset/xpt2046.h"
+#include "pico_toolset/xpt2046_calibration.h"
 
 namespace pico_toolset::configs::xpt2046 {
 
@@ -42,6 +43,18 @@ inline const Xpt2046Config kElecrowCrowPanelPicoHmi28 = {
     .pin_cs = 16,
     .pin_irq = 17,
     .touch_freq_hz = 2'000'000,
+};
+
+// Calibration for the CrowPanel PICO HMI 2.8" panel above (320x240), measured
+// on the board: the controller's axes are swapped relative to the panel
+// (moving vertically changes raw x) and neither is inverted -- both raw values
+// are lowest at the top-left corner. With the swap, horizontal = raw y
+// (~254..3707) and vertical = raw x (~278..3769). Validated on real hardware
+// (PicoBoot's touch UI). Use with xpt2046_to_pixel(sample, cal, 320, 240, x, y).
+inline constexpr Xpt2046Calibration kElecrowCrowPanelPicoHmi28Calibration = {
+    .swap_axes = true,
+    .raw_h_min = 254, .raw_h_max = 3707,
+    .raw_v_min = 278, .raw_v_max = 3769,
 };
 
 } // namespace pico_toolset::configs::xpt2046

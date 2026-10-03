@@ -16,7 +16,7 @@ path; touch and SD were bench-tested with this repo's example).
 | Component | Preset | Purpose |
 |---|---|---|
 | `pico_toolset_st7789` | `configs::st7789::kElecrowCrowPanelPicoHmi28` | 320x240 SPI TFT (SPI1: SCK=10, MOSI=11, MISO=12, CS=9, DC=8, RESET=15, backlight PWM=18), DMA-backed pixel push |
-| `pico_toolset_xpt2046` | `configs::xpt2046::kElecrowCrowPanelPicoHmi28` | Built-in resistive touch, sharing SPI1 with the display (CS=16, PENIRQ=17) |
+| `pico_toolset_xpt2046` | `configs::xpt2046::kElecrowCrowPanelPicoHmi28` | Built-in resistive touch, sharing SPI1 with the display (CS=16, PENIRQ=17); pixel mapping: `configs::xpt2046::kElecrowCrowPanelPicoHmi28Calibration` + `xpt2046_to_pixel()` (axes swapped, horizontal = raw y 254..3707, vertical = raw x 278..3769) |
 | `pico_toolset_sdcard` | `configs::sdcard::kElecrowCrowPanelPicoHmi28` | uSD in native hardware-SPI mode (CS=22), sharing SPI1's SCK/MOSI/MISO with the display and touch |
 
 ## Resource map
