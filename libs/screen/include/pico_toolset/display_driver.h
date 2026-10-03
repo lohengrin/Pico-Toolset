@@ -14,6 +14,18 @@ struct Color {
     constexpr static Color from_rgb888(uint8_t r, uint8_t g, uint8_t b) {
         return Color(static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)));
     }
+
+    // Per-channel inverse (255 - c on each channel).
+    constexpr Color inverted() const { return Color(static_cast<uint16_t>(~rgb565)); }
+
+    // Each channel multiplied by num/den (num <= den), e.g. scaled(1, 3) for a
+    // dimmed fill of the same hue.
+    constexpr Color scaled(unsigned num, unsigned den) const {
+        unsigned r = ((rgb565 >> 11) & 0x1F) * num / den;
+        unsigned g = ((rgb565 >> 5) & 0x3F) * num / den;
+        unsigned b = (rgb565 & 0x1F) * num / den;
+        return Color(static_cast<uint16_t>((r << 11) | (g << 5) | b));
+    }
 };
 
 constexpr Color kColorBlack = Color(0x0000);

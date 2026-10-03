@@ -50,15 +50,37 @@ private:
 };
 
 // Single-line fixed-width bitmap text. `font` must be a 96-entry glyph table
-// indexed by (ASCII - 0x20) -- see simple_font.h::kGlyphFont5x8 for one.
+// indexed by (ASCII - 0x20) -- see simple_font.h::kGlyphFont5x8. `scale` is an
+// integer pixel multiplier. With set_transparent(true) only "on" pixels are
+// drawn (text over a graph/bar without a background box).
 class TextWidget : public Widget {
 public:
     TextWidget() = default;
-    TextWidget(int x, int y, const char* text, Color fg, Color bg, const BitmapGlyph* font, uint8_t font_height)
-        : m_x(x), m_y(y), m_text(text), m_fg(fg), m_bg(bg), m_font(font), m_font_height(font_height) {}
+    TextWidget(int x, int y, const char* text, Color fg, Color bg, const BitmapGlyph* font,
+               uint8_t font_height, uint8_t scale = 1)
+        : m_x(x), m_y(y), m_text(text), m_fg(fg), m_bg(bg), m_font(font),
+          m_font_height(font_height), m_scale(scale) {}
 
     void set_text(const char* text) { m_text = text; }
     void set_position(int x, int y) { m_x = x; m_y = y; }
+    void set_color(Color fg) { m_fg = fg; }
+    void set_transparent(bool t) { m_transparent = t; }
+
+    // Rendered size in pixels (including the 1px letter spacing, scaled).
+    int text_width() const {
+        int w = 0;
+        for (const char* p = m_text; *p != '\0'; ++p) {
+            uint8_t code = static_cast<uint8_t>(*p);
+            if (code < 0x20 || code > 0x7E) continue;
+            const BitmapGlyph& g = m_font[code - 0x20];
+            w += (g.width == 0 || g.data == nullptr ? 1 : g.width + 1) * m_scale;
+        }
+        return w > 0 ? w - m_scale : 0;
+    }
+    int text_height() const { return m_font_height * m_scale; }
+
+    // Moves the text so it is centered on (cx, cy).
+    void set_centered(int cx, int cy) { set_position(cx - text_width() / 2, cy - text_height() / 2); }
 
     void draw(DisplayDriver& display) const override {
         int cx = m_x;
@@ -66,15 +88,21 @@ public:
             uint8_t code = static_cast<uint8_t>(*p);
             if (code < 0x20 || code > 0x7E) continue;
             const BitmapGlyph& g = m_font[code - 0x20];
-            if (g.width == 0 || g.data == nullptr) { cx += 1; continue; }
+            if (g.width == 0 || g.data == nullptr) { cx += m_scale; continue; }
             for (uint8_t r = 0; r < g.height; ++r) {
                 uint8_t row = g.data[r];
                 for (uint8_t c = 0; c < g.width; ++c) {
                     bool on = (row >> (g.width - 1 - c)) & 1;
-                    display.set_pixel(cx + c, m_y + r, on ? m_fg : m_bg);
+                    if (!on && m_transparent) continue;
+                    Color col = on ? m_fg : m_bg;
+                    if (m_scale == 1)
+                        display.set_pixel(cx + c, m_y + r, col);
+                    else
+                        display.fill_rect(cx + c * m_scale, m_y + r * m_scale,
+                                          cx + (c + 1) * m_scale - 1, m_y + (r + 1) * m_scale - 1, col);
                 }
             }
-            cx += g.width + 1; // 1-pixel letter spacing
+            cx += (g.width + 1) * m_scale; // 1-pixel letter spacing
         }
     }
 
@@ -85,6 +113,8 @@ private:
     Color m_bg = kColorBlack;
     const BitmapGlyph* m_font = nullptr;
     uint8_t m_font_height = 8;
+    uint8_t m_scale = 1;
+    bool m_transparent = false;
 };
 
 // Blits an already-decoded RGB565 pixel array (row-major, `w*h` pixels) at
@@ -114,17 +144,20 @@ private:
 
 // Vertical value bar (0.0-1.0) with green/yellow/red thresholds and a
 // slowly-decaying "max-hold" cursor line -- generalizes a per-core CPU-load
-// bar. Call set_value() once per frame before draw(); each call also
-// advances the max-hold decay, so skipping frames changes its decay rate.
+// bar. set_value() updates the bar (and raises the max-hold if exceeded);
+// call tick() once per rendered frame to make the max-hold fall -- the decay
+// is per frame, independent of how often new values arrive.
 class BarWidget : public Widget {
 public:
     BarWidget(int x, int y, int w, int h) : m_x(x), m_y(y), m_w(w), m_h(h) {}
 
     void set_value(float v) {
         m_value = std::clamp(v, 0.0f, 1.0f);
-        m_max_hold = std::max(0.0f, m_max_hold - kMaxHoldDecay);
         if (m_value > m_max_hold) m_max_hold = m_value;
     }
+
+    // Per-frame max-hold decay (never falls below the current value).
+    void tick() { m_max_hold = std::max(m_value, m_max_hold - kMaxHoldDecay); }
 
     // Thresholds are the value at which the bar switches from the low to
     // mid color, and mid to high color, respectively.
@@ -132,11 +165,11 @@ public:
     void set_colors(Color low, Color mid, Color high) { m_low = low; m_mid = mid; m_high = high; }
 
     void draw(DisplayDriver& display) const override {
-        int fill_h = static_cast<int>(m_h * m_value);
-        if (fill_h > 0)
-            display.fill_rect(m_x, m_y + m_h - fill_h, m_x + m_w - 1, m_y + m_h - 1, color_for(m_value));
+        int fill_h = std::max(1, static_cast<int>(m_h * m_value));
+        display.fill_rect(m_x, m_y + m_h - fill_h, m_x + m_w - 1, m_y + m_h - 1, color_for(m_value));
 
-        int hold_y = m_y + m_h - 1 - static_cast<int>(m_h * m_max_hold);
+        int hold_h = std::max(1, static_cast<int>(m_h * m_max_hold)) + 1;
+        int hold_y = std::max(m_y, m_y + m_h - 1 - hold_h);
         display.draw_line(m_x, hold_y, m_x + m_w - 1, hold_y, color_for(m_max_hold));
     }
 
@@ -152,16 +185,16 @@ private:
     float m_max_hold = 0.0f;
     float m_mid_at = 0.5f;
     float m_high_at = 0.8f;
-    Color m_low = kColorGreen;
+    Color m_low = Color::from_rgb888(32, 180, 96);
     Color m_mid = Color::from_rgb888(230, 126, 34);
-    Color m_high = kColorRed;
+    Color m_high = Color::from_rgb888(255, 20, 15);
     static constexpr float kMaxHoldDecay = 0.01f;
 };
 
 // Horizontal value bar (0.0-1.0) with the same green/yellow/red threshold
 // scheme as BarWidget -- generalizes a disk-usage row. `thickness` is the
-// bar's pixel height; pair with a TextWidget for a label, this widget draws
-// only the bar itself.
+// bar's pixel height; pair with a TextWidget for a label (color() returns the
+// bar's current fill color for that), this widget draws only the bar itself.
 class HBarWidget : public Widget {
 public:
     HBarWidget(int x, int y, int w, int thickness) : m_x(x), m_y(y), m_w(w), m_thickness(thickness) {}
@@ -171,6 +204,9 @@ public:
     void set_colors(Color track, Color low, Color mid, Color high) {
         m_track = track; m_low = low; m_mid = mid; m_high = high;
     }
+
+    // Current fill color (low/mid/high according to the value).
+    Color color() const { return color_for(m_value); }
 
     void draw(DisplayDriver& display) const override {
         display.draw_thick_line(m_x, m_y, m_x + m_w - 1, m_y, m_thickness, m_track);
@@ -190,26 +226,26 @@ private:
     float m_mid_at = 0.75f;
     float m_high_at = 0.9f;
     Color m_track = Color::from_rgb888(0, 50, 100);
-    Color m_low = kColorGreen;
+    Color m_low = Color::from_rgb888(32, 180, 96);
     Color m_mid = Color::from_rgb888(230, 126, 34);
-    Color m_high = kColorRed;
+    Color m_high = Color::from_rgb888(255, 20, 15);
 };
 
-// Scrolling line-graph widget (fixed-capacity history, oldest values drop
-// off the left) with a label shown when empty and the latest value shown as
-// text once data exists -- generalizes a temperature/RAM history graph.
+// Scrolling filled-area graph (fixed-capacity history of one column per
+// value, oldest values drop off the left): each column is a dimmed fill from
+// the baseline up to the value with a full-color pixel on top. A label is
+// shown when empty; once data exists the latest value is drawn centered in
+// the inverse color, over the graph. Generalizes a temperature/RAM history.
 // push_value() is not thread/core safe; call it and draw() from the same
 // core, same as every other widget here.
 class LineGraphWidget : public Widget {
 public:
     LineGraphWidget(int x, int y, int w, int h, double scale, Color color, const char* label,
-                     const BitmapGlyph* font, uint8_t font_height)
+                     const BitmapGlyph* font, uint8_t font_height, uint8_t text_scale = 1)
         : m_x(x), m_y(y), m_w(w), m_h(h), m_scale(scale), m_color(color), m_label(label),
-          m_font(font), m_font_height(font_height) {}
+          m_font(font), m_font_height(font_height), m_text_scale(text_scale) {}
 
-    // `value` is expected in [0, scale]; values outside that range still
-    // plot, clipped by the axes' drawing bounds only insofar as draw_line()
-    // itself clips (see DisplayDriver::set_pixel's bounds check).
+    // `value` is expected in [0, scale]; it is clamped to the graph height.
     void push_value(double value) {
         m_values.push_back(value);
         while (m_values.size() > static_cast<size_t>(m_w))
@@ -217,34 +253,31 @@ public:
     }
 
     void draw(DisplayDriver& display) const override {
-        display.draw_line(m_x, m_y, m_x, m_y + m_h - 1, kColorWhite);
-        display.draw_line(m_x, m_y + m_h - 1, m_x + m_w - 1, m_y + m_h - 1, kColorWhite);
-
+        const int cx = m_x + m_w / 2;
         if (m_values.empty()) {
-            int label_len = 0;
-            for (const char* p = m_label; *p; ++p) ++label_len;
-            TextWidget label_widget(m_x + m_w / 2 - label_len * 3, m_y + m_h / 2, m_label,
-                                     kColorWhite, kColorBlack, m_font, m_font_height);
-            label_widget.draw(display);
+            TextWidget label(0, 0, m_label, kColorWhite, kColorBlack, m_font, m_font_height, m_text_scale);
+            label.set_transparent(true);
+            label.set_centered(cx, m_y + m_h / 2);
+            label.draw(display);
             return;
         }
 
+        const int base = m_y + m_h - 1;
+        const Color fill = m_color.scaled(1, 3);
         int i = 0;
-        int prev_x = 0, prev_y = 0;
         for (double v : m_values) {
-            int x = m_x + i;
-            int y = m_y + m_h - 1 - static_cast<int>((v / m_scale) * (m_h - 1));
-            if (i > 0)
-                display.draw_line(prev_x, prev_y, x, y, m_color);
-            prev_x = x;
-            prev_y = y;
-            ++i;
+            int top = base - static_cast<int>(std::clamp(v / m_scale, 0.0, 1.0) * (m_h - 1));
+            int x = m_x + i++;
+            if (top < base) display.draw_line(x, base, x, top + 1, fill);
+            display.set_pixel(x, top, m_color);
         }
 
         char buf[16];
         snprintf(buf, sizeof(buf), "%.1f", m_values.back());
-        TextWidget value_widget(m_x + 2, m_y + 2, buf, m_color, kColorBlack, m_font, m_font_height);
-        value_widget.draw(display);
+        TextWidget value(0, 0, buf, m_color.inverted(), kColorBlack, m_font, m_font_height, m_text_scale);
+        value.set_transparent(true);
+        value.set_centered(cx, m_y + m_h / 2);
+        value.draw(display);
     }
 
 private:
@@ -254,6 +287,7 @@ private:
     const char* m_label;
     const BitmapGlyph* m_font;
     uint8_t m_font_height;
+    uint8_t m_text_scale;
     std::deque<double> m_values;
 };
 
