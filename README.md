@@ -27,6 +27,8 @@ independently.
 | RGB LED   | `pico_toolset_rgb_led`  | PWM RGB LED on three GPIOs (8-bit color, gamma 2.8, active-high/low); validated preset for the Pimoroni Pico Display Pack. |
 | Flash store | `pico_toolset_flash_store` | Tiny power-fail-safe settings store (one <=240-byte blob) in the last flash sectors: CRC-checked append-only records, 16 per sector, erase only when a sector fills; flash ops via `flash_safe_execute()`. The app must reserve that range in its linker script. |
 | E-paper 2.13" V4 | `pico_toolset_epd_2in13_v4` | Waveshare 2.13" V4 e-paper (122x250, 1 bpp): config-driven SPI driver with full/partial refresh + sleep handled by `update()`, plus the vendored Waveshare GUI_Paint drawing library and fonts. Preset for the Pico-ePaper-2.13 on a Pico/Pico W header. |
+| Wi-Fi     | `pico_toolset_wifi`     | Pico W station-mode join (cyw43) with config-driven credentials/auth/timeout and PM2 power saving. OFF by default -- needs a Pico W board. |
+| HTTPS client | `pico_toolset_https_client` | Blocking HTTPS GET over lwIP altcp + mbedtls with a persistent keep-alive TLS connection; ships the lwIP/mbedtls config (`pico_toolset_net_config`) and Let's Encrypt roots. OFF by default; see `docs/components/https-client.md` for the one-config-per-build setup. |
 | DVI/HDMI  | `pico_toolset_dvi_hdmi` | PIO-based DVI/TMDS serialiser + encoder (no HSTX needed -- works on any GPIO set a board wires to its connector), with optional HDMI data-island digital audio (CEA-861 InfoFrames/ACR/audio-sample packets) and a core1 IRQ-handler-headroom measurement tool. See "Credits and third-party code" below for full provenance. |
 
 ## Libraries
@@ -127,6 +129,8 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_USB_HID_KEYMAPS` | `us;fr` | Semicolon-separated keyboard layouts to compile in (implemented: `us`, `fr`) |
 | `PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP` | `us` | Layout used by default (must be listed in `PICO_TOOLSET_USB_HID_KEYMAPS`) |
 | `PICO_TOOLSET_BUILD_EPD_2IN13_V4` | ON | Build the 2.13" V4 e-paper driver + example |
+| `PICO_TOOLSET_BUILD_WIFI`    | OFF | Build the Pico W Wi-Fi helper |
+| `PICO_TOOLSET_BUILD_HTTPS_CLIENT` | OFF | Build the HTTPS client (sets `PICO_MBEDTLS_CONFIG_FILE` before `pico_sdk_init()`) |
 | `PICO_TOOLSET_BUILD_SCREEN`  | ON | Build screen abstraction + example |
 | `PICO_TOOLSET_BUILD_JSON`    | ON | Build the pull JSON reader + example |
 | `PICO_TOOLSET_SCREEN_PIMORONI` | OFF | Compile the Pimoroni PicoGraphics backend adaptor |
