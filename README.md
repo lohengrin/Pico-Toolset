@@ -37,6 +37,7 @@ drivers (`screen` is header-only; `fault_handler` has a source file).
 |---------|--------|-------------|
 | Screen   | `pico_toolset_screen`  | Pluggable `DisplayDriver` abstraction + slot-based widget composition (`RectWidget`/`TextWidget`/`BitmapWidget`/`BarWidget`/`HBarWidget`/`LineGraphWidget`). `BufferedDisplay` adapts any `DisplayPanel` (ILI9486/ST7789/ST7796) + a caller-owned framebuffer; `Ssd1306Driver`/`PimoroniDriver` adapt those directly. |
 | Fault handler | `pico_toolset_fault_handler` | Cortex-M33 hard-fault handler that survives a watchdog reset to report PC/LR/CFSR on the *next* boot, instead of the SDK's default silent halt. No board wiring involved (core MCU + watchdog only), hence a library rather than a `components/` driver. |
+| JSON reader | `pico_toolset_json` | Pull-style JSON reader (no DOM) for small API responses; tolerates `null` in nullable string/number fields. Extracted from PicoADSB. |
 
 All code lives in namespace `pico_toolset` and targets C++20.
 
@@ -80,6 +81,7 @@ pico-toolset/
 │   └── dvi_hdmi/  dvi.h dvi.c ... (flat, vendored -- see its own README.md)
 └── libs/
     ├── screen/         include/pico_toolset/*.h  example/
+    ├── json/           include/pico_toolset/json_reader.h  src/  example/
     └── fault_handler/  include/pico_toolset/fault_handler.h  src/  example/
 ```
 
@@ -123,6 +125,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_USB_HID_KEYMAPS` | `us;fr` | Semicolon-separated keyboard layouts to compile in (implemented: `us`, `fr`) |
 | `PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP` | `us` | Layout used by default (must be listed in `PICO_TOOLSET_USB_HID_KEYMAPS`) |
 | `PICO_TOOLSET_BUILD_SCREEN`  | ON | Build screen abstraction + example |
+| `PICO_TOOLSET_BUILD_JSON`    | ON | Build the pull JSON reader + example |
 | `PICO_TOOLSET_SCREEN_PIMORONI` | OFF | Compile the Pimoroni PicoGraphics backend adaptor |
 
 ## Pico-PIO-USB (USB HID component)
