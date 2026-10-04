@@ -257,6 +257,8 @@ manual smoke tests of the examples on hardware.
   reporting on the next boot instead of the SDK's silent default. Moved off
   its original scratch[0..3] onto scratch[2]/[3]/[5]/[6] to not collide with
   reset_buttons' scratch[0]/[1] -- see the scratch-register invariant above.
+- JSON reader: extracted from PicoADSB's `src/adsb/json.*` (own code, GPL-3.0
+  author, same owner), renamed `JsonReader` into `pico_toolset`.
 - Screen: `Screen`/`Widget` (Pimoroni PicoGraphics default).
 - `boards/waveshare_rp2350_pizero.h`: Raspberry Pi (Trading) Ltd.'s pico-sdk
   board header for this board (BSD-3-Clause), vendored here once instead of

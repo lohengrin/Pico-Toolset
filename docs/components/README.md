@@ -24,6 +24,7 @@ targets are `pico_toolset_<name>`; each component has a
 | [rgb_led](rgb-led.md) | `pico_toolset_rgb_led` | output | ON | PWM RGB LED |
 | [lvgl_display](lvgl-display.md) | `pico_toolset_lvgl_display` | UI glue | **OFF** | LVGL adapter over `DisplayPanel`/`TouchPanel` |
 | [screen](screen.md) (lib) | `pico_toolset_screen` | UI | ON | `DisplayDriver`, widgets, `BufferedDisplay` |
+| [json](json.md) (lib) | `pico_toolset_json` | parsing | ON | Pull-style JSON reader, no DOM |
 | [fault_handler](fault-handler.md) (lib) | `pico_toolset_fault_handler` | diagnostics | ON | Hard-fault reporting across a watchdog reset |
 
 ## Layers and dependency rule

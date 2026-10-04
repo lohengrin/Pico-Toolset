@@ -66,6 +66,7 @@ option(PICO_TOOLSET_BUILD_RESET_BUTTONS "Build debounced-buttons + tagged-watchd
 option(PICO_TOOLSET_BUILD_DVI_HDMI "Build PIO-based DVI/HDMI video (+ optional digital audio)" ON)
 option(PICO_TOOLSET_BUILD_FAULT_HANDLER "Build hard-fault handler (watchdog-scratch crash reporting)" ON)
 option(PICO_TOOLSET_BUILD_SCREEN   "Build Screen abstraction"             ON)
+option(PICO_TOOLSET_BUILD_JSON     "Build minimal pull JSON reader"          ON)
 # Screen backend selector.
 option(PICO_TOOLSET_SCREEN_PIMORONI "Use Pimoroni PicoGraphics backend"   OFF)
 
@@ -128,4 +129,7 @@ if(PICO_TOOLSET_BUILD_FAULT_HANDLER)
 endif()
 if(PICO_TOOLSET_BUILD_SCREEN)
     add_subdirectory(libs/screen)
+endif()
+if(PICO_TOOLSET_BUILD_JSON)
+    add_subdirectory(libs/json)
 endif()
