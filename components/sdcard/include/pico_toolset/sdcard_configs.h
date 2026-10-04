@@ -1,8 +1,10 @@
 #pragma once
 
-// Known-good SdCardConfig presets for specific boards. Both presets here
-// use PIO-bit-banged SPI (spi_instance = nullptr) since neither board wires
-// its uSD socket's native 4-bit SDIO pins to a hardware-SPI-capable pin set.
+// Known-good SdCardConfig presets for specific boards. The Waveshare
+// RP2350-PiZero and Pico DV presets use PIO-bit-banged SPI (spi_instance =
+// nullptr) since neither board wires its uSD socket's native 4-bit SDIO pins
+// to a hardware-SPI-capable pin set; the CrowPanel preset uses native
+// hardware SPI shared with the display and touch.
 
 #include "pico_toolset/sdcard.h"
 

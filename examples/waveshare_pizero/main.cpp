@@ -1,7 +1,7 @@
 // Waveshare RP2350-PiZero base combination example (doubles as an
 // integration test): HDMI video-out + PSRAM (works whether or not the chip
 // is populated) + uSD card + USB HID host, all together. See
-// ../../boards/waveshare_rp2350_pizero.md.
+// ../../docs/boards/waveshare-rp2350-pizero.md.
 //
 // Like components/dvi_hdmi/example/dvi_hdmi_example.cpp, the DVI half has
 // not been independently re-run on real hardware from this repo, though its
@@ -82,6 +82,10 @@ int main() {
     fill_test_pattern();
     g_dvi.timing = &dvi_timing_640x480p_60hz;
     g_dvi.ser_cfg = pico_sock_cfg; // this board's onboard TMDS connector
+    // TMDS pins are GPIO32-39: outside the PIO's default 0-31 window, so move
+    // the window to 16-47 first (libdvi never does) -- see
+    // docs/guides/pio-gpio-window.md.
+    pio_set_gpio_base(g_dvi.ser_cfg.pio, 16);
     dvi_init(&g_dvi, next_striped_spin_lock_num(), next_striped_spin_lock_num());
     for (auto& buf : g_scanlines) {
         void* p = &buf;

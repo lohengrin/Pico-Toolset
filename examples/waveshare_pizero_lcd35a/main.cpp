@@ -2,7 +2,7 @@
 // example (doubles as an integration test): ILI9486 LCD + XPT2046 touch
 // (shared SPI bus) + PSRAM (works whether or not the chip is populated) +
 // uSD card + USB HID host. See
-// ../../boards/waveshare_rp2350_pizero_lcd35a.md.
+// ../../docs/boards/waveshare-3.5-rpi-lcd-a.md.
 #include "pico_toolset/ili9486.h"
 #include "pico_toolset/ili9486_configs.h"
 #include "pico_toolset/xpt2046.h"

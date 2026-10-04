@@ -6,8 +6,8 @@
 #include <memory_resource>
 
 // PSRAM support targets the RP2350 only (its QSPI QMI CS1 interface).
-// On RP2040 the whole library is a no-op: psram_init() returns a status with
-// present=false.
+// On RP2040 the component is not built at all (see CMakeLists.txt) and this
+// header is empty.
 #if PICO_RP2350
 #include "hardware/psram.h"
 

@@ -5,8 +5,10 @@ Guidance for AI coding agents working in this repository.
 ## Project overview
 
 Reusable, config-centric device drivers for Raspberry Pi Pico (RP2040/RP2350):
-four independent CMake components under `components/` plus the header-only
-Screen library under `libs/screen/`. Built with C++20, namespace
+independent CMake components under `components/` (display, touch, video, USB,
+storage, audio, ...) plus two libraries under `libs/` (`screen`,
+`fault_handler`). Documentation lives in `docs/` (see "Board & combination
+docs" below). Built with C++20, namespace
 `pico_toolset`. Every driver takes a config struct (pins, bus instance,
 frequencies, feature toggles) instead of hard-coded wiring, and each
 component ships an `example/` program that doubles as a smoke test.
@@ -119,11 +121,14 @@ component ships an `example/` program that doubles as a smoke test.
 
 ## Board & combination docs
 
-`boards/*.md` describes a complete assembled board or board+peripheral
+`docs/boards/*.md` describes a complete board or board+peripheral
 combination end-to-end (which components to enable, which named preset to
 call on each, resource conflicts already resolved, build command, example)
 -- the layer above the per-driver `<name>_configs.h` presets described
-below. Start at [`boards/README.md`](boards/README.md) (index + template).
+below. Start at [`docs/README.md`](docs/README.md); the board index and template are in
+[`docs/boards/README.md`](docs/boards/README.md), one page per component in
+[`docs/components/`](docs/components/README.md). Keep these in step with the
+`<name>_configs.h` presets: when a preset changes, update its board doc.
 `examples/` holds one full-integration example per distinct hardware
 combination, built all at once via `examples/CMakeLists.txt`'s superbuild
 (`cmake -S examples -B examples-build && cmake --build examples-build`, no
@@ -194,11 +199,13 @@ manual smoke tests of the examples on hardware.
   validated branch per real panel, same as the original).
 - ST7796U: register sequence ported from TFT_eSPI's ST7796 driver (a
   widely-used, real-panel-validated reference implementation, MIT), not
-  written from the datasheet alone. Wire-protocol/class structure follows
-  St7789 (same Sitronix-family command set: single 4-byte CASET/RASET
-  bursts, config-driven geometry/MADCTL, combined `write_command(cmd, data,
-  len)`), not Ili9486 (different controller family, 16-bit-shift-register
-  wire protocol) -- but its config additionally carries `pin_miso` and a
+  written from the datasheet alone. Class structure follows St7789 (same
+  Sitronix-family command set: single 4-byte CASET/RASET bursts,
+  config-driven geometry/MADCTL, combined `write_command(cmd, data, len)`),
+  but the *wire protocol* matches Ili9486's: the supported boards put the
+  LCD header behind a SPI-to-parallel bridge, so every command and parameter
+  byte is padded to 16 bits and only bulk pixel data is unpadded (see
+  `st7796.h`). Its config additionally carries `pin_miso` and a
   live-tunable `spi_freq_hz` (`set_pixel_clock_hz()`/`pixel_clock_hz()`/
   `pixel_clock_actual_hz()`, mirroring Ili9486's identically-shaped API)
   since its first consumer board shares Ili9486's touch-controller-on-MISO
@@ -206,8 +213,8 @@ manual smoke tests of the examples on hardware.
   ILI9486 panel it replaces could sustain. The `kWaveshareRp2350PiZero`
   preset's pins are carried over unchanged from
   `configs::ili9486::kWaveshareRp2350PiZero` (same board/header, only the
-  panel controller changed) but NOT independently hardware-validated for
-  ST7796U yet -- see that preset's own doc comment.
+  panel controller changed); hardware-validated on a SunFounder ST7796U
+  panel (PicoDoom, PicoBoot) -- see that preset's own doc comment.
 - XPT2046: touch driver + linear calibration, real-hardware-validated
   on the Waveshare 3.5in RPi LCD (A) wired over a Waveshare RP2350-PiZero's
   GPIO/SPI header (that board has no built-in screen of its own).

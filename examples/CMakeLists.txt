@@ -3,7 +3,7 @@
 # PICO_BOARD (a single global cache variable per CMake configure), so this
 # drives several independent nested pico-sdk configures via
 # ExternalProject_Add rather than one shared configure. See
-# ../boards/README.md for what each combination is.
+# ../docs/boards/README.md for what each combination is.
 #
 # Usage (two commands, nothing else):
 #   cmake -S examples -B examples-build

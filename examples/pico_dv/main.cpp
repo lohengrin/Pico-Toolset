@@ -1,15 +1,14 @@
 // "pico-dv" carrier board full-combination example (doubles as an
 // integration test): HDMI video-out + uSD card + I2S audio + 3 debounced
-// buttons, all brought up together. See ../../boards/pico_dv_pico1.md (and
-// its pico1w/pico2 siblings) for the board writeup this exercises.
+// buttons, all brought up together. See
+// ../../docs/boards/pimoroni-pico-dv-demo-base.md for the board writeup this
+// exercises (the same example builds for Pico, Pico W and Pico 2).
 //
-// Like components/dvi_hdmi/example/dvi_hdmi_example.cpp, the DVI half of
-// this has NOT been run on real "pico-dv" hardware from this repo -- the
-// TMDS pin config (pimoroni_demo_hdmi_cfg, common_dvi_pin_configs.h) is a
-// best-guess match by name/pin-non-conflict with the validated
-// kPicoDvCarrier sdcard/i2s_audio presets, not independently re-validated
-// here. Adapt DVI_DEFAULT_SERIAL_CONFIG below if your carrier differs -- see
-// boards/pico_dv_pico1.md's "Notes/gotchas".
+// This combination has NOT been run on hardware from this repo. The TMDS pin
+// config (pimoroni_demo_hdmi_cfg, common_dvi_pin_configs.h) was validated on a
+// Pico DV by PicoBoot, but HDMI + SD + I2S together were never run, and DVI and
+// pico_audio_i2s both default to PIO0 -- see "Known issues and gotchas" in the
+// board doc before relying on this on hardware.
 #include "dvi.h"
 #include "common_dvi_pin_configs.h"
 #include "pico_toolset/sdcard.h"

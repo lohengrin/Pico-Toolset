@@ -1,7 +1,7 @@
 // Elecrow CrowPanel PICO HMI 2.8" combination example (doubles as an
 // integration test): ST7789 LCD (via the Screen/Widget composition) +
 // XPT2046 touch + uSD card, all three sharing SPI1 with separate CS lines.
-// See ../../boards/crowpanel_pico_hmi_28.md.
+// See ../../docs/boards/elecrow-crowpanel-pico-hmi-2.8.md.
 #include "pico_toolset/st7789.h"
 #include "pico_toolset/st7789_configs.h"
 #include "pico_toolset/buffered_display.h"

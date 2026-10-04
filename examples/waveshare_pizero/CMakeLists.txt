@@ -1,6 +1,6 @@
 # Standalone consumer project: Waveshare RP2350-PiZero base combination
 # (HDMI + PSRAM (present-or-not) + sdcard + USB HID). See
-# boards/waveshare_rp2350_pizero.md. Single board (RP2350-only) so, unlike
+# docs/boards/waveshare-rp2350-pizero.md. Single board (RP2350-only) so, unlike
 # examples/pico_dv, PICO_BOARD isn't parameterized here.
 cmake_minimum_required(VERSION 3.20)
 

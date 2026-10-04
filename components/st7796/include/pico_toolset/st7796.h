@@ -47,7 +47,8 @@ struct St7796Orientation {
 // Configuration for the ST7796U SPI TFT LCD (as used on Waveshare
 // RP2350-PiZero style carrier boards, replacing an ILI9486 panel wired the
 // same way -- same MISO-sharing-with-touch requirement, same reset/backlight
-// pin roles, unlike ILI9486's 16-bit-shift-register wire protocol). All
+// pin roles, and the same 16-bit-padded command protocol -- see the class
+// comment below). All
 // pins and the clock are configurable.
 //
 // No field below has a working default -- pins/SPI instance/clock/geometry
@@ -86,9 +87,9 @@ struct St7796Config {
     // (datasheet §9.2.32) have no data path in this driver to use them
     // through, so offering them as a config knob would just be a footgun.
 
-    // One SPI clock for both commands and pixel data (ST7796U is a direct
-    // SPI-wired panel, not behind ILI9486's shift-register bridge, so there
-    // is no separate slow "command clock" concern here). Live-tunable at
+    // One SPI clock for both commands and pixel data (unlike Ili9486Config
+    // there is no separate slow command clock; the validated SunFounder
+    // panel runs both at this rate). Live-tunable at
     // runtime via St7796::set_pixel_clock_hz() once the panel's real
     // corruption ceiling on actual hardware is known -- start conservative
     // (e.g. reuse whatever rate an existing ILI9486 board on the same

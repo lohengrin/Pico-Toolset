@@ -8,7 +8,7 @@
 namespace pico_toolset {
 
 // Low-level contract shared by windowed/DMA-streamed RGB565 SPI panels
-// (e.g. Ili9486, St7789). NOT for framebuffer-model displays like Ssd1306
+// (e.g. Ili9486, St7789, St7796). NOT for framebuffer-model displays like Ssd1306
 // (I2C, 1bpp, no windowed/DMA concept) -- see libs/screen's DisplayDriver
 // for the higher, chip-agnostic framebuffer/widget layer those use instead.
 //

@@ -25,9 +25,8 @@ namespace pico_toolset {
 // implementer.
 class BufferedDisplay : public DisplayDriver {
 public:
-    // `line_buffer_capacity` must be at least the panel's width -- it sizes
-    // the internal big-endian byte-swap staging row. Defaults to `panel`'s
-    // current width().
+    // The big-endian byte-swap staging row is fixed at 480 pixels; a wider
+    // panel needs that bumped.
     BufferedDisplay(DisplayPanel& panel, uint16_t* framebuffer)
         : m_panel(panel), m_fb(framebuffer) {}
 

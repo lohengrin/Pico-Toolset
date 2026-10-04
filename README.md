@@ -15,9 +15,9 @@ independently.
 | SSD1306   | `pico_toolset_ssd1306`  | I2C monochrome OLED driver (128x64/128x32/...) with framebuffer, BMP blitting, basic primitives. |
 | ILI9486   | `pico_toolset_ili9486`  | 480x320 SPI TFT driver for Waveshare-style boards where the panel sits behind a 16-bit shift register; DMA-backed pixel streaming, backlight PWM. |
 | ST7789    | `pico_toolset_st7789`   | ST7789-family SPI TFT driver (e.g. the CrowPanel PICO HMI 2.8"'s 320x240 panel); config-driven geometry/MADCTL/inversion, DMA-backed pixel streaming, backlight PWM. |
-| ST7796U   | `pico_toolset_st7796`   | ST7796U SPI TFT driver (e.g. a 480x320 Waveshare-wiring-compatible panel replacing an ILI9486 board); direct SPI (no shift-register bridge), config-driven geometry/MADCTL, live SPI-clock tuning, DMA-backed pixel streaming, backlight PWM. |
+| ST7796U   | `pico_toolset_st7796`   | ST7796U SPI TFT driver (e.g. a 480x320 Waveshare-wiring-compatible panel replacing an ILI9486 board); same 16-bit-padded command protocol as the ILI9486 (SPI-to-parallel bridge), config-driven geometry/MADCTL, live SPI-clock tuning, DMA-backed pixel streaming, backlight PWM. |
 | XPT2046   | `pico_toolset_xpt2046`  | Resistive touch controller sharing an SPI bus with a display driver (e.g. ILI9486/ST7796U); raw ADC reads + a linear calibration helper. |
-| PSRAM     | `pico_toolset_psram`    | RP2350-only external PSRAM bring-up (QMI CS1), self-test, free-list allocator, `std::pmr` adapter. No-op on RP2040. |
+| PSRAM     | `pico_toolset_psram`    | RP2350-only external PSRAM bring-up (QMI CS1), self-test, free-list allocator, `std::pmr` adapter. Not built on RP2040. |
 | USB HID   | `pico_toolset_usb_hid`  | PIO-USB TinyUSB host: keyboard/mouse/HID-gamepad + XInput + DualSense (VID/PID-detected), double-buffered cross-core state, unified `GamepadState`. |
 | I2S audio | `pico_toolset_i2s_audio` | Float-sample I2S DAC output (e.g. PCM5100A) via pico-extras' `pico_audio_i2s`; non-blocking queue, config-driven pins/DMA channel/PIO SM. OFF by default -- needs pico-extras set up by the consumer (see below). |
 | SD card   | `pico_toolset_sdcard`   | FatFs R0.15 (elehobica/pico_fatfs) over native or PIO-bit-banged SPI; config-driven pins/PIO/gpio_base, `list_files()`/`read_file()`/`read_file_pmr()`. |
@@ -30,12 +30,12 @@ independently.
 
 ## Libraries
 
-Header-only helpers that sit above the components rather than being
-standalone drivers.
+Helpers that sit above the components rather than being standalone
+drivers (`screen` is header-only; `fault_handler` has a source file).
 
 | Library | Target | Description |
 |---------|--------|-------------|
-| Screen   | `pico_toolset_screen`  | Pluggable `DisplayDriver` abstraction + slot-based widget composition (`RectWidget`/`TextWidget`/`BitmapWidget`/`BarWidget`/`HBarWidget`/`LineGraphWidget`). `BufferedDisplay` adapts any `DisplayPanel` (ILI9486/ST7789) + a caller-owned framebuffer; `Ssd1306Driver`/`PimoroniDriver` adapt those directly. |
+| Screen   | `pico_toolset_screen`  | Pluggable `DisplayDriver` abstraction + slot-based widget composition (`RectWidget`/`TextWidget`/`BitmapWidget`/`BarWidget`/`HBarWidget`/`LineGraphWidget`). `BufferedDisplay` adapts any `DisplayPanel` (ILI9486/ST7789/ST7796) + a caller-owned framebuffer; `Ssd1306Driver`/`PimoroniDriver` adapt those directly. |
 | Fault handler | `pico_toolset_fault_handler` | Cortex-M33 hard-fault handler that survives a watchdog reset to report PC/LR/CFSR on the *next* boot, instead of the SDK's default silent halt. No board wiring involved (core MCU + watchdog only), hence a library rather than a `components/` driver. |
 
 All code lives in namespace `pico_toolset` and targets C++20.
@@ -45,17 +45,22 @@ All code lives in namespace `pico_toolset` and targets C++20.
 ```
 pico-toolset/
 ├── CMakeLists.txt            # top-level: options + subdirectories
-├── boards/                   # board/combination docs + pico-sdk board-definition headers
+├── boards/                   # pico-sdk board-definition headers
 │   ├── README.md
 │   └── waveshare_rp2350_pizero.h
-├── examples/                 # full-combination examples, one per board/combo (see boards/)
+├── docs/                     # documentation: per board, per component, guides (start at docs/README.md)
+│   ├── boards/  components/  guides/  reference/  AUDIT.md
+├── examples/                 # full-combination examples, one per board/combo (see docs/boards/)
 │   ├── CMakeLists.txt        # superbuild: builds every combination in one pass
 │   ├── pico_dv/
 │   ├── waveshare_pizero/
-│   └── waveshare_pizero_lcd35a/
+│   ├── waveshare_pizero_lcd35a/
+│   └── crowpanel_pico_hmi_28/
 ├── cmake/
 │   ├── pico-toolset.cmake    # helper for FetchContent consumers
-│   └── pico_pio_usb.cmake    # makes Pico-PIO-USB available (submodule or fetch)
+│   ├── pico_pio_usb.cmake    # makes Pico-PIO-USB available (submodule or fetch)
+│   ├── pico_fatfs.cmake      # makes pico_fatfs available
+│   └── pico_lvgl.cmake       # makes LVGL available (lvgl_display)
 ├── components/
 │   ├── driver_interfaces/ include/pico_toolset/{display_panel.h,touch_panel.h}  (header-only)
 │   ├── ssd1306/   include/pico_toolset/ssd1306.h   src/  example/
@@ -178,10 +183,9 @@ misbehaving silently.
 
 ## Boards & full-combination examples
 
-`boards/*.md` documents complete assembled board/combinations (which
-components to enable, which preset to call, resource conflicts, build
-command) -- see [`boards/README.md`](boards/README.md) for the index and
-template. `examples/` holds one full-integration example per combination,
+[`docs/boards/`](docs/boards/README.md) documents each supported board
+(pin map, presets, resource map, clocks, gotchas); the full documentation tree
+starts at [`docs/README.md`](docs/README.md). `examples/` holds one full-integration example per combination,
 all buildable in a single pass with no flags:
 
 ```sh

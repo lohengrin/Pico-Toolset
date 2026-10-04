@@ -12,9 +12,9 @@ namespace pico_toolset {
 // Configuration for an ST7789 SPI TFT LCD. ST7789 ships in several
 // panel sizes/orientations (240x240, 240x135, 320x240, ...), each needing
 // its own CASET/RASET RAM offset and MADCTL (orientation/color-order)
-// value -- rather than switching on width/height internally (as the
-// consumer driver this was extracted from did), those are plain config
-// fields: see st7789_configs.h for known-good per-board presets (e.g.
+// value -- those are plain config fields rather than a per-panel type enum
+// (only the gamma/VCOM tuning tables are still switched on width/height
+// inside init(), one validated branch per real panel): see st7789_configs.h for known-good per-board presets (e.g.
 // configs::st7789::kElecrowCrowPanelPicoHmi28), or fill in every field
 // yourself for a panel this toolset doesn't have a preset for yet.
 //

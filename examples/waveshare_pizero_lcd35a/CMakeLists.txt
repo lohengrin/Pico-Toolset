@@ -1,7 +1,7 @@
 # Standalone consumer project: Waveshare RP2350-PiZero + external Waveshare
 # 3.5" RPi LCD (A) combination (ILI9486 + XPT2046 touch + PSRAM
 # (present-or-not) + sdcard + USB HID). See
-# boards/waveshare_rp2350_pizero_lcd35a.md. No dvi_hdmi here -- the LCD is
+# docs/boards/waveshare-3.5-rpi-lcd-a.md. No dvi_hdmi here -- the LCD is
 # this combination's display, in place of HDMI.
 cmake_minimum_required(VERSION 3.20)
 

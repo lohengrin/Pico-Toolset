@@ -1,6 +1,6 @@
 # Standalone consumer project: Elecrow CrowPanel PICO HMI 2.8" (ST7789 SPI
 # display + XPT2046 touch + uSD card, all sharing SPI1 with separate CS
-# lines). See ../../boards/crowpanel_pico_hmi_28.md. Plain RP2040 "pico"
+# lines). See ../../docs/boards/elecrow-crowpanel-pico-hmi-2.8.md. Plain RP2040 "pico"
 # board -- no custom PICO_BOARD header needed for this board.
 cmake_minimum_required(VERSION 3.20)
 
