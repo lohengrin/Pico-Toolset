@@ -37,6 +37,14 @@ project(pico_toolset VERSION 1.0.0 LANGUAGES C CXX ASM)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Pico W / Pico 2 W only, so OFF by default (the default board has no radio).
+option(PICO_TOOLSET_BUILD_WIFI "Build Wi-Fi station helper (needs a Pico W board)" OFF)
+option(PICO_TOOLSET_BUILD_HTTPS_CLIENT "Build HTTPS GET client (lwIP altcp + mbedtls; needs a Pico W board)" OFF)
+if(PICO_TOOLSET_BUILD_HTTPS_CLIENT)
+    # Must be set before pico_sdk_init(): one mbedtls config per build.
+    include(${CMAKE_CURRENT_LIST_DIR}/cmake/pico_toolset_tls_config.cmake)
+endif()
+
 # The fetch path fully initializes the SDK as a subproject already; the
 # PICO_SDK_PATH path needs an explicit pico_sdk_init().
 if(NOT TARGET _pico_sdk_inclusion_marker)
@@ -122,6 +130,15 @@ endif()
 if(PICO_TOOLSET_BUILD_LVGL_DISPLAY)
     include(cmake/pico_lvgl.cmake)
     add_subdirectory(components/lvgl_display)
+endif()
+if(PICO_TOOLSET_BUILD_WIFI OR PICO_TOOLSET_BUILD_HTTPS_CLIENT)
+    add_subdirectory(components/net_config)
+endif()
+if(PICO_TOOLSET_BUILD_WIFI)
+    add_subdirectory(components/wifi)
+endif()
+if(PICO_TOOLSET_BUILD_HTTPS_CLIENT)
+    add_subdirectory(components/https_client)
 endif()
 if(PICO_TOOLSET_BUILD_FAULT_HANDLER)
     add_subdirectory(libs/fault_handler)

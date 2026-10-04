@@ -68,6 +68,11 @@ component ships an `example/` program that doubles as a smoke test.
   `pico_toolset_usb_composite_hid` (built against `usb_hid`'s config), never
   the device-only variant next to `usb_hid`. `usb_composite` therefore must be
   added after `usb_hid` in any CMake that uses both.
+- **One lwIP/mbedtls config per build**: `pico_toolset_net_config` provides the build's
+  `lwipopts.h` and `components/https_client/config/` the mbedtls config (set via
+  `PICO_MBEDTLS_CONFIG_FILE` *before* `pico_sdk_init()`). Components that link the SDK's
+  cyw43/lwIP/mbedtls targets (which add INTERFACE sources) must themselves be CMake INTERFACE
+  libraries with INTERFACE sources, never STATIC -- the stack would be compiled twice.
 - **Namespace**: all public API lives in `pico_toolset` (except `extern "C"`
   allocator functions for the PSRAM component).
 - **CMake target naming**: `pico_toolset_<name>`; examples are the
@@ -257,6 +262,9 @@ manual smoke tests of the examples on hardware.
   reporting on the next boot instead of the SDK's silent default. Moved off
   its original scratch[0..3] onto scratch[2]/[3]/[5]/[6] to not collide with
   reset_buttons' scratch[0]/[1] -- see the scratch-register invariant above.
+- Wi-Fi / HTTPS client: PicoADSB's `src/net/*` (own code): config-struct `HttpsClient`
+  class (the original used file-scope globals and PicoADSB's `config.h`), mbedtls/lwIP configs
+  derived from pico-examples' Pico W TLS client settings.
 - Screen: `Screen`/`Widget` (Pimoroni PicoGraphics default).
 - `boards/waveshare_rp2350_pizero.h`: Raspberry Pi (Trading) Ltd.'s pico-sdk
   board header for this board (BSD-3-Clause), vendored here once instead of
