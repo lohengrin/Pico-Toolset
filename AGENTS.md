@@ -259,6 +259,11 @@ manual smoke tests of the examples on hardware.
   reset_buttons' scratch[0]/[1] -- see the scratch-register invariant above.
 - JSON reader: extracted from PicoADSB's `src/adsb/json.*` (own code, GPL-3.0
   author, same owner), renamed `JsonReader` into `pico_toolset`.
+- E-paper 2.13" V4: Waveshare's Pico e-Paper example C driver (per-file MIT headers;
+  upstream's top-level LICENSE is GPLv3 -- see `components/epd_2in13_v4/NOTICE`) ported
+  to the config-struct `Epd2in13V4` class by PicoADSB; GUI_Paint/fonts vendored
+  unchanged under `paint/`, `DEV_Config.h` reduced to typedefs. The full/partial refresh
+  policy in `update()` comes from PicoADSB.
 - Screen: `Screen`/`Widget` (Pimoroni PicoGraphics default).
 - `boards/waveshare_rp2350_pizero.h`: Raspberry Pi (Trading) Ltd.'s pico-sdk
   board header for this board (BSD-3-Clause), vendored here once instead of
