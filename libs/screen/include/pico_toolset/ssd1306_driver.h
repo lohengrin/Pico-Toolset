@@ -15,6 +15,7 @@ public:
 
     int width() const override { return m_display.width(); }
     int height() const override { return m_display.height(); }
+    bool is_monochrome() const override { return true; }
 
     void set_pixel(int x, int y, Color color) override {
         if (color.rgb565 != 0) {

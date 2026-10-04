@@ -55,6 +55,11 @@ public:
                 set_pixel(x, y, color);
     }
 
+    // True for 1-bit panels (e-paper, SSD1306): there every non-black color is the
+    // same "on" pixel, so widgets that rely on color contrast (e.g. a dark track
+    // behind a colored fill) can draw an outline / inverted text instead.
+    [[nodiscard]] virtual bool is_monochrome() const { return false; }
+
     // Push any pending buffered changes to the physical panel.
     virtual void flush() {}
 
