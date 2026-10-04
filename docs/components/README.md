@@ -12,6 +12,7 @@ targets are `pico_toolset_<name>`; each component has a
 | [ili9486](ili9486.md) | `pico_toolset_ili9486` | display | ON | 480x320 SPI TFT behind a shift-register bridge |
 | [st7789](st7789.md) | `pico_toolset_st7789` | display | ON | ST7789 SPI TFT (CrowPanel, Pico Display Pack) |
 | [st7796](st7796.md) | `pico_toolset_st7796` | display | ON | ST7796U 480x320 SPI TFT (SunFounder) |
+| [epd_2in13_v4](epd-2in13-v4.md) | `pico_toolset_epd_2in13_v4` | display | ON | Waveshare 2.13" V4 e-paper + GUI_Paint |
 | [xpt2046](xpt2046.md) | `pico_toolset_xpt2046` | touch | ON | Resistive touch controller + calibration helper |
 | [dvi_hdmi](dvi-hdmi.md) | `pico_toolset_dvi_hdmi` | video | ON | PIO DVI/HDMI output + optional HDMI audio |
 | [psram](psram.md) | `pico_toolset_psram` | memory | ON (RP2350 only) | External QSPI PSRAM + allocator |

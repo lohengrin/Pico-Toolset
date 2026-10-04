@@ -26,6 +26,7 @@ independently.
 | Reset buttons | `pico_toolset_reset_buttons` | N debounced momentary buttons (active-HIGH or active-LOW, `held_mask()`) + a generic tagged-watchdog-reboot pair (`watchdog_reboot_with_tag()`/`consume_pending_watchdog_tag()`), reusable for any "boot straight into mode X" use case. |
 | RGB LED   | `pico_toolset_rgb_led`  | PWM RGB LED on three GPIOs (8-bit color, gamma 2.8, active-high/low); validated preset for the Pimoroni Pico Display Pack. |
 | Flash store | `pico_toolset_flash_store` | Tiny power-fail-safe settings store (one <=240-byte blob) in the last flash sectors: CRC-checked append-only records, 16 per sector, erase only when a sector fills; flash ops via `flash_safe_execute()`. The app must reserve that range in its linker script. |
+| E-paper 2.13" V4 | `pico_toolset_epd_2in13_v4` | Waveshare 2.13" V4 e-paper (122x250, 1 bpp): config-driven SPI driver with full/partial refresh + sleep handled by `update()`, plus the vendored Waveshare GUI_Paint drawing library and fonts. Preset for the Pico-ePaper-2.13 on a Pico/Pico W header. |
 | DVI/HDMI  | `pico_toolset_dvi_hdmi` | PIO-based DVI/TMDS serialiser + encoder (no HSTX needed -- works on any GPIO set a board wires to its connector), with optional HDMI data-island digital audio (CEA-861 InfoFrames/ACR/audio-sample packets) and a core1 IRQ-handler-headroom measurement tool. See "Credits and third-party code" below for full provenance. |
 
 ## Libraries
@@ -77,6 +78,7 @@ pico-toolset/
 │   ├── usb_hid/   include/pico_toolset/*.h  src/  example/  tusb_config.h
 │   ├── usb_composite/ include/  config/tusb_config.h  src/  example/
 │   ├── lvgl_display/  include/pico_toolset/{lvgl_display,lvgl_hid}.h  src/
+│   ├── epd_2in13_v4/  include/pico_toolset/*.h  src/  paint/  example/  NOTICE
 │   └── dvi_hdmi/  dvi.h dvi.c ... (flat, vendored -- see its own README.md)
 └── libs/
     ├── screen/         include/pico_toolset/*.h  example/
@@ -122,6 +124,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_FAULT_HANDLER` | ON | Build the hard-fault handler + example |
 | `PICO_TOOLSET_USB_HID_KEYMAPS` | `us;fr` | Semicolon-separated keyboard layouts to compile in (implemented: `us`, `fr`) |
 | `PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP` | `us` | Layout used by default (must be listed in `PICO_TOOLSET_USB_HID_KEYMAPS`) |
+| `PICO_TOOLSET_BUILD_EPD_2IN13_V4` | ON | Build the 2.13" V4 e-paper driver + example |
 | `PICO_TOOLSET_BUILD_SCREEN`  | ON | Build screen abstraction + example |
 | `PICO_TOOLSET_SCREEN_PIMORONI` | OFF | Compile the Pimoroni PicoGraphics backend adaptor |
 

@@ -257,6 +257,11 @@ manual smoke tests of the examples on hardware.
   reporting on the next boot instead of the SDK's silent default. Moved off
   its original scratch[0..3] onto scratch[2]/[3]/[5]/[6] to not collide with
   reset_buttons' scratch[0]/[1] -- see the scratch-register invariant above.
+- E-paper 2.13" V4: Waveshare's Pico e-Paper example C driver (per-file MIT headers;
+  upstream's top-level LICENSE is GPLv3 -- see `components/epd_2in13_v4/NOTICE`) ported
+  to the config-struct `Epd2in13V4` class by PicoADSB; GUI_Paint/fonts vendored
+  unchanged under `paint/`, `DEV_Config.h` reduced to typedefs. The full/partial refresh
+  policy in `update()` comes from PicoADSB.
 - Screen: `Screen`/`Widget` (Pimoroni PicoGraphics default).
 - `boards/waveshare_rp2350_pizero.h`: Raspberry Pi (Trading) Ltd.'s pico-sdk
   board header for this board (BSD-3-Clause), vendored here once instead of
