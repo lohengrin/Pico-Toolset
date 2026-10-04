@@ -64,6 +64,7 @@ bool JsonReader::beginArray() {
 }
 
 bool JsonReader::nextObjectMember(std::string& key) {
+    if (!valid_) return false;
     skipWs();
     if (match('}')) return false;  // end of object
     match(',');                    // optional separator
@@ -75,9 +76,15 @@ bool JsonReader::nextObjectMember(std::string& key) {
 }
 
 bool JsonReader::nextArrayElement() {
+    if (!valid_) return false;
     skipWs();
     if (match(']')) return false;  // end of array
     match(',');
+    skipWs();
+    if (eof()) {                   // truncated: never loop forever
+        valid_ = false;
+        return false;
+    }
     return true;
 }
 
@@ -162,9 +169,23 @@ void JsonReader::skipStringRaw() {
     valid_ = false;
 }
 
-void JsonReader::skipValue() {
+JsonReader::Type JsonReader::peekType() {
     skipWs();
-    if (eof()) {
+    const char c = peek();
+    if (c == '"') return Type::String;
+    if (c == '[') return Type::Array;
+    if (c == '{') return Type::Object;
+    if (c == 'n') return Type::Null;
+    if (c == 't' || c == 'f') return Type::Bool;
+    if (c == '-' || (c >= '0' && c <= '9')) return Type::Number;
+    return Type::Invalid;
+}
+
+void JsonReader::skipValue() { skipValueAt(0); }
+
+void JsonReader::skipValueAt(int depth) {
+    skipWs();
+    if (eof() || depth > kMaxSkipDepth) {
         valid_ = false;
         return;
     }
@@ -175,17 +196,19 @@ void JsonReader::skipValue() {
         case '{': {
             pos_++;
             std::string key;
-            while (nextObjectMember(key)) skipValue();
+            while (nextObjectMember(key)) skipValueAt(depth + 1);
             return;
         }
         case '[': {
             pos_++;
-            while (nextArrayElement()) skipValue();
+            while (nextArrayElement()) skipValueAt(depth + 1);
             return;
         }
         default:
             // number / true / false / null literal
+            const size_t start = pos_;
             while (!eof() && !isDelim(peek())) pos_++;
+            if (pos_ == start) valid_ = false;  // e.g. a stray '}' where a value belongs: no progress
             return;
     }
 }
