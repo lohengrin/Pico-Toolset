@@ -24,7 +24,7 @@ function(pico_toolset_usb_composite_variant name config_dir)
     target_compile_definitions(${name} PUBLIC
         CFG_TUD_CDC=1
         CFG_TUD_MSC=1
-        CFG_TUD_MSC_EP_BUFSIZE=4096
+        CFG_TUD_MSC_EP_BUFSIZE=16384
         CFG_TUD_CDC_TX_BUFSIZE=512
         # picotool support: vendor "reset" interface (reboot to BOOTSEL / to
         # flash without the BOOTSEL button) plus the 1200-baud CDC touch.
