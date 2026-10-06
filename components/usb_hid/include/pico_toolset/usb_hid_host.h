@@ -114,6 +114,12 @@ public:
     // parallel with the clamped x/y, not derived from it.
     void consume_mouse_delta(int& dx, int& dy);
 
+    // Wheel detents accumulated since the last call (positive = scrolled
+    // away from the user / "up"), then reset. Read from the 4th byte of the
+    // boot-protocol report when the mouse sends one (len >= 4); mice that
+    // don't send it simply report 0.
+    int consume_mouse_wheel();
+
     // --- Gamepad (HID + XInput merged) ---
     GamepadState gamepad_state(size_t index) const;
 
@@ -208,6 +214,7 @@ private:
     // units from one report, imperceptible for mouselook smoothness.
     volatile int m_mouse_delta_x = 0;
     volatile int m_mouse_delta_y = 0;
+    volatile int m_mouse_wheel = 0;
 
     GamepadSlot m_gamepads[4]{};
     uint8_t m_gamepad_count = 0;

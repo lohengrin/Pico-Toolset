@@ -681,6 +681,7 @@ void UsbHidHost::on_mouse_report(const uint8_t* report, uint16_t len) {
     if (m_mouse.y > m_config.mouse_max_y) m_mouse.y = m_config.mouse_max_y;
     m_mouse_delta_x += dx;
     m_mouse_delta_y += dy;
+    if (len >= 4) m_mouse_wheel += static_cast<int8_t>(report[3]);
 }
 
 UsbHidHost::MouseState UsbHidHost::mouse_state() const { return m_mouse; }
@@ -690,6 +691,12 @@ void UsbHidHost::consume_mouse_delta(int& dx, int& dy) {
     dy = m_mouse_delta_y;
     m_mouse_delta_x = 0;
     m_mouse_delta_y = 0;
+}
+
+int UsbHidHost::consume_mouse_wheel() {
+    int w = m_mouse_wheel;
+    m_mouse_wheel = 0;
+    return w;
 }
 
 // --- Gamepad ---
