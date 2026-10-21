@@ -18,11 +18,11 @@ inline constexpr PsramConfig kWaveshareRp2350PiZero = {
 };
 
 // Pimoroni Presto's onboard 8 MB APS6404L PSRAM on QMI CS1, CS=GPIO47.
-// max_clock_hz is a conservative placeholder (200 MHz sysclk / 4): the same
-// chip runs much faster on other boards, tune upward with the
-// psram_qspi_sweep example. Derived from Pimoroni's Presto firmware and
-// pico-sdk's pimoroni_presto.h (PRESTO_PSRAM_CS_PIN), not yet re-run from
-// this repo on hardware.
+// max_clock_hz is a conservative 50 MHz ceiling (the SDK board header leaves
+// sysclk at 150 MHz, giving divider 3): the same chip runs faster on other
+// boards, tune upward with the psram_qspi_sweep example. Pin per pico-sdk's
+// pimoroni_presto.h (PRESTO_PSRAM_CS_PIN); validated on real hardware by
+// examples/presto.
 inline constexpr PsramConfig kPimoroniPresto = {
     .cs_pin = 47,
     .max_clock_hz = 50'000'000,

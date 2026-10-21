@@ -20,6 +20,11 @@ if(NOT PICO_SDK_PATH)
 endif()
 include(${TOOLSET_ROOT}/pico_sdk_import.cmake)
 
+# One mbedtls config per build (lwipopts.h from pico_toolset_net_config turns
+# lwIP's TLS layer on, so Wi-Fi/Bluetooth builds need mbedtls linked).
+# Must be set before pico_sdk_init().
+include(${TOOLSET_ROOT}/cmake/pico_toolset_tls_config.cmake)
+
 project(presto_example C CXX ASM)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,6 +44,14 @@ add_subdirectory(${TOOLSET_ROOT}/components/st7701  ${CMAKE_BINARY_DIR}/_toolset
 add_subdirectory(${TOOLSET_ROOT}/components/ft6236  ${CMAKE_BINARY_DIR}/_toolset/ft6236)
 add_subdirectory(${TOOLSET_ROOT}/components/ws2812  ${CMAKE_BINARY_DIR}/_toolset/ws2812)
 add_subdirectory(${TOOLSET_ROOT}/components/piezo   ${CMAKE_BINARY_DIR}/_toolset/piezo)
+add_subdirectory(${TOOLSET_ROOT}/components/qwstpad ${CMAKE_BINARY_DIR}/_toolset/qwstpad)
+add_subdirectory(${TOOLSET_ROOT}/components/bme280  ${CMAKE_BINARY_DIR}/_toolset/bme280)
+add_subdirectory(${TOOLSET_ROOT}/components/ltr559  ${CMAKE_BINARY_DIR}/_toolset/ltr559)
+add_subdirectory(${TOOLSET_ROOT}/components/lsm6ds3 ${CMAKE_BINARY_DIR}/_toolset/lsm6ds3)
+add_subdirectory(${TOOLSET_ROOT}/components/net_config   ${CMAKE_BINARY_DIR}/_toolset/net_config)
+add_subdirectory(${TOOLSET_ROOT}/components/wifi         ${CMAKE_BINARY_DIR}/_toolset/wifi)
+add_subdirectory(${TOOLSET_ROOT}/components/https_client ${CMAKE_BINARY_DIR}/_toolset/https_client)
+add_subdirectory(${TOOLSET_ROOT}/components/bluetooth    ${CMAKE_BINARY_DIR}/_toolset/bluetooth)
 add_subdirectory(${TOOLSET_ROOT}/libs/screen        ${CMAKE_BINARY_DIR}/_toolset/screen)
 
 add_executable(${EXAMPLE_OUTPUT_NAME} main.cpp)
@@ -50,12 +63,33 @@ target_link_libraries(${EXAMPLE_OUTPUT_NAME} PRIVATE
     pico_toolset_ws2812
     pico_toolset_piezo
     pico_toolset_screen
+    pico_toolset_qwstpad
+    pico_toolset_bme280
+    pico_toolset_ltr559
+    pico_toolset_lsm6ds3
     pico_stdlib
     pico_multicore
     hardware_i2c
 )
+# Wi-Fi credentials: a directory containing a git-ignored config.local.h that
+# defines WIFI_SSID / WIFI_PASSWORD (never commit one). Also read from the
+# environment, so the superbuild picks it up:
+#   PRESTO_WIFI_CONFIG_DIR=~/Dev/PicoADSB/src cmake -S examples -B examples-build
+set(PRESTO_WIFI_CONFIG_DIR "$ENV{PRESTO_WIFI_CONFIG_DIR}" CACHE PATH "Directory holding config.local.h with WIFI_SSID/WIFI_PASSWORD")
+if(PRESTO_WIFI_CONFIG_DIR)
+    target_include_directories(${EXAMPLE_OUTPUT_NAME} PRIVATE ${PRESTO_WIFI_CONFIG_DIR})
+endif()
 if(PRESTO_FULL_RES)
-    target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PRESTO_FULL_RES=1)
+    # A 450 KB scanout buffer leaves too little SRAM for the radio stack
+    # (lwIP + mbedtls + BTstack overflow RAM by several KB), so full-res
+    # builds drop Wi-Fi and BLE.
+    target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PRESTO_FULL_RES=1 PRESTO_NO_RADIO=1)
+else()
+    target_link_libraries(${EXAMPLE_OUTPUT_NAME} PRIVATE
+        pico_toolset_wifi
+        pico_toolset_bluetooth
+        pico_toolset_https_client # only to satisfy lwIP's TLS layer (see above)
+    )
 endif()
 pico_enable_stdio_usb(${EXAMPLE_OUTPUT_NAME} ON)
 pico_add_extra_outputs(${EXAMPLE_OUTPUT_NAME})

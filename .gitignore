@@ -53,3 +53,6 @@ vcpkg.json
 *.log
 *.tmp
 
+
+# Wi-Fi credentials for examples/presto (see its CMakeLists.txt)
+config.local.h

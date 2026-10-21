@@ -25,6 +25,11 @@ targets are `pico_toolset_<name>`; each component has a
 | [usb_composite](usb-composite.md) | `pico_toolset_usb_composite` | USB | ON | CDC + mass-storage device |
 | [i2s_audio](i2s-audio.md) | `pico_toolset_i2s_audio` | audio | **OFF** | I2S DAC output (needs pico-extras) |
 | [reset_buttons](reset-buttons.md) | `pico_toolset_reset_buttons` | input | ON | Debounced buttons + tagged watchdog reboot |
+| [qwstpad](qwstpad.md) | `pico_toolset_qwstpad` | input | ON | QwSTPad (TCA9555) gamepad: 10 buttons, 4 LEDs |
+| [bme280](bme280.md) | `pico_toolset_bme280` | sensor | ON | BME280 temperature/pressure/humidity (vendored Bosch driver) |
+| [ltr559](ltr559.md) | `pico_toolset_ltr559` | sensor | ON | LTR-559 ambient light + proximity |
+| [lsm6ds3](lsm6ds3.md) | `pico_toolset_lsm6ds3` | sensor | ON | LSM6DS3 accelerometer/gyro, steps, taps |
+| [bluetooth](bluetooth.md) | `pico_toolset_bluetooth` | network | **OFF** | BLE advertise + scan over BTstack/CYW43 |
 | [rgb_led](rgb-led.md) | `pico_toolset_rgb_led` | output | ON | PWM RGB LED |
 | [ws2812](ws2812.md) | `pico_toolset_ws2812` | output | ON | WS2812/SK6812 LED chain over PIO |
 | [piezo](piezo.md) | `pico_toolset_piezo` | audio | ON | PWM piezo/buzzer tones and melodies |
@@ -57,7 +62,7 @@ because config structs are driver-specific.
 ## Build options
 
 Top-level options in `CMakeLists.txt` (all `ON` unless noted): `SSD1306`,
-`ILI9486`, `ST7789`, `ST7796`, `ST7701`, `XPT2046`, `FT6236`, `WS2812`, `PIEZO`, `PSRAM`, `USB_HID`, `I2S_AUDIO`
+`ILI9486`, `ST7789`, `ST7796`, `ST7701`, `XPT2046`, `FT6236`, `WS2812`, `PIEZO`, `QWSTPAD`, `BME280`, `LTR559`, `LSM6DS3`, `BLUETOOTH` (**OFF**), `PSRAM`, `USB_HID`, `I2S_AUDIO`
 (**OFF**), `USB_COMPOSITE`, `LVGL_DISPLAY` (**OFF**), `SDCARD`, `FLASH_STORE`,
 `RGB_LED`, `RESET_BUTTONS`, `DVI_HDMI`, `FAULT_HANDLER`, `SCREEN`,
 `SCREEN_PIMORONI` (**OFF**), each as `PICO_TOOLSET_BUILD_<NAME>` (except the

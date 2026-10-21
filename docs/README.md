@@ -31,7 +31,7 @@ See [`components/README.md`](components/README.md) for the full table and
 dependency map. Display: `ssd1306`, `ili9486`, `st7789`, `st7796`, `screen`,
 `lvgl_display`, `st7701`. Touch: `xpt2046`, `ft6236`. Video: `dvi_hdmi`. USB: `usb_hid`,
 `usb_composite`. Storage: `sdcard`, `flash_store`. Memory: `psram`. Audio:
-`i2s_audio`, `piezo`. Misc: `reset_buttons`, `rgb_led`, `ws2812`, `fault_handler`, and the shared
+`i2s_audio`, `piezo`. Sensors/input: `bme280`, `ltr559`, `lsm6ds3`, `qwstpad`. Network: `wifi`, `https_client`, `bluetooth`. Misc: `reset_buttons`, `rgb_led`, `ws2812`, `fault_handler`, and the shared
 `driver_interfaces`.
 
 ## Conventions used in these documents

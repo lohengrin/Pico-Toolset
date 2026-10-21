@@ -27,6 +27,9 @@ independently.
 | LVGL display | `pico_toolset_lvgl_display` (+ `pico_toolset_lvgl_hid`) | LVGL v9 bridge: any `DisplayPanel` (SPI TFTs) or a caller-owned RGB565 framebuffer (DVI scanout) as an LVGL display, `TouchPanel` as a pointer, and (optional `_hid` target) USB keyboard/mouse/gamepad as keypad + pointer. OFF by default (needs LVGL via `cmake/pico_lvgl.cmake` and the consumer's `lv_conf.h`). See its README. |
 | Reset buttons | `pico_toolset_reset_buttons` | N debounced momentary buttons (active-HIGH or active-LOW, `held_mask()`) + a generic tagged-watchdog-reboot pair (`watchdog_reboot_with_tag()`/`consume_pending_watchdog_tag()`), reusable for any "boot straight into mode X" use case. |
 | WS2812    | `pico_toolset_ws2812`   | WS2812/SK6812 LED chain on one PIO state machine; Presto preset (7 LEDs). |
+| QwSTPad   | `pico_toolset_qwstpad`  | Pimoroni QwSTPad gamepad (TCA9555): 10 buttons, 4 LEDs; Presto QW/ST preset. |
+| BME280 / LTR-559 / LSM6DS3 | `pico_toolset_bme280`, `_ltr559`, `_lsm6ds3` | Multi-Sensor Stick drivers (environment, light/proximity, IMU); BME280 wraps the vendored Bosch driver. |
+| Bluetooth | `pico_toolset_bluetooth` | BLE advertise + scan over BTstack on the CYW43 (Pico W / Presto); off by default. |
 | Piezo     | `pico_toolset_piezo`    | PWM piezo/buzzer tones and note sequences; Presto preset. |
 | RGB LED   | `pico_toolset_rgb_led`  | PWM RGB LED on three GPIOs (8-bit color, gamma 2.8, active-high/low); validated preset for the Pimoroni Pico Display Pack. |
 | Flash store | `pico_toolset_flash_store` | Tiny power-fail-safe settings store (one <=240-byte blob) in the last flash sectors: CRC-checked append-only records, 16 per sector, erase only when a sector fills; flash ops via `flash_safe_execute()`. The app must reserve that range in its linker script. |
@@ -80,6 +83,7 @@ pico-toolset/
 │   ├── ft6236/    include/pico_toolset/*.h         src/  example/
 │   ├── ws2812/    include/pico_toolset/*.h         src/  example/
 │   ├── piezo/     include/pico_toolset/*.h         src/  example/
+│   ├── qwstpad/ bme280/ ltr559/ lsm6ds3/ bluetooth/   (same shape)
 │   ├── xpt2046/   include/pico_toolset/*.h         src/  example/
 │   ├── psram/     include/pico_toolset/psram.h     src/  example/
 │   ├── i2s_audio/ include/pico_toolset/i2s_audio.h src/  example/
@@ -124,6 +128,8 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_FT6236`  | ON | Build FT6236 I2C touch driver + example |
 | `PICO_TOOLSET_BUILD_WS2812`  | ON | Build WS2812 PIO LED driver + example |
 | `PICO_TOOLSET_BUILD_PIEZO`   | ON | Build PWM piezo driver + example |
+| `PICO_TOOLSET_BUILD_QWSTPAD` / `_BME280` / `_LTR559` / `_LSM6DS3` | ON | Build the I2C gamepad / sensor drivers + examples |
+| `PICO_TOOLSET_BUILD_BLUETOOTH` | OFF | Build the BLE helper (needs a Pico W-class board; reuses the HTTPS client's mbedtls config) |
 | `PICO_TOOLSET_BUILD_XPT2046` | ON | Build XPT2046 touch driver + example |
 | `PICO_TOOLSET_BUILD_PSRAM`   | ON | Build PSRAM driver + example (RP2350 only) |
 | `PICO_TOOLSET_BUILD_USB_HID` | ON | Build PIO-USB HID host + example |

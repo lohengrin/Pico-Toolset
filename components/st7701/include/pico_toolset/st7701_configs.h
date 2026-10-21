@@ -13,8 +13,7 @@ namespace pico_toolset::configs::st7701 {
 // Pins from Pimoroni's Presto firmware and pico-sdk's pimoroni_presto.h
 // (PRESTO_LCD_*): RGB565 data on GPIO1-16, HSYNC 19, VSYNC 20, DE 21,
 // DOTCLK 22, init SPI1 CLK26/DAT27/CS28, backlight PWM 45. PIO1 matches the
-// firmware (WS2812 lives on PIO0). Derived from that firmware, not yet
-// re-run from this repo on hardware. `framebuffer` must be set by the caller
+// firmware (WS2812 lives on PIO0). Validated on real hardware by examples/presto. `framebuffer` must be set by the caller
 // (240*240 uint16_t in SRAM).
 inline const St7701Config kPimoroniPrestoHalfRes = {
     .width = 240,

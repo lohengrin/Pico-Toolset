@@ -70,8 +70,7 @@ inline const SdCardConfig kElecrowCrowPanelPicoHmi28 = {
 // (CLK=GPIO34, CMD/MOSI=GPIO35, DAT0/MISO=GPIO36, DAT3/CS=GPIO39; DAT1/DAT2
 // on GPIO37/38 unused). All four pins are SPI0-capable, so no PIO is needed
 // (pio/sm are ignored, kept at 0). Pins from Pimoroni's Presto firmware
-// (examples/sd_basic.py) and pico-sdk's pimoroni_presto.h; derived from
-// that firmware, not yet re-run from this repo on hardware.
+// (examples/sd_basic.py) and pico-sdk's pimoroni_presto.h; Validated on real hardware by examples/presto.
 inline const SdCardConfig kPimoroniPresto = {
     .spi_instance = spi0,
     .pin_miso = 36,

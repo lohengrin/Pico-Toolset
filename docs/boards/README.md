@@ -10,7 +10,7 @@ facts in the same place.
 | [Waveshare 3.5" RPi LCD (A) on the PiZero](waveshare-3.5-rpi-lcd-a.md) | ILI9486 (or ST7796U) + XPT2046 over the 40-pin header | `ili9486` / `st7796`, `xpt2046`, `usb_hid` | `waveshare_pizero_lcd35a` | Validated (ILI9486 and ST7796U) |
 | [Pimoroni Pico DV Demo Base](pimoroni-pico-dv-demo-base.md) | HDMI/DVI, uSD, PCM5100A I2S, 3 buttons; Pico, Pico W or Pico 2 | `sdcard`, `i2s_audio` (+ DVI pin config) | `pico_dv_pico1`, `pico_dv_pico1w`, `pico_dv_pico2` | Partial: HDMI validated in PicoBoot, combined example not run |
 | [Elecrow CrowPanel PICO HMI 2.8"](elecrow-crowpanel-pico-hmi-2.8.md) | RP2040, ST7789 320x240, XPT2046, uSD | `st7789`, `xpt2046`, `sdcard` | `crowpanel_pico_hmi_28` | Validated |
-| [Pimoroni Presto](pimoroni-presto.md) | RP2350B, ST7701 480x480 RGB LCD, FT6236 touch, uSD, 8 MB PSRAM, 7 WS2812, piezo, QW/ST (Wi-Fi/BT planned) | `st7701`, `ft6236`, `sdcard`, `psram`, `ws2812`, `piezo` | `presto` | Derived from Pimoroni's firmware; example builds, not yet run from this repo |
+| [Pimoroni Presto](pimoroni-presto.md) | RP2350B, ST7701 480x480 RGB LCD, FT6236 touch, uSD, 8 MB PSRAM, 7 WS2812, piezo, QW/ST, Wi-Fi/BLE | `st7701`, `ft6236`, `sdcard`, `psram`, `ws2812`, `piezo`, `wifi`, `bluetooth`, `qwstpad`, `bme280`, `ltr559`, `lsm6ds3` | `presto` | PASS1 validated; Wi-Fi, BLE, QwSTPad and sensor stick build, not yet run on hardware |
 | [Pimoroni Pico Display Pack](pimoroni-pico-display-pack.md) | ST7789 240x135, RGB LED, 4 buttons on a Pico | `st7789`, `reset_buttons`, `rgb_led` | none (see PiCoMonitor) | Validated in PiCoMonitor |
 
 The pico-sdk board header for the PiZero lives next to this tree, in
