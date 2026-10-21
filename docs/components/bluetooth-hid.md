@@ -15,8 +15,9 @@ kind of state accessors as [`usb_hid`](usb-hid.md).
 > gamepad button map (`kButtonMap`) is a guess from the Linux/Xbox order; check it with
 > `gamepad_raw_buttons()` for your pad.
 >
-> **Missing:** a way to list/forget devices from the example UI (the API exists), HID output
-> (keyboard LEDs, rumble), sixaxis/DualShock 3. Debugging help:
+> **Missing:** HID output (keyboard LEDs, rumble), sixaxis/DualShock 3. The Presto example has a
+> touch device manager (list / forget / pair) built on `bonded_devices()`, `forget()` and
+> `start_pairing()`; it is not yet tested on hardware. Debugging help:
 > [Bluetooth pairing diagnostics](../guides/bluetooth-pairing-diagnostics.md).
 
 | | |

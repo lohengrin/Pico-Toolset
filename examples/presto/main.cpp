@@ -13,10 +13,12 @@
 // along the bottom show temperature, humidity and light. The QW/ST bus is
 // scanned once at start-up, and pairing / Wi-Fi events go to USB serial.
 // Bluetooth LE keyboards and gamepads (e.g. an Xbox controller) pair and bond
-// by touching the status band at the top of the screen (or automatically on
-// the first boot): put the device in pairing mode, a keyboard shows a passkey
-// to type; bonded devices reconnect after a reboot and steer the square with
-// the arrow keys / left stick / D-pad.
+// by touching the status band at the top of the screen, which opens a device manager
+// (list of bonded devices with a green dot when connected; X forgets one; PAIR NEW
+// starts pairing mode; CLOSE or the band again leaves). Pairing also starts
+// automatically on the first boot with nothing bonded. Put the device in pairing
+// mode; a keyboard shows a passkey to type; bonded devices reconnect after a
+// reboot and steer the square with the arrow keys / left stick / D-pad.
 //
 // Wi-Fi is skipped unless a config.local.h defining WIFI_SSID/WIFI_PASSWORD
 // is on the include path (see CMakeLists.txt; never commit one).
@@ -134,11 +136,12 @@ uint8_t lux_to_backlight(float lux) {
 
 // Draws `text` as large as fits the screen width (at most max_scale), left-aligned
 // at x. Returns the height drawn.
-int draw_text_fit(DisplayDriver& d, int x, int y, const char* text, Color fg, int max_scale) {
+int draw_text_fit(DisplayDriver& d, int x, int y, const char* text, Color fg, int max_scale,
+                  Color bg = kColorBlack) {
     const int len = static_cast<int>(std::strlen(text));
     int scale = len > 0 ? (kSize - x - 4) / (6 * len) : max_scale; // 5px glyph + 1px gap
     scale = std::clamp(scale, 1, max_scale);
-    TextWidget w(x, y, text, fg, kColorBlack, kGlyphFont5x8.glyphs, 8, static_cast<uint8_t>(scale));
+    TextWidget w(x, y, text, fg, bg, kGlyphFont5x8.glyphs, 8, static_cast<uint8_t>(scale));
     w.draw(d);
     return 8 * scale + 2;
 }
@@ -163,11 +166,64 @@ char usage_to_ascii(uint8_t usage, bool shift) {
 }
 #endif
 
+constexpr int kStatusH = kSize / 12;
+
+#ifndef PRESTO_NO_RADIO
+// ---- Bluetooth device manager (touch): list bonded devices, forget one, start pairing ----
+struct DeviceMenu {
+    bool open = false;
+    BtHidDevice list[BluetoothHid::kMaxBonded];
+    size_t count = 0;
+};
+enum class MenuAction { None, Forget, Pair, Close };
+
+constexpr int kMenuScale = kSize / 120 > 0 ? kSize / 120 : 1;  // text scale (2 at 240, 4 at 480)
+constexpr int kMenuRowH = 8 * kMenuScale + 10;                  // also the touch target height
+constexpr int kMenuY0 = kStatusH + 6;
+constexpr int kMenuButtonsY = kMenuY0 + kMenuRowH * (static_cast<int>(BluetoothHid::kMaxBonded) + 1);
+
+MenuAction menu_hit(const DeviceMenu& m, int x, int y, size_t& index) {
+    for (size_t i = 0; i < m.count; ++i) {
+        const int ry = kMenuY0 + kMenuRowH * static_cast<int>(i + 1);
+        if (y >= ry && y < ry + kMenuRowH && x >= kSize - kMenuRowH) {
+            index = i;
+            return MenuAction::Forget;
+        }
+    }
+    if (y >= kMenuButtonsY && y < kMenuButtonsY + kMenuRowH) return x < kSize / 2 ? MenuAction::Pair : MenuAction::Close;
+    return MenuAction::None;
+}
+
+void draw_menu(DisplayDriver& d, const DeviceMenu& m) {
+    d.fill_rect(0, kStatusH + 2, kSize - 1, kSize - 1, kColorBlack);
+    char line[40];
+    std::snprintf(line, sizeof(line), "BT DEVICES (%u)", static_cast<unsigned>(m.count));
+    draw_text_fit(d, 4, kMenuY0, line, kColorWhite, kMenuScale);
+    if (m.count == 0) draw_text_fit(d, 4, kMenuY0 + kMenuRowH, "NONE BONDED", Color(0x7BEF), kMenuScale);
+    for (size_t i = 0; i < m.count; ++i) {
+        const BtHidDevice& dev = m.list[i];
+        const int ry = kMenuY0 + kMenuRowH * static_cast<int>(i + 1);
+        d.fill_rect(4, ry + 4, 4 + 8, ry + kMenuRowH - 5, dev.connected ? kColorGreen : Color(0x7BEF));
+        const char* kind = (dev.kinds & bt_hid_kind::Gamepad) ? "PAD" : (dev.kinds & bt_hid_kind::Keyboard) ? "KBD"
+                         : (dev.kinds & bt_hid_kind::Mouse) ? "MOUSE" : "DEV";
+        if (dev.name[0]) std::snprintf(line, sizeof(line), "%s %.10s", kind, dev.name);
+        else std::snprintf(line, sizeof(line), "%s %02X%02X%02X", kind, dev.addr[3], dev.addr[4], dev.addr[5]);
+        draw_text_fit(d, 18, ry + 5, line, kColorWhite, kMenuScale);
+        d.fill_rect(kSize - kMenuRowH, ry + 1, kSize - 3, ry + kMenuRowH - 2, kColorRed);
+        draw_text_fit(d, kSize - kMenuRowH + (kMenuRowH - 6 * kMenuScale) / 2 - 1, ry + 5, "X", kColorWhite, kMenuScale, kColorRed);
+    }
+    const int by = kMenuButtonsY;
+    d.fill_rect(2, by, kSize / 2 - 3, by + kMenuRowH - 2, Color(0x03E0));
+    draw_text_fit(d, 8, by + 5, "PAIR NEW", kColorWhite, kMenuScale, Color(0x03E0));
+    d.fill_rect(kSize / 2 + 2, by, kSize - 3, by + kMenuRowH - 2, Color(0x4208));
+    draw_text_fit(d, kSize / 2 + 8, by + 5, "CLOSE", kColorWhite, kMenuScale, Color(0x4208));
+}
+#endif
+
 constexpr Color kBars[8] = {
     Color(0xF800), Color(0xFFE0), Color(0x07E0), Color(0x07FF),
     Color(0x001F), Color(0xF81F), Color(0xFFFF), Color(0x0000),
 };
-constexpr int kStatusH = kSize / 12;
 
 enum class Status { Ok, Failed, Absent, Busy };
 
@@ -193,6 +249,7 @@ void draw_gauge(DisplayDriver& d, int row, float frac, Color c) {
 // Bluetooth HID events arrive on the radio's context; the main loop reads these.
 volatile long g_passkey = -1;       // >= 0 while a keyboard is waiting for its passkey
 volatile bool g_hid_busy = false;   // pairing/connecting in progress
+volatile bool g_hid_dirty = false;  // bonded/connected devices changed: refresh the device list
 char g_hid_message[40] = "";
 
 // Raw reports of Classic pads without a usable SDP record: print when they change, so the
@@ -210,6 +267,9 @@ void on_raw_report(const uint8_t* data, uint16_t len, const BtHidDevice&, void*)
 }
 
 void on_hid_event(const BtHidEvent& e, void*) {
+    if (e.type == BtHidEventType::Paired || e.type == BtHidEventType::Connected ||
+        e.type == BtHidEventType::Disconnected || e.type == BtHidEventType::Forgotten)
+        g_hid_dirty = true;
 #ifdef WANT_HCI_DUMP
     // The packet log is switched on only while a link is being set up or is up:
     // scanning produces hundreds of advertising reports per second.
@@ -338,8 +398,9 @@ int main() {
     Status pad_status = Status::Absent, stick_status = Status::Absent;
     Status hid_status = Status::Absent;
 
+    bool menu_open = false; // Bluetooth device manager covers the bars
     auto draw_ui = [&](const TouchSample& t) {
-        draw_bars(display);
+        if (!menu_open) draw_bars(display);
         draw_status(display, 0, status(psram.present && psram.test_ok));
         draw_status(display, 1, status(sd_ok));
         draw_status(display, 2, status(touch.bus_ok()));
@@ -349,7 +410,7 @@ int main() {
         draw_status(display, 6, pad_status);
         draw_status(display, 7, stick_status);
         draw_status(display, 8, hid_status);
-        if (t.pressed) {
+        if (t.pressed && !menu_open) {
             display.draw_line(t.raw_x, 0, t.raw_x, kSize - 1, kColorWhite);
             display.draw_line(0, t.raw_y, kSize - 1, t.raw_y, kColorWhite);
         }
@@ -453,6 +514,7 @@ int main() {
 #ifndef PRESTO_NO_RADIO
     char typed[28] = "";
     size_t typed_len = 0;
+    DeviceMenu menu;
 #endif
     TouchSample prev{};
     while (true) {
@@ -473,8 +535,38 @@ int main() {
 #ifndef PRESTO_NO_RADIO
         if (hid_ok) {
             // Touching the status band starts pairing mode.
-            if (t.pressed && !prev.pressed && t.raw_y < kStatusH + 2 && !hid.pairing() && !g_hid_busy)
-                hid.start_pairing();
+            // Tap the status band: open/close the device manager. Inside it: X forgets a device,
+            // PAIR NEW starts pairing mode, CLOSE (or the band again) leaves.
+            const bool tap = t.pressed && !prev.pressed;
+            auto refresh_menu = [&] { menu.count = hid.bonded_devices(menu.list, BluetoothHid::kMaxBonded); };
+            if (g_hid_dirty) {
+                g_hid_dirty = false;
+                if (menu.open) refresh_menu();
+            }
+            if (tap) {
+                if (t.raw_y < kStatusH + 2) {
+                    if (menu.open) menu.open = false;
+                    else if (!hid.pairing() && !g_hid_busy) { refresh_menu(); menu.open = true; }
+                } else if (menu.open) {
+                    size_t idx = 0;
+                    switch (menu_hit(menu, t.raw_x, t.raw_y, idx)) {
+                    case MenuAction::Forget:
+                        hid.forget(menu.list[idx].addr);
+                        refresh_menu();
+                        break;
+                    case MenuAction::Pair:
+                        menu.open = false;
+                        hid.start_pairing();
+                        break;
+                    case MenuAction::Close:
+                        menu.open = false;
+                        break;
+                    default:
+                        break;
+                    }
+                }
+            }
+            menu_open = menu.open;
             hid_status = (hid.connected_keyboard_count() + hid.connected_gamepad_count() +
                           hid.connected_mouse_count()) > 0 ? Status::Ok
                          : (hid.pairing() || g_hid_busy) ? Status::Busy
@@ -547,12 +639,13 @@ int main() {
             display.flush(); // wait for vblank so the redraw trails the beam
             draw_status(display, 2, status(touch.bus_ok()));
             draw_ui(t);
-            if (bme_ok) {
+            if (!menu_open && bme_ok) {
                 draw_gauge(display, 2, (env.temperature_c - 0.0f) / 40.0f, kColorRed);
                 draw_gauge(display, 1, env.humidity_pct / 100.0f, kColorBlue);
             }
-            if (ltr_ok) draw_gauge(display, 0, light.lux / 1000.0f, kColorWhite);
+            if (!menu_open && ltr_ok) draw_gauge(display, 0, light.lux / 1000.0f, kColorWhite);
 #ifndef PRESTO_NO_RADIO
+            if (menu_open) draw_menu(display, menu);
             if (g_hid_busy || g_passkey >= 0) {
                 const int scale = kSize / 120 + 1;
                 int y = kStatusH + 6;
@@ -564,13 +657,13 @@ int main() {
                     draw_text_fit(display, 4, y, digits, Color(0xFFE0), 8);
                 }
             }
-            if (typed_len) {
+            if (typed_len && !menu_open) {
                 const int gauge_h = (kSize / 30 + 2) * 3;
                 draw_text_fit(display, 4, kSize - gauge_h - 8 * (kSize / 120 + 1) - 4, typed, kColorWhite,
                               kSize / 120 + 1);
             }
 #endif
-            if (pad_ok) {
+            if (pad_ok && !menu_open) {
                 const int r = kSize / 40;
                 display.fill_rect(pad_x - r, pad_y - r, pad_x + r, pad_y + r, kColorBlack);
                 display.fill_rect(pad_x - r + 2, pad_y - r + 2, pad_x + r - 2, pad_y + r - 2, kColorWhite);

@@ -168,9 +168,11 @@ square (A beeps), automatic backlight from the LTR-559 (log-scaled lux to 10..25
 smoothed; the user button toggles auto/manual, QwSTPad +/- adjusts manual
 brightness), and three gauges along the bottom of the screen (temperature,
 humidity, light; sensor values are not printed continuously). Bluetooth LE keyboards and gamepads (Xbox controllers) pair
-and bond through [`bluetooth_hid`](../components/bluetooth-hid.md): touch the status band
-to start pairing (automatic on a first boot with nothing bonded), type the shown passkey
-on a keyboard, and bonded devices reconnect after a reboot and move the on-screen square.
+and bond through [`bluetooth_hid`](../components/bluetooth-hid.md). Touch the status band to open
+the **device manager**: bonded devices are listed (green dot = connected), `X` forgets one,
+`PAIR NEW` starts pairing mode and `CLOSE` (or the band again) leaves it. Pairing starts by
+itself on a first boot with nothing bonded. Type the shown passkey on a keyboard; bonded devices
+reconnect after a reboot and move the on-screen square.
 `-DPRESTO_BT_CLASSIC=ON` (default) also accepts older Bluetooth Classic pads and keyboards
 (legacy PIN `0000` or Secure Simple Pairing); `OFF` builds BLE only and saves RAM and flash.
 Bonding writes flash, so the example's core 1 idles from RAM and defines
@@ -218,8 +220,8 @@ Not yet done or not yet verified on hardware:
   need mapping from `gamepad_raw_buttons()`.
 - **Untested Bluetooth devices:** LE gamepads (e.g. Xbox wireless), mice, Classic keyboards, and
   BTstack's own Classic HID path for pads with a normal SDP record.
-- **Pairing management UI:** the example can start pairing and shows the passkey; listing and
-  forgetting bonded devices exist in the API (`bonded_devices()`, `forget()`) but have no UI.
+- **Device manager:** written and builds in every variant, not yet exercised on hardware (touch
+  hit areas, list refresh, forget of a connected device).
 - **HID output** (keyboard LEDs, gamepad rumble) is not implemented.
 - **Memory:** lwIP buffers are not placed in PSRAM; 480x480 RGB565 cannot run with the radio.
 - **Unverified pins:** LCD reset (GPIO44) and touch reset (GPIO42) are not driven by Pimoroni's firmware
