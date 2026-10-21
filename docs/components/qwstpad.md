@@ -7,7 +7,7 @@ Pimoroni QwSTPad (ten buttons, four LEDs behind a TCA9555 I2C expander).
 | Target / option | `pico_toolset_qwstpad` / `PICO_TOOLSET_BUILD_QWSTPAD` (ON) |
 | Links | public `pico_stdlib`, `hardware_i2c` |
 | Example | `components/qwstpad/example/qwstpad_example.cpp` |
-| Presets | `kPimoroniPresto` (I2C0, address 0x21; derived) |
+| Presets | `kPimoroniPresto` (I2C0, address 0x21; validated) |
 | Boards | [Pimoroni Presto](../boards/pimoroni-presto.md) (QW/ST connector) |
 
 ## API

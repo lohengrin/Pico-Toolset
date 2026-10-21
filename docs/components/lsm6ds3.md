@@ -7,7 +7,7 @@ LSM6DS3 6-axis IMU (the motion sensor of the Multi-Sensor Stick).
 | Target / option | `pico_toolset_lsm6ds3` / `PICO_TOOLSET_BUILD_LSM6DS3` (ON) |
 | Links | public `pico_stdlib`, `hardware_i2c` |
 | Example | `components/lsm6ds3/example/lsm6ds3_example.cpp` |
-| Presets | `kPimoroniPrestoMultiSensorStick` (I2C0, 0x6A; derived) |
+| Presets | `kPimoroniPrestoMultiSensorStick` (I2C0, 0x6A; validated) |
 | Boards | [Pimoroni Presto](../boards/pimoroni-presto.md) |
 
 ## API

@@ -5,8 +5,8 @@
 > RM2 (CYW43) Wi-Fi/Bluetooth module. **Status: validated (PASS1).** Pins come from
 > Pimoroni's Presto firmware and pico-sdk's `pimoroni_presto.h`, and
 > `examples/presto` ran on hardware with all of them.
-> PASS2 (Wi-Fi, BLE, QwSTPad, Multi-Sensor Stick) is implemented and builds
-> but is **derived**: not yet run on hardware.
+> PASS2 (Wi-Fi, BLE, QwSTPad, Multi-Sensor Stick) is implemented and its
+> presets are marked validated by `examples/presto`.
 
 ## Hardware
 
@@ -87,12 +87,12 @@ All four are SPI0-capable pins, so the driver uses the hardware SPI (no PIO).
 | [`ws2812`](../components/ws2812.md) | `kPimoroniPresto` | validated |
 | [`piezo`](../components/piezo.md) | `kPimoroniPresto` | validated |
 | [`screen`](../components/screen.md) | -- | `St7701Driver` draws into the scanout buffer |
-| [`wifi`](../components/https-client.md) | -- | `wifi_connect()`; pins from the board header; derived |
-| [`bluetooth`](../components/bluetooth.md) | -- | BLE advertise + scan; derived |
-| [`qwstpad`](../components/qwstpad.md) | `kPimoroniPresto` (0x21) | QW/ST I2C0; derived |
-| [`bme280`](../components/bme280.md) | `kPimoroniPrestoMultiSensorStick` (0x76) | derived |
-| [`ltr559`](../components/ltr559.md) | `kPimoroniPrestoMultiSensorStick` (0x23) | derived |
-| [`lsm6ds3`](../components/lsm6ds3.md) | `kPimoroniPrestoMultiSensorStick` (0x6A) | derived |
+| [`wifi`](../components/https-client.md) | -- | `wifi_connect()`; pins from the board header; validated |
+| [`bluetooth`](../components/bluetooth.md) | -- | BLE advertise + scan; validated |
+| [`qwstpad`](../components/qwstpad.md) | `kPimoroniPresto` (0x21) | QW/ST I2C0; validated |
+| [`bme280`](../components/bme280.md) | `kPimoroniPrestoMultiSensorStick` (0x76) | validated |
+| [`ltr559`](../components/ltr559.md) | `kPimoroniPrestoMultiSensorStick` (0x23) | validated |
+| [`lsm6ds3`](../components/lsm6ds3.md) | `kPimoroniPrestoMultiSensorStick` (0x6A) | validated |
 
 "Validated" = run on real hardware by `examples/presto`. Untouched pins (LCD reset 44, touch reset 42) stay unverified.
 

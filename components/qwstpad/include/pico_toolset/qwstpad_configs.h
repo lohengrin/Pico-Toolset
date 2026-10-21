@@ -8,8 +8,7 @@
 namespace pico_toolset::configs::qwstpad {
 
 // A QwSTPad (default address 0x21) on Pimoroni Presto's QW/ST connector,
-// I2C0 on GPIO40 (SDA) / GPIO41 (SCL). Derived from Pimoroni's Presto
-// examples; not yet run on real hardware from this repo.
+// I2C0 on GPIO40 (SDA) / GPIO41 (SCL). Validated on real hardware by examples/presto.
 inline const QwstPadConfig kPimoroniPresto = {
     .i2c = i2c0,
     .addr = 0x21,
