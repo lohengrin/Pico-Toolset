@@ -113,7 +113,7 @@ All four are SPI0-capable pins, so the driver uses the hardware SPI (no PIO).
 | QMI CS1 | PSRAM | brought up before core1 starts |
 | Watchdog scratch | none | |
 
-Radio stack: lwIP + mbedtls (the shared `lwipopts.h` enables lwIP's TLS layer) + BTstack use roughly 85 KB of SRAM, so the 480x480 RGB565 variant of the example builds **without** Wi-Fi/BLE (link overflows RAM by several KB otherwise). `-DPRESTO_FULL_RES=ON -DPRESTO_PALETTE=ON` keeps the radio (about 295 KB of RAM used) at the cost of RGB332 colours; that build is untested on hardware.
+Radio stack: lwIP + mbedtls (the shared `lwipopts.h` enables lwIP's TLS layer) + BTstack use roughly 85 KB of SRAM, so the 480x480 RGB565 variant of the example builds **without** Wi-Fi/BLE (link overflows RAM by several KB otherwise). `-DPRESTO_FULL_RES=ON -DPRESTO_PALETTE=ON` keeps the radio (about 295 KB of RAM used) at the cost of RGB332 colours; validated on hardware.
 
 Memory: a 240x240 RGB565 framebuffer is 115 KB, 480x480 is 450 KB of the
 520 KB SRAM. The driver can shrink that: `Palette8` halves it (480x480: 225 KB) and
@@ -187,7 +187,7 @@ credentials: do not share it.
   launching core1, as the example does ([AGENTS.md](../../AGENTS.md)).
 - Rotation is limited to 0 and 180 degrees: the panel scans in raster order.
 - Backlight is PWM on GPIO45 with a perceptual curve; `0` is fully off.
-- `Palette8` and `Scanline565` are build-tested only; `examples/presto` with `PRESTO_PALETTE` and the `st7701_palette_example` / `st7701_scanline_example` programs are the first things to try on hardware.
+- `Palette8` and `Scanline565` are validated (`examples/presto` with `PRESTO_PALETTE`, `st7701_palette_example`, `st7701_scanline_example`).
 - The CYW43 on the Presto sits on a PIO SPI at a divider chosen by the SDK; Pimoroni's firmware raises the divider (`CYW43_PIO_CLOCK_DIV_INT 3`) for overclock headroom, which the SDK header here does not set -- relevant only if you push sysclk above 150 MHz.
 - `wifi_connect()` and `Bluetooth::init()` both need `cyw43_arch_init()`; only `wifi_connect()` calls it. The example calls it directly when no credentials are configured.
 
