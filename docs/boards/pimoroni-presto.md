@@ -113,10 +113,12 @@ All four are SPI0-capable pins, so the driver uses the hardware SPI (no PIO).
 | QMI CS1 | PSRAM | brought up before core1 starts |
 | Watchdog scratch | none | |
 
-Radio stack: lwIP + mbedtls (the shared `lwipopts.h` enables lwIP's TLS layer) + BTstack use roughly 85 KB of SRAM, so the 480x480 variant of the example builds **without** Wi-Fi/BLE (link overflows RAM by several KB otherwise).
+Radio stack: lwIP + mbedtls (the shared `lwipopts.h` enables lwIP's TLS layer) + BTstack use roughly 85 KB of SRAM, so the 480x480 RGB565 variant of the example builds **without** Wi-Fi/BLE (link overflows RAM by several KB otherwise). `-DPRESTO_FULL_RES=ON -DPRESTO_PALETTE=ON` keeps the radio (about 295 KB of RAM used) at the cost of RGB332 colours; that build is untested on hardware.
 
 Memory: a 240x240 RGB565 framebuffer is 115 KB, 480x480 is 450 KB of the
-520 KB SRAM. The scanout buffer must be in SRAM (PSRAM cannot feed the DMA at
+520 KB SRAM. The driver can shrink that: `Palette8` halves it (480x480: 225 KB) and
+`Scanline565` needs no framebuffer ([`st7701`](../components/st7701.md)). `Palette8` takes a third
+PIO1 state machine and two more DMA channels and uses GPIO17/18 as data pins. The scanout buffer must be in SRAM (PSRAM cannot feed the DMA at
 pixel rate); use PSRAM for assets and application data.
 
 ## Clocks and power
@@ -150,7 +152,9 @@ in `boards/`).
 following X and LED brightness following Y, the user button, and a QW/ST I2C
 bus scan every 5 s on USB serial. PASS2 adds: Wi-Fi join (only when credentials
 are supplied), BLE advertising as `presto` plus a scan log, a QwSTPad D-pad
-square (A beeps), and BME280 / LTR-559 / LSM6DS3 readings (serial + three gauges
+square (A beeps), automatic backlight from the LTR-559 (log-scaled lux to 10..255,
+smoothed; the user button toggles auto/manual, QwSTPad +/- adjusts manual
+brightness), and BME280 / LTR-559 / LSM6DS3 readings (serial + three gauges
 along the bottom of the screen). Two more status squares show radio and
 QW/ST devices (green ok, red failed, grey absent).
 
@@ -162,7 +166,8 @@ holding a git-ignored `config.local.h` that defines `WIFI_SSID` and
 PRESTO_WIFI_CONFIG_DIR=/path/to/dir cmake -S examples -B examples-build
 ```
 
-(also `-DPRESTO_WIFI_CONFIG_DIR=...` when configuring `examples/presto`). Without it the
+(also `-DPRESTO_WIFI_CONFIG_DIR=...` when configuring `examples/presto`, or drop a
+`config.local.h` next to `main.cpp`). Without it the
 example skips Wi-Fi but still runs BLE. The resulting `.uf2` embeds the
 credentials: do not share it.
 
@@ -182,7 +187,7 @@ credentials: do not share it.
   launching core1, as the example does ([AGENTS.md](../../AGENTS.md)).
 - Rotation is limited to 0 and 180 degrees: the panel scans in raster order.
 - Backlight is PWM on GPIO45 with a perceptual curve; `0` is fully off.
-- No 8-bit palette mode yet (Pimoroni's firmware has one).
+- `Palette8` and `Scanline565` are build-tested only; `examples/presto` with `PRESTO_PALETTE` and the `st7701_palette_example` / `st7701_scanline_example` programs are the first things to try on hardware.
 - The CYW43 on the Presto sits on a PIO SPI at a divider chosen by the SDK; Pimoroni's firmware raises the divider (`CYW43_PIO_CLOCK_DIV_INT 3`) for overclock headroom, which the SDK header here does not set -- relevant only if you push sysclk above 150 MHz.
 - `wifi_connect()` and `Bluetooth::init()` both need `cyw43_arch_init()`; only `wifi_connect()` calls it. The example calls it directly when no credentials are configured.
 

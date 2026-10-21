@@ -32,6 +32,7 @@ pico_sdk_init()
 
 set(EXAMPLE_OUTPUT_NAME "presto" CACHE STRING "Base name for the produced executable/uf2")
 option(PRESTO_FULL_RES "Drive the panel at 480x480 instead of 240x240 (pixel-doubled)" OFF)
+option(PRESTO_PALETTE "8-bit palette framebuffer (half the SRAM, RGB332 colours) instead of RGB565" OFF)
 
 # cmake/pico_fatfs.cmake gates on this option (see components/sdcard).
 set(PICO_TOOLSET_BUILD_SDCARD ON)
@@ -79,11 +80,17 @@ set(PRESTO_WIFI_CONFIG_DIR "$ENV{PRESTO_WIFI_CONFIG_DIR}" CACHE PATH "Directory 
 if(PRESTO_WIFI_CONFIG_DIR)
     target_include_directories(${EXAMPLE_OUTPUT_NAME} PRIVATE ${PRESTO_WIFI_CONFIG_DIR})
 endif()
+if(PRESTO_PALETTE)
+    target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PRESTO_PALETTE=1)
+endif()
 if(PRESTO_FULL_RES)
-    # A 450 KB scanout buffer leaves too little SRAM for the radio stack
-    # (lwIP + mbedtls + BTstack overflow RAM by several KB), so full-res
-    # builds drop Wi-Fi and BLE.
-    target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PRESTO_FULL_RES=1 PRESTO_NO_RADIO=1)
+    target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PRESTO_FULL_RES=1)
+endif()
+if(PRESTO_FULL_RES AND NOT PRESTO_PALETTE)
+    # A 450 KB RGB565 scanout buffer leaves too little SRAM for the radio
+    # stack (lwIP + mbedtls + BTstack overflow RAM by several KB), so that
+    # combination drops Wi-Fi and BLE. Full-res + PRESTO_PALETTE keeps them.
+    target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PRESTO_NO_RADIO=1)
 else()
     target_link_libraries(${EXAMPLE_OUTPUT_NAME} PRIVATE
         pico_toolset_wifi

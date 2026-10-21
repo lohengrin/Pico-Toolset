@@ -17,7 +17,30 @@
 
 namespace pico_toolset {
 
-// All fields are board wiring -- no defaults; see st7701_configs.h.
+// How pixels get from the application to the panel.
+enum class St7701Format : uint8_t {
+    // width*height RGB565 pixels in SRAM (st7701_encode()d byte order):
+    // 115 KB at 240x240, 450 KB at 480x480.
+    Rgb565,
+    // width*height bytes in SRAM, each an index into a 256-entry colour table
+    // expanded by a third PIO state machine: 56 KB / 225 KB. Uses 18 data
+    // pins (d0..d0+17) and 4 DMA channels. At width 480 the pixel clock
+    // divider is forced to >= 8.
+    Palette8,
+    // No framebuffer: an application callback renders each line into a small
+    // ring of SRAM line buffers just ahead of the beam (RGB565, like Rgb565).
+    // Needs scanline_task() running on some core, see St7701::scanline_task().
+    Scanline565,
+};
+
+// Renders panel line `y` (0..height-1) into `line` (`width` pixels,
+// st7701_encode()d). Called from scanline_task() in thread context, not an
+// interrupt, but under a deadline of roughly one line time (~20-30 us): keep
+// it short and run it (and the data it reads) from RAM, not flash/PSRAM.
+using St7701LineCallback = void (*)(int y, uint16_t* line, void* user);
+
+// All fields are board wiring -- no defaults except the behavioral ones at
+// the end; see st7701_configs.h.
 struct St7701Config {
     uint16_t width;          // 240 (lines/columns doubled by scanout) or 480
     uint16_t height;         // 240 or 480 (== width on the supported panel)
@@ -37,7 +60,18 @@ struct St7701Config {
     uint8_t  pin_backlight;  // PWM; 0xFF = none
 
     PIO      pio;            // owns 2 state machines and the whole IRQ0/IRQ1 pair
-    uint16_t* framebuffer;   // width*height pixels, caller-owned, in SRAM (NOT PSRAM)
+    void*    framebuffer;    // Rgb565: width*height uint16_t; Palette8: width*height uint8_t;
+                             // Scanline565: unused. Caller-owned, in SRAM (NOT PSRAM), 4-byte aligned
+
+    St7701Format format = St7701Format::Rgb565;
+    St7701LineCallback line_callback = nullptr; // Scanline565 only
+    void*    line_user = nullptr;
+    // Upper bound for the dot clock (the divider is rounded up from clk_sys, so
+    // the real clock lands at or below this; 0 = 34 MHz, the panel's limit in
+    // Pimoroni's firmware). Lowering it lengthens every line and slows the
+    // refresh rate, giving a Scanline565 callback more time per line:
+    // ~25 MHz is a line time of ~21 us at 480 wide, 16 MHz ~33 us.
+    uint32_t max_pixel_clock_hz = 0;
 };
 
 // Pixel format of the framebuffer: RGB565 with the two bytes swapped (the DMA
@@ -60,7 +94,9 @@ public:
     // Stops scanout, frees PIO/DMA/IRQs. Safe to call without init().
     void cleanup();
 
-    [[nodiscard]] uint16_t* framebuffer() const { return m_cfg.framebuffer; }
+    [[nodiscard]] uint16_t* framebuffer() const { return static_cast<uint16_t*>(m_cfg.framebuffer); }
+    [[nodiscard]] uint8_t* framebuffer8() const { return static_cast<uint8_t*>(m_cfg.framebuffer); }
+    [[nodiscard]] St7701Format format() const { return m_cfg.format; }
     [[nodiscard]] int width() const { return m_cfg.width; }
     [[nodiscard]] int height() const { return m_cfg.height; }
 
@@ -68,6 +104,21 @@ public:
     // framebuffer behind the scan position so no tearing is visible. No-op if
     // src is the framebuffer itself.
     void present(const uint16_t* src);
+    // Palette8: same for a width*height byte frame (waits for vblank first).
+    void present8(const uint8_t* src);
+
+    // Palette8: sets colour table entry `index` (any 0-255 RGB; the panel
+    // bus carries 5-6-5 bits plus one extra red bit). The table starts as RGB332.
+    void set_palette_colour(uint8_t index, uint8_t r, uint8_t g, uint8_t b);
+
+    // Scanline565: renders lines ahead of the beam and arms each frame. Call
+    // it in a loop on the core that owns the scanout interrupts (init()'s core,
+    // e.g. `while (true) lcd.scanline_task();` on core1); each call renders
+    // whatever is due and returns. No-op in the other formats.
+    void scanline_task();
+    // Frames skipped / lines not ready in time since init (Scanline565).
+    [[nodiscard]] uint32_t missed_frames() const { return m_missed_frames; }
+    [[nodiscard]] uint32_t late_lines() const { return m_late_lines; }
 
     // Blocks (WFE) until the next vertical blank.
     void wait_for_vsync();
@@ -90,9 +141,23 @@ private:
     St7701Config m_cfg{};
     bool m_inited = false;
 
-    uint m_parallel_sm = 0, m_timing_sm = 0;
-    uint m_parallel_offset = 0, m_timing_offset = 0;
-    int m_dma = -1, m_dma2 = -1;
+    static constexpr int kLineRing = 4;
+    static constexpr int kLineLookahead = 2;
+    static constexpr int kMaxWidth = 480;
+
+    uint m_parallel_sm = 0, m_timing_sm = 0, m_palette_sm = 0;
+    uint m_parallel_offset = 0, m_timing_offset = 0, m_palette_offset = 0;
+    int m_dma = -1, m_dma2 = -1, m_dma3 = -1, m_dma4 = -1;
+
+    // Scanline565 state, shared between the line interrupt and scanline_task().
+    uint16_t m_line_ring[kLineRing][kMaxWidth];
+    volatile int m_scan_src = 0;      // source line the beam is on / next to be fetched
+    volatile int m_rendered_upto = -1; // highest source line rendered this frame
+    volatile bool m_frame_armed = false;
+    volatile uint32_t m_frame_gen = 0; // bumped at every frame start
+    bool m_seen_frame = false;
+    volatile uint32_t m_missed_frames = 0;
+    volatile uint32_t m_late_lines = 0;
 
     uint16_t* volatile m_next_line_addr = nullptr; // also read by DMA (re-arm channel)
     int m_display_row = 0;

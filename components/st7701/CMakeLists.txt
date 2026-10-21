@@ -19,6 +19,7 @@ if(PICO_RP2350)
     )
     pico_generate_pio_header(pico_toolset_st7701 ${CMAKE_CURRENT_LIST_DIR}/src/st7701_parallel.pio)
     pico_generate_pio_header(pico_toolset_st7701 ${CMAKE_CURRENT_LIST_DIR}/src/st7701_timing.pio)
+    pico_generate_pio_header(pico_toolset_st7701 ${CMAKE_CURRENT_LIST_DIR}/src/st7701_palette.pio)
     target_compile_features(pico_toolset_st7701 PUBLIC cxx_std_20)
 
     add_executable(st7701_example example/st7701_example.cpp)
@@ -28,6 +29,20 @@ if(PICO_RP2350)
     )
     pico_enable_stdio_usb(st7701_example ON)
     pico_add_extra_outputs(st7701_example)
+
+    add_executable(st7701_palette_example example/st7701_palette_example.cpp)
+    target_link_libraries(st7701_palette_example PRIVATE
+        pico_toolset_st7701
+        pico_multicore
+    )
+    pico_add_extra_outputs(st7701_palette_example)
+
+    add_executable(st7701_scanline_example example/st7701_scanline_example.cpp)
+    target_link_libraries(st7701_scanline_example PRIVATE
+        pico_toolset_st7701
+        pico_multicore
+    )
+    pico_add_extra_outputs(st7701_scanline_example)
 else()
     message(STATUS "pico_toolset_st7701: skipped (RP2350 only)")
 endif()

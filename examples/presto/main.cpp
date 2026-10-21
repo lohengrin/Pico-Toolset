@@ -7,7 +7,9 @@
 // failed, grey = not present/not configured): PSRAM, SD, touch bus, LCD,
 // Wi-Fi, BLE, QwSTPad, sensor stick. Touch draws a crosshair, plays a tone
 // whose pitch follows X and brightens the LEDs with Y; the user button turns
-// the LEDs white. A QwSTPad moves a square with its D-pad (A beeps). Gauges
+// the LEDs white while held and toggles automatic backlight when pressed
+// (the LTR-559 light sensor drives it; manual = full brightness, QwSTPad +/-
+// adjusts it). A QwSTPad moves a square with its D-pad (A beeps). Gauges
 // along the bottom show temperature, humidity and light. The QW/ST bus is
 // scanned every few seconds, and sensor / BLE / Wi-Fi data goes to USB serial.
 //
@@ -59,6 +61,7 @@
 #include "pico/stdlib.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -81,7 +84,13 @@ constexpr uint kQwstSdaPin = 40;
 constexpr uint kQwstSclPin = 41;
 
 // Scanout framebuffer: SRAM only (PSRAM cannot feed the DMA at pixel rate).
+// PRESTO_PALETTE: one byte per pixel (RGB332 colour table) instead of RGB565,
+// which halves it (480x480: 225 KB) and leaves room for the radio stack.
+#ifdef PRESTO_PALETTE
+uint8_t g_fb[kSize * kSize] __attribute__((aligned(4)));
+#else
 uint16_t g_fb[kSize * kSize] __attribute__((aligned(4)));
+#endif
 St7701 g_lcd;
 
 // Runs the LCD's PIO/DMA interrupts on core1, so core0 flash/PSRAM stalls
@@ -90,8 +99,18 @@ St7701 g_lcd;
 void core1_main() {
     auto cfg = lcd_preset();
     cfg.framebuffer = g_fb;
+#ifdef PRESTO_PALETTE
+    cfg.format = St7701Format::Palette8;
+#endif
     multicore_fifo_push_blocking(g_lcd.init(cfg) ? 1 : 0);
     while (true) tight_loop_contents();
+}
+
+// Ambient light (lux) -> backlight 10..255 on a log scale (about 1000 lux and
+// up = full, darkness = dim but readable).
+uint8_t lux_to_backlight(float lux) {
+    const float f = std::clamp(std::log10(1.0f + std::max(lux, 0.0f)) / 3.0f, 0.0f, 1.0f);
+    return static_cast<uint8_t>(10.0f + f * 245.0f);
 }
 
 constexpr Color kBars[8] = {
@@ -301,6 +320,10 @@ int main() {
     Ltr559Reading light;
     Lsm6ds3Sample motion{};
     int print_div = 0;
+    bool auto_backlight = ltr_ok;
+    float backlight = 255.0f;
+    int ltr_updates = 0;
+    bool button_prev = false;
     TouchSample prev{};
     while (true) {
         auto t = touch.read();
@@ -308,7 +331,12 @@ int main() {
         if (time_reached(next_sensors)) {
             next_sensors = make_timeout_time_ms(250);
             if (bme_ok) env = bme.read();
-            if (ltr_ok) ltr.poll(light);
+            if (ltr_ok && ltr.poll(light)) ++ltr_updates;
+            if (auto_backlight && ltr_updates >= 2) { // skip the first readings: still warming up
+                // Low-pass so passing shadows do not make the screen flicker.
+                backlight += (lux_to_backlight(light.lux) - backlight) * 0.2f;
+                display.set_backlight(static_cast<uint8_t>(backlight));
+            }
             if (imu_ok) imu.read(motion);
             if (++print_div >= 4) {
                 print_div = 0;
@@ -335,6 +363,13 @@ int main() {
             if ((b & A) && !(pad_prev & A)) piezo.set_tone(880);
             if (!(b & A) && (pad_prev & A)) piezo.stop();
             pad.set_leds((b & A ? 1 : 0) | (b & B ? 2 : 0) | (b & X ? 4 : 0) | (b & Y ? 8 : 0));
+            const uint16_t pressed_now = b & ~pad_prev;
+            if (pressed_now & (Plus | Minus)) {
+                auto_backlight = false;
+                backlight = std::clamp(backlight + ((pressed_now & Plus) ? 32.0f : -32.0f), 10.0f, 255.0f);
+                display.set_backlight(static_cast<uint8_t>(backlight));
+                std::printf("backlight manual %d\n", static_cast<int>(backlight));
+            }
             if (b != pad_prev) std::printf("pad 0x%03X\n", b);
             pad_prev = b;
         }
@@ -374,6 +409,15 @@ int main() {
 
         if (leds_ok) {
             const bool button = !gpio_get(kUserButtonPin);
+            if (button && !button_prev && ltr_ok) {
+                auto_backlight = !auto_backlight;
+                if (!auto_backlight) {
+                    backlight = 255.0f;
+                    display.set_backlight(255);
+                }
+                std::printf("backlight %s\n", auto_backlight ? "auto" : "manual");
+            }
+            button_prev = button;
             const float v = t.pressed ? 0.1f + 0.5f * (1.0f - static_cast<float>(t.raw_y) / kSize) : 0.15f;
             for (size_t i = 0; i < leds.count(); ++i) {
                 if (button) leds.set_rgb(i, 80, 80, 80);
