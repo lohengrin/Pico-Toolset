@@ -18,6 +18,12 @@ relying on a number.
 The first two were saved by the PicoDoom and TOM6809 projects (identical copies in
 both) and consolidated here.
 
+## Schematic-derived tables
+
+| File | Notes |
+|---|---|
+| [`presto-schematic-pinout.md`](presto-schematic-pinout.md) | Pimoroni Presto pin table read off the schematic; **contradicts the firmware** in places (listed at its top). Used for cross-checking only |
+
 ## Not collected
 
 | Item | Where it lives | Why not here |

@@ -10,7 +10,7 @@ that wire the socket for SDIO).
 | Dependency | `pico_fatfs`, fetched by `cmake/pico_fatfs.cmake` (FetchContent `main`) or `PICO_FATFS_DIR`; it defines `PICO_PIO_USE_GPIO_BASE=1` |
 | Links | `pico_stdlib`, `pico_fatfs`, `hardware_pio`, `hardware_spi` |
 | Example | `components/sdcard/example/sdcard_example.cpp` |
-| Presets | `kWaveshareRp2350PiZero`, `kPicoDvCarrier`, `kElecrowCrowPanelPicoHmi28` |
+| Presets | `kWaveshareRp2350PiZero`, `kPicoDvCarrier`, `kElecrowCrowPanelPicoHmi28`, `kPimoroniPresto` |
 
 ## Config -- `SdCardConfig`
 

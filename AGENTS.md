@@ -113,7 +113,7 @@ component ships an `example/` program that doubles as a smoke test.
   unregistered code on core1.
 - **Watchdog scratch registers are a shared resource**: `watchdog_hw->scratch[0..7]` is one flat, repo-wide namespace (8 words), not per-component storage -- reset_buttons and fault_handler both use it (to survive a `watchdog_reboot()`) and a consumer can link both. Before claiming a scratch index for a new use, check the allocation table in the top-level README (also mirrored in `libs/fault_handler/include/pico_toolset/fault_handler.h`) and extend it -- never reuse an index another component already owns, and remember `scratch[4]` is reserved by the SDK's own watchdog bookkeeping.
 - **No dependencies beyond pico-sdk** unless declared: SSD1306/ILI9486/
-  ST7789/ST7796/XPT2046/PSRAM/reset_buttons/Screen use pico-sdk only. SD card uses
+  ST7789/ST7796/ST7701/XPT2046/FT6236/WS2812/Piezo/PSRAM/reset_buttons/Screen use pico-sdk only. SD card uses
   elehobica/pico_fatfs (fetched via `cmake/pico_fatfs.cmake` or
   `PICO_FATFS_DIR`, same shape as Pico-PIO-USB below). USB HID uses Pico-PIO-USB (fetched via
   `cmake/pico_pio_usb.cmake` or `PICO_PIO_USB_DIR`); Pimoroni backend is
@@ -220,6 +220,15 @@ manual smoke tests of the examples on hardware.
   `configs::ili9486::kWaveshareRp2350PiZero` (same board/header, only the
   panel controller changed); hardware-validated on a SunFounder ST7796U
   panel (PicoDoom, PicoBoot) -- see that preset's own doc comment.
+- ST7701: ported from Pimoroni's Presto firmware ST7701 driver (MIT; Michael
+  Bell and Phil Howard), PicoGraphics/MicroPython glue and the 8bpp palette mode
+  dropped, PIO programs vendored unchanged. A continuously scanned RGB-parallel
+  panel, so it has its own API rather than implementing `DisplayPanel`; the
+  `St7701Driver` adaptor lives in `libs/screen`.
+- FT6236: ported from Pimoroni's Presto `touch.py` (MIT).
+- WS2812: PIO program from pico-examples / Pimoroni plasma (BSD-3-Clause).
+- Piezo: PWM tone driver written for the Presto (behaviour of Pimoroni's
+  `Buzzer` helper: tones below 50 Hz switch the output off).
 - XPT2046: touch driver + linear calibration, real-hardware-validated
   on the Waveshare 3.5in RPi LCD (A) wired over a Waveshare RP2350-PiZero's
   GPIO/SPI header (that board has no built-in screen of its own).

@@ -66,4 +66,23 @@ inline const SdCardConfig kElecrowCrowPanelPicoHmi28 = {
     .gpio_base = -1, // every pin here is within the default 0-31 window
 };
 
+// Pimoroni Presto's uSD socket in SPI mode on native hardware SPI0
+// (CLK=GPIO34, CMD/MOSI=GPIO35, DAT0/MISO=GPIO36, DAT3/CS=GPIO39; DAT1/DAT2
+// on GPIO37/38 unused). All four pins are SPI0-capable, so no PIO is needed
+// (pio/sm are ignored, kept at 0). Pins from Pimoroni's Presto firmware
+// (examples/sd_basic.py) and pico-sdk's pimoroni_presto.h; derived from
+// that firmware, not yet re-run from this repo on hardware.
+inline const SdCardConfig kPimoroniPresto = {
+    .spi_instance = spi0,
+    .pin_miso = 36,
+    .pin_cs = 39,
+    .pin_sck = 34,
+    .pin_mosi = 35,
+    .pullup = true,
+    .clk_slow_hz = 100'000,
+    .clk_fast_hz = 10'000'000,
+    .pio = pio0,
+    .sm = 0,
+};
+
 } // namespace pico_toolset::configs::sdcard

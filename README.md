@@ -16,6 +16,8 @@ independently.
 | ILI9486   | `pico_toolset_ili9486`  | 480x320 SPI TFT driver for Waveshare-style boards where the panel sits behind a 16-bit shift register; DMA-backed pixel streaming, backlight PWM. |
 | ST7789    | `pico_toolset_st7789`   | ST7789-family SPI TFT driver (e.g. the CrowPanel PICO HMI 2.8"'s 320x240 panel); config-driven geometry/MADCTL/inversion, DMA-backed pixel streaming, backlight PWM. |
 | ST7796U   | `pico_toolset_st7796`   | ST7796U SPI TFT driver (e.g. a 480x320 Waveshare-wiring-compatible panel replacing an ILI9486 board); same 16-bit-padded command protocol as the ILI9486 (SPI-to-parallel bridge), config-driven geometry/MADCTL, live SPI-clock tuning, DMA-backed pixel streaming, backlight PWM. |
+| ST7701    | `pico_toolset_st7701`   | RP2350-only ST7701S 480x480 RGB-parallel LCD (Pimoroni Presto): PIO/DMA scanout from an SRAM framebuffer, config-driven pins; own API (not a `DisplayPanel`), `St7701Driver` adaptor in Screen. |
+| FT6236    | `pico_toolset_ft6236`   | FT6236 I2C capacitive touch (two points), implements `TouchPanel`; Presto preset. |
 | XPT2046   | `pico_toolset_xpt2046`  | Resistive touch controller sharing an SPI bus with a display driver (e.g. ILI9486/ST7796U); raw ADC reads + a linear calibration helper. |
 | PSRAM     | `pico_toolset_psram`    | RP2350-only external PSRAM bring-up (QMI CS1), self-test, free-list allocator, `std::pmr` adapter. Not built on RP2040. |
 | USB HID   | `pico_toolset_usb_hid`  | PIO-USB TinyUSB host: keyboard/mouse/HID-gamepad + XInput + DualSense (VID/PID-detected), double-buffered cross-core state, unified `GamepadState`. |
@@ -24,6 +26,8 @@ independently.
 | USB composite | `pico_toolset_usb_composite` (+ `_hid` variant) | TinyUSB *device* composite on the native port: CDC serial (optional stdio driver) + MSC over a caller-supplied block device + the picotool vendor reset interface (reboot to BOOTSEL / flash without the button). A `_hid` variant shares one `tusb_config.h` with `usb_hid` for firmware that is device *and* PIO-USB host. See its README. |
 | LVGL display | `pico_toolset_lvgl_display` (+ `pico_toolset_lvgl_hid`) | LVGL v9 bridge: any `DisplayPanel` (SPI TFTs) or a caller-owned RGB565 framebuffer (DVI scanout) as an LVGL display, `TouchPanel` as a pointer, and (optional `_hid` target) USB keyboard/mouse/gamepad as keypad + pointer. OFF by default (needs LVGL via `cmake/pico_lvgl.cmake` and the consumer's `lv_conf.h`). See its README. |
 | Reset buttons | `pico_toolset_reset_buttons` | N debounced momentary buttons (active-HIGH or active-LOW, `held_mask()`) + a generic tagged-watchdog-reboot pair (`watchdog_reboot_with_tag()`/`consume_pending_watchdog_tag()`), reusable for any "boot straight into mode X" use case. |
+| WS2812    | `pico_toolset_ws2812`   | WS2812/SK6812 LED chain on one PIO state machine; Presto preset (7 LEDs). |
+| Piezo     | `pico_toolset_piezo`    | PWM piezo/buzzer tones and note sequences; Presto preset. |
 | RGB LED   | `pico_toolset_rgb_led`  | PWM RGB LED on three GPIOs (8-bit color, gamma 2.8, active-high/low); validated preset for the Pimoroni Pico Display Pack. |
 | Flash store | `pico_toolset_flash_store` | Tiny power-fail-safe settings store (one <=240-byte blob) in the last flash sectors: CRC-checked append-only records, 16 per sector, erase only when a sector fills; flash ops via `flash_safe_execute()`. The app must reserve that range in its linker script. |
 | E-paper 2.13" V4 | `pico_toolset_epd_2in13_v4` | Waveshare 2.13" V4 e-paper (122x250, 1 bpp): config-driven SPI driver with full/partial refresh + sleep handled by `update()`, plus the vendored Waveshare GUI_Paint drawing library and fonts. Preset for the Pico-ePaper-2.13 on a Pico/Pico W header. |
@@ -53,13 +57,14 @@ pico-toolset/
 │   ├── README.md
 │   └── waveshare_rp2350_pizero.h
 ├── docs/                     # documentation: per board, per component, guides (start at docs/README.md)
-│   ├── boards/  components/  guides/  reference/  AUDIT.md
+│   ├── boards/  components/  guides/  reference/
 ├── examples/                 # full-combination examples, one per board/combo (see docs/boards/)
 │   ├── CMakeLists.txt        # superbuild: builds every combination in one pass
 │   ├── pico_dv/
 │   ├── waveshare_pizero/
 │   ├── waveshare_pizero_lcd35a/
-│   └── crowpanel_pico_hmi_28/
+│   ├── crowpanel_pico_hmi_28/
+│   └── presto/
 ├── cmake/
 │   ├── pico-toolset.cmake    # helper for FetchContent consumers
 │   ├── pico_pio_usb.cmake    # makes Pico-PIO-USB available (submodule or fetch)
@@ -71,6 +76,10 @@ pico-toolset/
 │   ├── ili9486/   include/pico_toolset/ili9486.h   src/  example/
 │   ├── st7789/    include/pico_toolset/st7789.h    src/  example/
 │   ├── st7796/    include/pico_toolset/st7796.h    src/  example/
+│   ├── st7701/    include/pico_toolset/*.h         src/  example/
+│   ├── ft6236/    include/pico_toolset/*.h         src/  example/
+│   ├── ws2812/    include/pico_toolset/*.h         src/  example/
+│   ├── piezo/     include/pico_toolset/*.h         src/  example/
 │   ├── xpt2046/   include/pico_toolset/*.h         src/  example/
 │   ├── psram/     include/pico_toolset/psram.h     src/  example/
 │   ├── i2s_audio/ include/pico_toolset/i2s_audio.h src/  example/
@@ -111,6 +120,10 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_ILI9486` | ON | Build ILI9486 driver + example |
 | `PICO_TOOLSET_BUILD_ST7789`  | ON | Build ST7789 driver + example |
 | `PICO_TOOLSET_BUILD_ST7796`  | ON | Build ST7796U driver + example |
+| `PICO_TOOLSET_BUILD_ST7701`  | ON | Build ST7701 RGB-parallel LCD driver + example (RP2350 only) |
+| `PICO_TOOLSET_BUILD_FT6236`  | ON | Build FT6236 I2C touch driver + example |
+| `PICO_TOOLSET_BUILD_WS2812`  | ON | Build WS2812 PIO LED driver + example |
+| `PICO_TOOLSET_BUILD_PIEZO`   | ON | Build PWM piezo driver + example |
 | `PICO_TOOLSET_BUILD_XPT2046` | ON | Build XPT2046 touch driver + example |
 | `PICO_TOOLSET_BUILD_PSRAM`   | ON | Build PSRAM driver + example (RP2350 only) |
 | `PICO_TOOLSET_BUILD_USB_HID` | ON | Build PIO-USB HID host + example |

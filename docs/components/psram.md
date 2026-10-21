@@ -9,8 +9,8 @@ sampled read/write self-test, a first-fit allocator and a `std::pmr` adapter.
 | Availability | **RP2350 only.** `components/psram/CMakeLists.txt` builds it under `if(PICO_RP2350)`; on RP2040 nothing is built and the header is empty (`#if PICO_RP2350`), so there is no no-op API |
 | Links | public `pico_stdlib`, `hardware_psram`; private `hardware_flash`, `hardware_clocks`, `pico_flash`, `pico_multicore` |
 | Examples | `psram_example` (detect, self-test, allocator, pmr vector); `psram_qspi_sweep_example` (find the maximum stable QMI clock; built `copy_to_ram`, links `hardware_vreg`, `hardware_xip_cache`) |
-| Presets | `configs::psram::kWaveshareRp2350PiZero` |
-| Board | [Waveshare RP2350-PiZero](../boards/waveshare-rp2350-pizero.md) |
+| Presets | `configs::psram::kWaveshareRp2350PiZero`, `kPimoroniPresto` (CS 47, 50 MHz placeholder, derived from Pimoroni's firmware) |
+| Boards | [Waveshare RP2350-PiZero](../boards/waveshare-rp2350-pizero.md), [Pimoroni Presto](../boards/pimoroni-presto.md) |
 
 ## Config -- `PsramConfig`
 

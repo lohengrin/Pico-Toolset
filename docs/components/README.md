@@ -14,7 +14,9 @@ targets are `pico_toolset_<name>`; each component has a
 | [st7796](st7796.md) | `pico_toolset_st7796` | display | ON | ST7796U 480x320 SPI TFT (SunFounder) |
 | [epd_2in13_v4](epd-2in13-v4.md) | `pico_toolset_epd_2in13_v4` | display | ON | Waveshare 2.13" V4 e-paper + GUI_Paint |
 | [wifi / https_client](https-client.md) | `pico_toolset_wifi`, `pico_toolset_https_client` | network | **OFF** | Pico W Wi-Fi join + HTTPS GET over lwIP/mbedtls |
+| [st7701](st7701.md) | `pico_toolset_st7701` | display | ON (RP2350 only) | ST7701S 480x480 RGB-parallel LCD, PIO/DMA scanout (Presto) |
 | [xpt2046](xpt2046.md) | `pico_toolset_xpt2046` | touch | ON | Resistive touch controller + calibration helper |
+| [ft6236](ft6236.md) | `pico_toolset_ft6236` | touch | ON | FT6236 I2C capacitive touch, two points (Presto) |
 | [dvi_hdmi](dvi-hdmi.md) | `pico_toolset_dvi_hdmi` | video | ON | PIO DVI/HDMI output + optional HDMI audio |
 | [psram](psram.md) | `pico_toolset_psram` | memory | ON (RP2350 only) | External QSPI PSRAM + allocator |
 | [sdcard](sdcard.md) | `pico_toolset_sdcard` | storage | ON | FatFs over SD-SPI (PIO or hardware SPI) |
@@ -24,6 +26,8 @@ targets are `pico_toolset_<name>`; each component has a
 | [i2s_audio](i2s-audio.md) | `pico_toolset_i2s_audio` | audio | **OFF** | I2S DAC output (needs pico-extras) |
 | [reset_buttons](reset-buttons.md) | `pico_toolset_reset_buttons` | input | ON | Debounced buttons + tagged watchdog reboot |
 | [rgb_led](rgb-led.md) | `pico_toolset_rgb_led` | output | ON | PWM RGB LED |
+| [ws2812](ws2812.md) | `pico_toolset_ws2812` | output | ON | WS2812/SK6812 LED chain over PIO |
+| [piezo](piezo.md) | `pico_toolset_piezo` | audio | ON | PWM piezo/buzzer tones and melodies |
 | [lvgl_display](lvgl-display.md) | `pico_toolset_lvgl_display` | UI glue | **OFF** | LVGL adapter over `DisplayPanel`/`TouchPanel` |
 | [screen](screen.md) (lib) | `pico_toolset_screen` | UI | ON | `DisplayDriver`, widgets, `BufferedDisplay` |
 | [json](json.md) (lib) | `pico_toolset_json` | parsing | ON | Pull-style JSON reader, no DOM |
@@ -36,7 +40,8 @@ targets are `pico_toolset_<name>`; each component has a
 ```
 libs/screen  ──►  components/driver_interfaces  ◄──  components/{ili9486,st7789,st7796,xpt2046}
      │                                                        │
-     └── adaptors: BufferedDisplay(DisplayPanel&), Ssd1306Driver(Ssd1306&)
+     └── adaptors: BufferedDisplay(DisplayPanel&), Ssd1306Driver(Ssd1306&),
+         St7701Driver(St7701&)  (libs ──► components/st7701, a scanout panel with its own API)
 components/lvgl_display ──► driver_interfaces (+ LVGL), optional usb_hid
 components/usb_composite_hid ──► usb_hid
 components/sdcard ──► pico_fatfs      components/usb_hid ──► Pico-PIO-USB, tinyusb_host
@@ -52,7 +57,7 @@ because config structs are driver-specific.
 ## Build options
 
 Top-level options in `CMakeLists.txt` (all `ON` unless noted): `SSD1306`,
-`ILI9486`, `ST7789`, `ST7796`, `XPT2046`, `PSRAM`, `USB_HID`, `I2S_AUDIO`
+`ILI9486`, `ST7789`, `ST7796`, `ST7701`, `XPT2046`, `FT6236`, `WS2812`, `PIEZO`, `PSRAM`, `USB_HID`, `I2S_AUDIO`
 (**OFF**), `USB_COMPOSITE`, `LVGL_DISPLAY` (**OFF**), `SDCARD`, `FLASH_STORE`,
 `RGB_LED`, `RESET_BUTTONS`, `DVI_HDMI`, `FAULT_HANDLER`, `SCREEN`,
 `SCREEN_PIMORONI` (**OFF**), each as `PICO_TOOLSET_BUILD_<NAME>` (except the

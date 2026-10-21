@@ -21,6 +21,8 @@ target_include_directories(pico_toolset_screen INTERFACE
 target_link_libraries(pico_toolset_screen INTERFACE
     pico_toolset_driver_interfaces
 )
+# st7701_driver.h additionally needs pico_toolset_st7701; consumers using it
+# link that target themselves (RP2350 only).
 target_compile_features(pico_toolset_screen INTERFACE cxx_std_20)
 
 # The example drives an SSD1306; only build it when that driver is enabled.

@@ -21,6 +21,9 @@ and depending only on `components/driver_interfaces`.
     `flush()` uploads only those rows via the panel's DMA trio. The framebuffer is
     caller-owned; the internal line-staging buffer is fixed at 480 pixels.
   - `Ssd1306Driver(Ssd1306&)` -- monochrome; any non-zero colour draws the pixel on.
+  - `St7701Driver(St7701&)` (`st7701_driver.h`, RP2350 only) -- draws straight into the
+    panel's scanout framebuffer in `st7701_encode()`d byte order; `flush()` waits for
+    vblank. Header-only: the consumer links `pico_toolset_st7701` itself.
   - `PimoroniDriver(pimoroni::PicoGraphics&)` -- only under `PICO_TOOLSET_SCREEN_PIMORONI`.
 - `Screen(DisplayDriver&)`: five slots `UL`, `UR`, `BL`, `BR`, `FS`; `set_widget`,
   `slot_rect`, `clear`, `draw`, `update`, `set_backlight`. `Screen` does **not** own
