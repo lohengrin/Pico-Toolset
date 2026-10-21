@@ -11,7 +11,12 @@
 // (the LTR-559 light sensor drives it; manual = full brightness, QwSTPad +/-
 // adjusts it). A QwSTPad moves a square with its D-pad (A beeps). Gauges
 // along the bottom show temperature, humidity and light. The QW/ST bus is
-// scanned every few seconds, and sensor / BLE / Wi-Fi data goes to USB serial.
+// scanned once at start-up, and pairing / Wi-Fi events go to USB serial.
+// Bluetooth LE keyboards and gamepads (e.g. an Xbox controller) pair and bond
+// by touching the status band at the top of the screen (or automatically on
+// the first boot): put the device in pairing mode, a keyboard shows a passkey
+// to type; bonded devices reconnect after a reboot and steer the square with
+// the arrow keys / left stick / D-pad.
 //
 // Wi-Fi is skipped unless a config.local.h defining WIFI_SSID/WIFI_PASSWORD
 // is on the include path (see CMakeLists.txt; never commit one).
@@ -24,6 +29,7 @@
 
 #ifndef PRESTO_NO_RADIO
 #include "pico_toolset/bluetooth.h"
+#include "pico_toolset/bluetooth_hid.h"
 #endif
 #include "pico_toolset/bme280.h"
 #include "pico_toolset/bme280_configs.h"
@@ -43,13 +49,18 @@
 #include "pico_toolset/sdcard_configs.h"
 #include "pico_toolset/st7701.h"
 #include "pico_toolset/st7701_configs.h"
+#include "pico_toolset/simple_font.h"
 #include "pico_toolset/st7701_driver.h"
 #include "pico_toolset/ws2812.h"
+#include "pico_toolset/widget.h"
 #include "pico_toolset/ws2812_configs.h"
 #ifndef PRESTO_NO_RADIO
 #include "pico_toolset/wifi.h"
 #endif
 
+#ifdef WANT_HCI_DUMP
+#include "hci_dump.h"
+#endif
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #ifndef PRESTO_NO_RADIO
@@ -96,6 +107,14 @@ St7701 g_lcd;
 // Runs the LCD's PIO/DMA interrupts on core1, so core0 flash/PSRAM stalls
 // can't glitch scanout. (No flash lockout is registered on core1 -- see
 // AGENTS.md; everything flash-touching below runs before it is launched.)
+// Core 1 must run from RAM once the radio is up: bonding writes flash from
+// core 0, and PICO_FLASH_ASSUME_CORE1_SAFE (CMakeLists.txt) tells the SDK it
+// does not need to stop core 1 for that. The scanout interrupt handlers are
+// already RAM-resident.
+void __not_in_flash_func(core1_idle)() {
+    while (true) __wfe();
+}
+
 void core1_main() {
     auto cfg = lcd_preset();
     cfg.framebuffer = g_fb;
@@ -103,7 +122,7 @@ void core1_main() {
     cfg.format = St7701Format::Palette8;
 #endif
     multicore_fifo_push_blocking(g_lcd.init(cfg) ? 1 : 0);
-    while (true) tight_loop_contents();
+    core1_idle();
 }
 
 // Ambient light (lux) -> backlight 10..255 on a log scale (about 1000 lux and
@@ -113,17 +132,29 @@ uint8_t lux_to_backlight(float lux) {
     return static_cast<uint8_t>(10.0f + f * 245.0f);
 }
 
+// Draws `text` as large as fits the screen width (at most max_scale), left-aligned
+// at x. Returns the height drawn.
+int draw_text_fit(DisplayDriver& d, int x, int y, const char* text, Color fg, int max_scale) {
+    const int len = static_cast<int>(std::strlen(text));
+    int scale = len > 0 ? (kSize - x - 4) / (6 * len) : max_scale; // 5px glyph + 1px gap
+    scale = std::clamp(scale, 1, max_scale);
+    TextWidget w(x, y, text, fg, kColorBlack, kGlyphFont5x8.glyphs, 8, static_cast<uint8_t>(scale));
+    w.draw(d);
+    return 8 * scale + 2;
+}
+
 constexpr Color kBars[8] = {
     Color(0xF800), Color(0xFFE0), Color(0x07E0), Color(0x07FF),
     Color(0x001F), Color(0xF81F), Color(0xFFFF), Color(0x0000),
 };
-constexpr int kStatusH = kSize / 10;
+constexpr int kStatusH = kSize / 12;
 
-enum class Status { Ok, Failed, Absent };
+enum class Status { Ok, Failed, Absent, Busy };
 
 void draw_status(DisplayDriver& d, int slot, Status st) {
     const int s = kStatusH;
-    const Color c = st == Status::Ok ? kColorGreen : st == Status::Failed ? kColorRed : Color(0x7BEF);
+    const Color c = st == Status::Ok ? kColorGreen : st == Status::Failed ? kColorRed
+                  : st == Status::Busy ? Color(0xFFE0) : Color(0x7BEF);
     d.fill_rect(slot * (s + 4) + 4, 2, slot * (s + 4) + 4 + s - 1, s - 1, c);
 }
 
@@ -139,27 +170,64 @@ void draw_gauge(DisplayDriver& d, int row, float frac, Color c) {
 }
 
 #ifndef PRESTO_NO_RADIO
-// BLE scan results arrive on the radio's context: keep it to bookkeeping and
-// let the main loop print.
-struct BleSeen {
-    uint8_t addr[6];
-    int8_t rssi;
-    char name[32];
-};
-BleSeen g_ble_seen[16];
-volatile int g_ble_count = 0;
-int g_ble_printed = 0; // main loop only
+// Bluetooth HID events arrive on the radio's context; the main loop reads these.
+volatile long g_passkey = -1;       // >= 0 while a keyboard is waiting for its passkey
+volatile bool g_hid_busy = false;   // pairing/connecting in progress
+char g_hid_message[40] = "";
 
-void on_ble_adv(const BleAdvertisement& a, void*) {
-    const int n = g_ble_count;
-    for (int i = 0; i < n; ++i)
-        if (std::memcmp(g_ble_seen[i].addr, a.addr, 6) == 0) return;
-    if (n >= 16) return;
-    std::memcpy(g_ble_seen[n].addr, a.addr, 6);
-    g_ble_seen[n].rssi = a.rssi;
-    std::memcpy(g_ble_seen[n].name, a.name, sizeof(a.name));
-    g_ble_count = n + 1;
+void on_hid_event(const BtHidEvent& e, void*) {
+#ifdef WANT_HCI_DUMP
+    // The packet log is switched on only while a link is being set up or is up:
+    // scanning produces hundreds of advertising reports per second.
+    if (e.type == BtHidEventType::Connecting) hci_dump_enable_packet_log(true);
+    else if (e.type == BtHidEventType::Disconnected || e.type == BtHidEventType::PairingFailed)
+        hci_dump_enable_packet_log(false);
+#endif
+    switch (e.type) {
+    case BtHidEventType::PairingStarted:
+        g_hid_busy = true;
+        std::snprintf(g_hid_message, sizeof(g_hid_message), "PAIRING: set device to pair");
+        break;
+    case BtHidEventType::Connecting:
+        g_hid_busy = true;
+        std::snprintf(g_hid_message, sizeof(g_hid_message), "CONNECTING %.20s", e.device.name);
+        break;
+    case BtHidEventType::PasskeyDisplay:
+        g_passkey = static_cast<long>(e.passkey);
+        break;
+    case BtHidEventType::Connected:
+        g_passkey = -1;
+        g_hid_busy = false;
+        std::snprintf(g_hid_message, sizeof(g_hid_message), "CONNECTED %.20s", e.device.name);
+        break;
+    case BtHidEventType::PairingFailed:
+        g_passkey = -1;
+        g_hid_busy = false;
+        std::snprintf(g_hid_message, sizeof(g_hid_message), "FAILED 0x%02X/%02X", e.status, e.reason);
+        break;
+    case BtHidEventType::PairingStopped:
+    case BtHidEventType::Disconnected:
+        g_passkey = -1;
+        g_hid_busy = false;
+        break;
+    default:
+        break;
+    }
+    static const char* const kNames[] = {"pairing-started", "pairing-stopped", "found", "connecting",
+                                         "passkey", "paired", "connected", "disconnected", "FAILED",
+                                         "forgotten"};
+    const auto& d = e.device;
+    std::printf("[%lu ms] [hid] %s %02X:%02X:%02X:%02X:%02X:%02X '%s'", static_cast<unsigned long>(to_ms_since_boot(get_absolute_time())),
+                kNames[static_cast<int>(e.type)], d.addr[0],
+                d.addr[1], d.addr[2], d.addr[3], d.addr[4], d.addr[5], d.name);
+    if (e.type == BtHidEventType::PairingFailed)
+        std::printf(" status 0x%02X reason 0x%02X", e.status, e.reason);
+    if (e.type == BtHidEventType::DeviceFound) std::printf(" rssi %d", d.rssi);
+    if (e.type == BtHidEventType::PasskeyDisplay)
+        std::printf("\n*** PASSKEY: %06lu -- type it on the keyboard, then Enter ***", static_cast<unsigned long>(e.passkey));
+    std::printf("\n");
 }
+
 #endif
 
 void draw_bars(DisplayDriver& d) {
@@ -229,6 +297,7 @@ int main() {
 
     Status radio_wifi = Status::Absent, radio_ble = Status::Absent;
     Status pad_status = Status::Absent, stick_status = Status::Absent;
+    Status hid_status = Status::Absent;
 
     auto draw_ui = [&](const TouchSample& t) {
         draw_bars(display);
@@ -240,6 +309,7 @@ int main() {
         draw_status(display, 5, radio_ble);
         draw_status(display, 6, pad_status);
         draw_status(display, 7, stick_status);
+        draw_status(display, 8, hid_status);
         if (t.pressed) {
             display.draw_line(t.raw_x, 0, t.raw_x, kSize - 1, kColorWhite);
             display.draw_line(0, t.raw_y, kSize - 1, t.raw_y, kColorWhite);
@@ -306,24 +376,40 @@ int main() {
         std::printf("BLE init %s\n", bt_ok ? "ok" : "FAILED");
         if (bt_ok) {
             bt.start_advertising();
-            bt.start_scan(on_ble_adv);
+            // (BLE scanning would collide with HID pairing's scan: HID owns it.)
         }
+    }
+    BluetoothHid hid;
+    bool hid_ok = false;
+    if (radio_ble == Status::Ok) {
+        BluetoothHidConfig hc;
+        hc.callback = on_hid_event;
+        hid_ok = hid.init(hc);
+#ifdef WANT_HCI_DUMP
+        hci_dump_enable_packet_log(false); // see on_hid_event()
+#endif
+        hid_status = hid_ok ? Status::Absent : Status::Failed;
+        BtHidDevice bonded[BluetoothHid::kMaxBonded];
+        const size_t nb = hid_ok ? hid.bonded_devices(bonded, BluetoothHid::kMaxBonded) : 0;
+        std::printf("Bluetooth HID %s, %u bonded device(s)\n", hid_ok ? "ok" : "FAILED",
+                    static_cast<unsigned>(nb));
+        if (hid_ok && nb == 0) hid.start_pairing();
     }
 #endif
 
     uint32_t frame = 0;
-    absolute_time_t next_scan = make_timeout_time_ms(5000);
     absolute_time_t next_sensors = get_absolute_time();
     int pad_x = kSize / 2, pad_y = kSize / 2;
     uint16_t pad_prev = 0;
     Bme280Reading env;
     Ltr559Reading light;
     Lsm6ds3Sample motion{};
-    int print_div = 0;
     bool auto_backlight = ltr_ok;
     float backlight = 255.0f;
     int ltr_updates = 0;
     bool button_prev = false;
+    bool pad_a_prev = false;
+    uint32_t pad_raw_prev = 0;
     TouchSample prev{};
     while (true) {
         auto t = touch.read();
@@ -338,17 +424,43 @@ int main() {
                 display.set_backlight(static_cast<uint8_t>(backlight));
             }
             if (imu_ok) imu.read(motion);
-            if (++print_div >= 4) {
-                print_div = 0;
-                if (bme_ok)
-                    std::printf("BME280 %.1f C  %.1f hPa  %.0f %%RH\n", env.temperature_c,
-                                env.pressure_pa / 100.0f, env.humidity_pct);
-                if (ltr_ok) std::printf("LTR559 prox %u  lux %.0f\n", light.proximity, light.lux);
-                if (imu_ok)
-                    std::printf("LSM6DS3 a %.2f %.2f %.2f g  steps %d\n", motion.ax, motion.ay,
-                                motion.az, imu.step_count());
-            }
         }
+
+#ifndef PRESTO_NO_RADIO
+        if (hid_ok) {
+            // Touching the status band starts pairing mode.
+            if (t.pressed && !prev.pressed && t.raw_y < kStatusH + 2 && !hid.pairing() && !g_hid_busy)
+                hid.start_pairing();
+            hid_status = (hid.connected_keyboard_count() + hid.connected_gamepad_count() +
+                          hid.connected_mouse_count()) > 0 ? Status::Ok
+                         : (hid.pairing() || g_hid_busy) ? Status::Busy
+                                                         : Status::Absent;
+            // Arrow keys and the first gamepad's stick/D-pad move the square.
+            const int step = kSize / 80 + 1;
+            if (hid.is_key_down(0x50)) pad_x -= step;
+            if (hid.is_key_down(0x4F)) pad_x += step;
+            if (hid.is_key_down(0x52)) pad_y -= step;
+            if (hid.is_key_down(0x51)) pad_y += step;
+            const GamepadState g = hid.gamepad_state(0);
+            if (g.present) {
+                const uint32_t raw = hid.gamepad_raw_buttons(0);
+                if (raw != pad_raw_prev) { // lets you verify the button mapping of a new controller
+                    std::printf("pad0 raw buttons 0x%08lX -> 0x%04X L(%u,%u) R(%u,%u) LT %u RT %u\n",
+                                static_cast<unsigned long>(raw), g.buttons, g.lx, g.ly, g.rx, g.ry, g.lt, g.rt);
+                    pad_raw_prev = raw;
+                }
+                if (g.down(kBtLeft) || g.lx < 64) pad_x -= step;
+                if (g.down(kBtRight) || g.lx > 192) pad_x += step;
+                if (g.down(kBtUp) || g.ly < 64) pad_y -= step;
+                if (g.down(kBtDown) || g.ly > 192) pad_y += step;
+                if (g.down(kBtA) && !pad_a_prev) piezo.set_tone(660);
+                if (!g.down(kBtA) && pad_a_prev) piezo.stop();
+                pad_a_prev = g.down(kBtA);
+            }
+            pad_x = std::clamp(pad_x, 0, kSize - 1);
+            pad_y = std::clamp(pad_y, 0, kSize - 1);
+        }
+#endif
 
         if (pad_ok) {
             using namespace qwstpad_button;
@@ -374,13 +486,6 @@ int main() {
             pad_prev = b;
         }
 
-#ifndef PRESTO_NO_RADIO
-        if (g_ble_printed < g_ble_count) {
-            const auto& s = g_ble_seen[g_ble_printed++];
-            std::printf("BLE %02X:%02X:%02X:%02X:%02X:%02X rssi %d %s\n", s.addr[0], s.addr[1],
-                        s.addr[2], s.addr[3], s.addr[4], s.addr[5], s.rssi, s.name);
-        }
-#endif
 
         if (lcd_ok) {
             display.flush(); // wait for vblank so the redraw trails the beam
@@ -391,6 +496,19 @@ int main() {
                 draw_gauge(display, 1, env.humidity_pct / 100.0f, kColorBlue);
             }
             if (ltr_ok) draw_gauge(display, 0, light.lux / 1000.0f, kColorWhite);
+#ifndef PRESTO_NO_RADIO
+            if (g_hid_busy || g_passkey >= 0) {
+                const int scale = kSize / 120 + 1;
+                int y = kStatusH + 6;
+                y += draw_text_fit(display, 4, y, g_hid_message, kColorWhite, scale);
+                if (g_passkey >= 0) {
+                    char digits[12];
+                    y += draw_text_fit(display, 4, y, "PASSKEY:", Color(0xFFE0), scale);
+                    std::snprintf(digits, sizeof(digits), "%06ld", static_cast<long>(g_passkey));
+                    draw_text_fit(display, 4, y, digits, Color(0xFFE0), 8);
+                }
+            }
+#endif
             if (pad_ok) {
                 const int r = kSize / 40;
                 display.fill_rect(pad_x - r, pad_y - r, pad_x + r, pad_y + r, kColorBlack);
@@ -426,10 +544,6 @@ int main() {
             leds.show();
         }
 
-        if (time_reached(next_scan)) {
-            scan_qwst();
-            next_scan = make_timeout_time_ms(5000);
-        }
         ++frame;
     }
 }

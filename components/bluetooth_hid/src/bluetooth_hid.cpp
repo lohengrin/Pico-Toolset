@@ -1,0 +1,798 @@
+// BLE HID-over-GATT host on BTstack's hids_host. Flow follows BTstack's
+// hog_host_demo (scan for the HID service, connect, SM pairing, hids_host),
+// extended with several simultaneous devices, a whitelist-based reconnect of
+// bonded devices, persistent device records, and generic report parsing into
+// keyboard / mouse / GamepadState.
+#include "pico_toolset/bluetooth_hid.h"
+
+#include <cstring>
+
+#include "btstack.h"
+#include "btstack_tlv.h"
+#include "ble/gatt-service/hids_host.h"
+#include "pico/async_context.h"
+#include "pico/cyw43_arch.h"
+
+namespace pico_toolset {
+
+namespace {
+
+constexpr uint32_t kTlvTag = (static_cast<uint32_t>('P') << 24) | (static_cast<uint32_t>('H') << 16) |
+                             (static_cast<uint32_t>('I') << 8) | 'D';
+constexpr size_t kMaxConnected = BluetoothHid::kMaxConnected;
+constexpr size_t kMaxBonded = BluetoothHid::kMaxBonded;
+constexpr uint32_t kConnectTimeoutMs = 10'000;
+constexpr uint32_t kReconnectDelayMs = 500;
+
+constexpr uint16_t kPageDesktop = 0x01, kPageSim = 0x02, kPageKeyboard = 0x07, kPageButton = 0x09;
+
+// One bonded device as persisted (32 bytes; the keys themselves are in
+// BTstack's own device database).
+struct Stored {
+    uint8_t addr[6];
+    uint8_t addr_type;
+    uint8_t kinds;
+    char    name[24];
+};
+static_assert(sizeof(Stored) == 32);
+
+struct Slot {
+    bool used = false;
+    hci_con_handle_t handle = HCI_CON_HANDLE_INVALID;
+    uint16_t hids_cid = 0;
+    int pad_index = -1;
+    Stored dev{};
+};
+
+uint8_t g_descriptor_storage[1200];
+
+struct ContextLock {
+    ContextLock() { async_context_acquire_lock_blocking(cyw43_arch_async_context()); }
+    ~ContextLock() { async_context_release_lock(cyw43_arch_async_context()); }
+};
+
+BtHidDevice to_public(const Stored& s, bool connected, int8_t rssi = 0) {
+    BtHidDevice d{};
+    std::memcpy(d.addr, s.addr, 6);
+    d.addr_type = s.addr_type;
+    d.kinds = s.kinds;
+    d.rssi = rssi;
+    d.connected = connected;
+    std::memcpy(d.name, s.name, sizeof(d.name));
+    d.name[sizeof(d.name) - 1] = '\0';
+    return d;
+}
+
+// Scales a HID field to 0-255 using its bit size and logical minimum
+// (assumes the field spans the full range of its size, true for the 8-bit
+// and 16-bit sticks and the 10-bit triggers of common gamepads).
+uint8_t norm_axis(int32_t value, uint8_t size_bits, int32_t logical_min) {
+    int64_t v = static_cast<int64_t>(value) - logical_min;
+    if (v < 0) v = 0;
+    if (size_bits > 8) v >>= (size_bits - 8);
+    else if (size_bits < 8) v <<= (8 - size_bits);
+    return static_cast<uint8_t>(v > 255 ? 255 : v);
+}
+
+// HID button usage -> unified kBt* bit (Xbox-style layout; usage numbers
+// follow the Linux gamepad order Xbox controllers use over Bluetooth). Verify
+// against gamepad_raw_buttons() for other controllers.
+struct ButtonMap { uint8_t usage; uint16_t mask; };
+constexpr ButtonMap kButtonMap[] = {
+    {1, kBtA}, {2, kBtB}, {4, kBtX}, {5, kBtY}, {7, kBtLB}, {8, kBtRB},
+    {11, kBtBack}, {12, kBtStart}, {13, kBtGuide}, {14, kBtLS}, {15, kBtRS},
+};
+
+// Top-level application collections of a report descriptor -> kinds.
+uint8_t scan_kinds(const uint8_t* descriptor, uint16_t len) {
+    uint8_t kinds = 0;
+    btstack_hid_descriptor_iterator_t it;
+    btstack_hid_descriptor_iterator_init(&it, descriptor, len);
+    uint16_t page = 0, usage = 0;
+    int depth = 0;
+    while (btstack_hid_descriptor_iterator_has_more(&it)) {
+        const hid_descriptor_item_t* item = btstack_hid_descriptor_iterator_get_item(&it);
+        if (item->item_type == Global && item->item_tag == UsagePage) {
+            page = static_cast<uint16_t>(item->item_value);
+        } else if (item->item_type == Local && item->item_tag == Usage) {
+            usage = static_cast<uint16_t>(item->item_value);
+        } else if (item->item_type == Main && item->item_tag == Coll) {
+            if (depth == 0 && page == kPageDesktop) {
+                if (usage == 0x06) kinds |= bt_hid_kind::Keyboard;
+                else if (usage == 0x02) kinds |= bt_hid_kind::Mouse;
+                else if (usage == 0x04 || usage == 0x05) kinds |= bt_hid_kind::Gamepad;
+            }
+            ++depth;
+        } else if (item->item_type == Main && item->item_tag == EndColl) {
+            if (depth > 0) --depth;
+        }
+        if (item->item_type == Main) usage = 0;
+    }
+    return kinds;
+}
+
+} // namespace
+
+struct BluetoothHid::Impl {
+    BluetoothHid* owner = nullptr;
+
+    Stored stored[kMaxBonded]{};
+    size_t stored_count = 0;
+    Slot slots[kMaxConnected];
+
+    bool pending = false;       // an outgoing connection is being set up (by address)
+    Stored pending_dev{};
+    bool wl_connecting = false; // a whitelist connection attempt is outstanding
+    uint8_t seen[8][6]{};
+    size_t seen_count = 0;
+
+    btstack_timer_source_t pair_timer{};
+    btstack_timer_source_t connect_timer{};
+    btstack_timer_source_t reconnect_timer{};
+    btstack_packet_callback_registration_t hci_reg{};
+    btstack_packet_callback_registration_t sm_reg{};
+
+    // Input state, written from the BTstack context.
+    volatile uint32_t keys[8]{};
+    volatile uint32_t key_edges[8]{};
+    volatile uint8_t modifiers = 0;
+    volatile int mouse_dx = 0, mouse_dy = 0, mouse_wheel = 0;
+    volatile bool mouse_buttons[3]{};
+    GamepadState pads[kMaxConnected];
+    volatile uint32_t pad_raw[kMaxConnected]{};
+
+    const BluetoothHidConfig& cfg() const { return owner->m_cfg; }
+
+    void emit(BtHidEventType type, const Stored& dev, bool connected = false, int8_t rssi = 0,
+              uint32_t passkey = 0, uint8_t status = 0, uint8_t reason = 0) {
+        if (!cfg().callback) return;
+        BtHidEvent e{};
+        e.type = type;
+        e.device = to_public(dev, connected, rssi);
+        e.passkey = passkey;
+        e.status = status;
+        e.reason = reason;
+        cfg().callback(e, cfg().user);
+    }
+
+    int find_stored(const uint8_t* addr) const {
+        for (size_t i = 0; i < stored_count; ++i)
+            if (std::memcmp(stored[i].addr, addr, 6) == 0) return static_cast<int>(i);
+        return -1;
+    }
+    Slot* slot_by_handle(hci_con_handle_t h) {
+        for (auto& s : slots) if (s.used && s.handle == h) return &s;
+        return nullptr;
+    }
+    Slot* slot_by_cid(uint16_t cid) {
+        for (auto& s : slots) if (s.used && s.hids_cid == cid) return &s;
+        return nullptr;
+    }
+    Slot* slot_by_addr(const uint8_t* addr) {
+        for (auto& s : slots) if (s.used && std::memcmp(s.dev.addr, addr, 6) == 0) return &s;
+        return nullptr;
+    }
+    Slot* alloc_slot() {
+        for (auto& s : slots) if (!s.used) { s = Slot{}; s.used = true; return &s; }
+        return nullptr;
+    }
+    size_t connected_count() const {
+        size_t n = 0;
+        for (const auto& s : slots) n += s.used;
+        return n;
+    }
+
+    // ---- persistence ----
+    void save_stored() {
+        const btstack_tlv_t* tlv = nullptr;
+        void* ctx = nullptr;
+        btstack_tlv_get_instance(&tlv, &ctx);
+        if (!tlv) return;
+        if (stored_count == 0) tlv->delete_tag(ctx, kTlvTag);
+        else tlv->store_tag(ctx, kTlvTag, reinterpret_cast<const uint8_t*>(stored),
+                            static_cast<uint32_t>(stored_count * sizeof(Stored)));
+    }
+    void load_stored() {
+        const btstack_tlv_t* tlv = nullptr;
+        void* ctx = nullptr;
+        btstack_tlv_get_instance(&tlv, &ctx);
+        stored_count = 0;
+        if (!tlv) return;
+        const int len = tlv->get_tag(ctx, kTlvTag, reinterpret_cast<uint8_t*>(stored), sizeof(stored));
+        if (len > 0) stored_count = static_cast<size_t>(len) / sizeof(Stored);
+        if (stored_count > kMaxBonded) stored_count = kMaxBonded;
+    }
+    void remember(const Stored& dev) {
+        int i = find_stored(dev.addr);
+        if (i < 0) {
+            if (stored_count == kMaxBonded) { // drop the oldest to make room
+                for (size_t k = 1; k < kMaxBonded; ++k) stored[k - 1] = stored[k];
+                stored_count = kMaxBonded - 1;
+            }
+            i = static_cast<int>(stored_count++);
+        }
+        stored[i] = dev;
+        save_stored();
+    }
+
+    // ---- reconnect of bonded devices through the controller's whitelist ----
+    void arm_reconnect() {
+        if (!cfg().auto_reconnect || owner->m_pairing || pending || wl_connecting) return;
+        if (connected_count() >= kMaxConnected) return;
+        bool any = false;
+        for (size_t i = 0; i < stored_count; ++i) {
+            if (slot_by_addr(stored[i].addr)) continue;
+            gap_whitelist_add(static_cast<bd_addr_type_t>(stored[i].addr_type), stored[i].addr);
+            any = true;
+        }
+        if (!any) return;
+        gap_connect_with_whitelist();
+        wl_connecting = true;
+    }
+    static void reconnect_timeout(btstack_timer_source_t* ts) {
+        if (g_impl_ptr()) g_impl_ptr()->arm_reconnect();
+        (void)ts;
+    }
+    void schedule_reconnect() {
+        btstack_run_loop_remove_timer(&reconnect_timer);
+        btstack_run_loop_set_timer(&reconnect_timer, kReconnectDelayMs);
+        btstack_run_loop_set_timer_handler(&reconnect_timer, &Impl::reconnect_timeout);
+        btstack_run_loop_add_timer(&reconnect_timer);
+    }
+    static Impl*& g_impl_ptr() {
+        static Impl* p = nullptr;
+        return p;
+    }
+
+    // ---- pairing scan ----
+    void begin_scan() {
+        owner->m_pairing = true;
+        seen_count = 0;
+        if (wl_connecting) { gap_connect_cancel(); wl_connecting = false; }
+        gap_set_scan_parameters(1, 48, 48); // active: names often sit in the scan response
+        gap_start_scan();
+        btstack_run_loop_remove_timer(&pair_timer);
+        btstack_run_loop_set_timer(&pair_timer, cfg().pairing_timeout_ms);
+        btstack_run_loop_set_timer_handler(&pair_timer, &Impl::pair_timeout);
+        btstack_run_loop_add_timer(&pair_timer);
+        emit(BtHidEventType::PairingStarted, Stored{});
+    }
+    void end_scan() {
+        if (!owner->m_pairing) return;
+        owner->m_pairing = false;
+        btstack_run_loop_remove_timer(&pair_timer);
+        gap_stop_scan();
+        emit(BtHidEventType::PairingStopped, Stored{});
+        arm_reconnect();
+    }
+    static void pair_timeout(btstack_timer_source_t*) {
+        if (g_impl_ptr()) g_impl_ptr()->end_scan();
+    }
+
+    bool seen_before(const uint8_t* addr) {
+        for (size_t i = 0; i < seen_count; ++i)
+            if (std::memcmp(seen[i], addr, 6) == 0) return true;
+        if (seen_count < 8) std::memcpy(seen[seen_count++], addr, 6);
+        return false;
+    }
+
+    static bool is_hid_advertisement(const uint8_t* ad, uint8_t len) {
+        if (ad_data_contains_uuid16(len, ad, ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE)) return true;
+        for (unsigned i = 0; i + 1 < len;) { // GAP appearance in the HID range 0x03C0-0x03CF
+            const unsigned fl = ad[i];
+            if (fl == 0 || i + 1 + fl > len) break;
+            if (ad[i + 1] == 0x19 && fl >= 3) {
+                const uint16_t app = static_cast<uint16_t>(ad[i + 2] | (ad[i + 3] << 8));
+                if ((app >> 4) == 0x3C) return true;
+            }
+            i += fl + 1;
+        }
+        return false;
+    }
+    static void extract_name(const uint8_t* ad, uint8_t len, char (&name)[24]) {
+        for (unsigned i = 0; i + 1 < len;) {
+            const unsigned fl = ad[i];
+            if (fl == 0 || i + 1 + fl > len) break;
+            const uint8_t type = ad[i + 1];
+            if (type == 0x08 || type == 0x09) {
+                const size_t n = fl - 1 < sizeof(name) - 1 ? fl - 1 : sizeof(name) - 1;
+                std::memcpy(name, &ad[i + 2], n);
+                name[n] = '\0';
+                if (type == 0x09) return;
+            }
+            i += fl + 1;
+        }
+    }
+
+    void on_advertisement(uint8_t* packet) {
+        if (!owner->m_pairing || pending) return;
+        const uint8_t* ad = gap_event_advertising_report_get_data(packet);
+        const uint8_t len = gap_event_advertising_report_get_data_length(packet);
+        if (!is_hid_advertisement(ad, len)) return;
+
+        Stored dev{};
+        bd_addr_t addr;
+        gap_event_advertising_report_get_address(packet, addr);
+        std::memcpy(dev.addr, addr, 6);
+        dev.addr_type = gap_event_advertising_report_get_address_type(packet);
+        extract_name(ad, len, dev.name);
+        if (slot_by_addr(dev.addr)) return; // already connected
+        if (seen_before(dev.addr)) return;
+
+        const int8_t rssi = static_cast<int8_t>(gap_event_advertising_report_get_rssi(packet));
+        emit(BtHidEventType::DeviceFound, dev, false, rssi);
+        if (cfg().auto_pair) start_connect(dev);
+    }
+
+    // Initiates the link to `dev` (pairing happens once it is up).
+    void start_connect(const Stored& dev) {
+        pending = true;
+        pending_dev = dev;
+        if (owner->m_pairing) { // one GAP operation at a time: leave scanning
+            owner->m_pairing = false;
+            btstack_run_loop_remove_timer(&pair_timer);
+            gap_stop_scan();
+            emit(BtHidEventType::PairingStopped, Stored{});
+        }
+        if (wl_connecting) { gap_connect_cancel(); wl_connecting = false; }
+        emit(BtHidEventType::Connecting, dev);
+        btstack_run_loop_remove_timer(&connect_timer);
+        btstack_run_loop_set_timer(&connect_timer, kConnectTimeoutMs);
+        btstack_run_loop_set_timer_handler(&connect_timer, &Impl::connect_timeout);
+        btstack_run_loop_add_timer(&connect_timer);
+        gap_connect(dev.addr, static_cast<bd_addr_type_t>(dev.addr_type));
+    }
+    static void connect_timeout(btstack_timer_source_t*) {
+        Impl* im = g_impl_ptr();
+        if (!im || !im->pending) return;
+        gap_connect_cancel();
+        im->pending = false;
+        im->emit(BtHidEventType::PairingFailed, im->pending_dev, false, 0, 0, ERROR_CODE_CONNECTION_TIMEOUT);
+        im->arm_reconnect();
+    }
+
+    // ---- HCI ----
+    void on_connection_complete(uint8_t* packet) {
+        const uint8_t status = gap_subevent_le_connection_complete_get_status(packet);
+        const bool was_pending = pending;
+        pending = false;
+        wl_connecting = false;
+        btstack_run_loop_remove_timer(&connect_timer);
+        if (status != ERROR_CODE_SUCCESS) {
+            if (was_pending) emit(BtHidEventType::PairingFailed, pending_dev, false, 0, 0, status);
+            schedule_reconnect();
+            return;
+        }
+        const hci_con_handle_t handle = gap_subevent_le_connection_complete_get_connection_handle(packet);
+        bd_addr_t addr;
+        gap_subevent_le_connection_complete_get_peer_address(packet, addr);
+
+        Slot* s = alloc_slot();
+        if (!s) {
+            gap_disconnect(handle);
+            return;
+        }
+        s->handle = handle;
+        const int si = find_stored(addr);
+        if (si >= 0) s->dev = stored[si];
+        else if (was_pending) s->dev = pending_dev;
+        else {
+            std::memset(&s->dev, 0, sizeof(s->dev));
+            std::memcpy(s->dev.addr, addr, 6);
+            s->dev.addr_type = gap_subevent_le_connection_complete_get_peer_address_type(packet);
+        }
+        emit(BtHidEventType::Connecting, s->dev);
+        sm_request_pairing(handle); // pairs a new device, re-encrypts a bonded one
+        arm_reconnect();            // keep looking for the other bonded devices
+    }
+
+    void clear_inputs_for(Slot& s) {
+        if (s.pad_index >= 0) {
+            pads[s.pad_index] = GamepadState{};
+            pad_raw[s.pad_index] = 0;
+        }
+        if (s.dev.kinds & bt_hid_kind::Keyboard) {
+            for (auto& k : keys) k = 0;
+            modifiers = 0;
+        }
+        if (s.dev.kinds & bt_hid_kind::Mouse) {
+            for (auto& b : mouse_buttons) b = false;
+        }
+    }
+
+    void on_disconnection(uint8_t* packet) {
+        const hci_con_handle_t handle = hci_event_disconnection_complete_get_connection_handle(packet);
+        Slot* s = slot_by_handle(handle);
+        if (!s) return;
+        clear_inputs_for(*s);
+        const Stored dev = s->dev;
+        *s = Slot{};
+        emit(BtHidEventType::Disconnected, dev);
+        schedule_reconnect();
+    }
+
+    // ---- security manager ----
+    void on_sm(uint8_t* packet) {
+        switch (hci_event_packet_get_type(packet)) {
+        case SM_EVENT_JUST_WORKS_REQUEST:
+            sm_just_works_confirm(sm_event_just_works_request_get_handle(packet));
+            break;
+        case SM_EVENT_NUMERIC_COMPARISON_REQUEST:
+            sm_numeric_comparison_confirm(sm_event_numeric_comparison_request_get_handle(packet));
+            break;
+        case SM_EVENT_PASSKEY_DISPLAY_NUMBER: {
+            Slot* s = slot_by_handle(sm_event_passkey_display_number_get_handle(packet));
+            emit(BtHidEventType::PasskeyDisplay, s ? s->dev : pending_dev, false, 0,
+                 sm_event_passkey_display_number_get_passkey(packet));
+            break;
+        }
+        case SM_EVENT_PAIRING_COMPLETE: {
+            Slot* s = slot_by_handle(sm_event_pairing_complete_get_handle(packet));
+            if (!s) break;
+            const uint8_t status = sm_event_pairing_complete_get_status(packet);
+            if (status == ERROR_CODE_SUCCESS) {
+                emit(BtHidEventType::Paired, s->dev);
+                connect_hids(*s);
+            } else {
+                const uint8_t reason = status == ERROR_CODE_AUTHENTICATION_FAILURE
+                                           ? sm_event_pairing_complete_get_reason(packet) : 0;
+                emit(BtHidEventType::PairingFailed, s->dev, false, 0, 0, status, reason);
+                gap_disconnect(s->handle);
+            }
+            break;
+        }
+        case SM_EVENT_REENCRYPTION_COMPLETE: {
+            Slot* s = slot_by_handle(sm_event_reencryption_complete_get_handle(packet));
+            if (!s) break;
+            const uint8_t status = sm_event_reencryption_complete_get_status(packet);
+            if (status == ERROR_CODE_SUCCESS) {
+                connect_hids(*s);
+            } else {
+                // The device lost its half of the bond (factory reset, other host): the
+                // stored keys are useless, so drop them and let the user pair again.
+                gap_delete_bonding(static_cast<bd_addr_type_t>(s->dev.addr_type), s->dev.addr);
+                emit(BtHidEventType::PairingFailed, s->dev, false, 0, 0, status);
+                gap_disconnect(s->handle);
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    void connect_hids(Slot& s) {
+        uint16_t cid = 0;
+        const uint8_t rc = hids_host_connect(s.handle, hids_trampoline_fn, HID_PROTOCOL_MODE_REPORT, &cid);
+        if (rc != ERROR_CODE_SUCCESS) {
+            emit(BtHidEventType::PairingFailed, s.dev, false, 0, 0, rc);
+            gap_disconnect(s.handle);
+            return;
+        }
+        s.hids_cid = cid;
+    }
+    static void hids_trampoline_fn(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
+        if (type == HCI_EVENT_PACKET && g_impl_ptr()) g_impl_ptr()->on_hids(packet);
+    }
+
+    // ---- HID service ----
+    void on_hids(uint8_t* packet) {
+        if (hci_event_packet_get_type(packet) != HCI_EVENT_GATTSERVICE_META) return;
+        switch (hci_event_gattservice_meta_get_subevent_code(packet)) {
+        case GATTSERVICE_SUBEVENT_HID_SERVICE_CONNECTED: {
+            Slot* s = slot_by_cid(gattservice_subevent_hid_service_connected_get_hids_cid(packet));
+            if (!s) break;
+            const uint8_t status = gattservice_subevent_hid_service_connected_get_status(packet);
+            if (status != ERROR_CODE_SUCCESS) {
+                emit(BtHidEventType::PairingFailed, s->dev, false, 0, 0, status);
+                gap_disconnect(s->handle);
+                break;
+            }
+            const uint8_t n = gattservice_subevent_hid_service_connected_get_num_instances(packet);
+            uint8_t kinds = 0;
+            for (uint8_t i = 0; i < n; ++i)
+                kinds |= scan_kinds(hids_host_descriptor_storage_get_descriptor_data(s->hids_cid, i),
+                                    hids_host_descriptor_storage_get_descriptor_len(s->hids_cid, i));
+            s->dev.kinds = kinds;
+            if (kinds & bt_hid_kind::Gamepad) {
+                for (size_t i = 0; i < kMaxConnected && s->pad_index < 0; ++i) {
+                    bool taken = false;
+                    for (const auto& o : slots) taken |= (o.used && &o != s && o.pad_index == static_cast<int>(i));
+                    if (!taken) s->pad_index = static_cast<int>(i);
+                }
+            }
+            remember(s->dev);
+            emit(BtHidEventType::Connected, s->dev, true);
+            break;
+        }
+        case GATTSERVICE_SUBEVENT_HID_REPORT: {
+            Slot* s = slot_by_cid(gattservice_subevent_hid_report_get_hids_cid(packet));
+            if (s) on_report(*s, gattservice_subevent_hid_report_get_service_index(packet),
+                             gattservice_subevent_hid_report_get_report(packet),
+                             gattservice_subevent_hid_report_get_report_len(packet));
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    void on_report(Slot& s, uint8_t service_index, const uint8_t* report, uint16_t len) {
+        btstack_hid_parser_t parser;
+        btstack_hid_parser_init(&parser,
+                                hids_host_descriptor_storage_get_descriptor_data(s.hids_cid, service_index),
+                                hids_host_descriptor_storage_get_descriptor_len(s.hids_cid, service_index),
+                                HID_REPORT_TYPE_INPUT, report, len);
+
+        bool has_keyboard = false, has_buttons = false;
+        uint32_t key_bits[8] = {};
+        uint8_t mods = 0;
+        uint32_t raw_buttons = 0;
+        int hat = -1;
+        bool have[6] = {};     // lx ly rx ry lt rt
+        uint8_t axis[6] = {};
+        int dx = 0, dy = 0, wheel = 0;
+        const bool pad_dev = (s.dev.kinds & bt_hid_kind::Gamepad) && s.pad_index >= 0;
+        const bool mouse_dev = (s.dev.kinds & bt_hid_kind::Mouse) && !pad_dev;
+
+        while (btstack_hid_parser_has_more(&parser)) {
+            uint16_t page, usage;
+            int32_t value;
+            btstack_hid_parser_get_field(&parser, &page, &usage, &value);
+            const uint8_t size = parser.descriptor_usage_item.size;
+            const int32_t lmin = parser.descriptor_usage_item.global_logical_minimum;
+
+            if (page == kPageKeyboard) {
+                has_keyboard = true;
+                if (usage >= 0xE0 && usage <= 0xE7) {
+                    if (value) mods |= static_cast<uint8_t>(1u << (usage - 0xE0));
+                } else if (usage != 0 && usage < 256 && value) {
+                    key_bits[usage >> 5] |= 1u << (usage & 31);
+                }
+            } else if (page == kPageButton) {
+                has_buttons = true;
+                if (value && usage >= 1 && usage <= 32) raw_buttons |= 1u << (usage - 1);
+            } else if (page == kPageDesktop) {
+                switch (usage) {
+                case 0x30:
+                    if (mouse_dev) dx = value; else { axis[0] = norm_axis(value, size, lmin); have[0] = true; }
+                    break;
+                case 0x31:
+                    if (mouse_dev) dy = value; else { axis[1] = norm_axis(value, size, lmin); have[1] = true; }
+                    break;
+                case 0x32: axis[2] = norm_axis(value, size, lmin); have[2] = true; break; // Z: right stick X
+                case 0x35: axis[3] = norm_axis(value, size, lmin); have[3] = true; break; // Rz: right stick Y
+                case 0x38: wheel = value; break;
+                case 0x39: {
+                    const int h = value - lmin;
+                    hat = (h >= 0 && h <= 7) ? h : -1;
+                    break;
+                }
+                default: break;
+                }
+            } else if (page == kPageSim) {
+                if (usage == 0xC5) { axis[4] = norm_axis(value, size, lmin); have[4] = true; } // brake: left trigger
+                else if (usage == 0xC4) { axis[5] = norm_axis(value, size, lmin); have[5] = true; } // accelerator
+            }
+        }
+
+        if (has_keyboard) {
+            for (int i = 0; i < 8; ++i) {
+                key_edges[i] = key_edges[i] | (key_bits[i] & ~keys[i]);
+                keys[i] = key_bits[i];
+            }
+            modifiers = mods;
+        } else if (pad_dev) {
+            GamepadState& g = pads[s.pad_index];
+            g.present = true;
+            uint16_t b = 0;
+            for (const auto& m : kButtonMap) if (raw_buttons & (1u << (m.usage - 1))) b |= m.mask;
+            if (hat >= 0) {
+                if (hat == 7 || hat == 0 || hat == 1) b |= kBtUp;
+                if (hat >= 1 && hat <= 3) b |= kBtRight;
+                if (hat >= 3 && hat <= 5) b |= kBtDown;
+                if (hat >= 5 && hat <= 7) b |= kBtLeft;
+            }
+            g.buttons = b;
+            if (have[0]) g.lx = axis[0];
+            if (have[1]) g.ly = axis[1];
+            if (have[2]) g.rx = axis[2];
+            if (have[3]) g.ry = axis[3];
+            if (have[4]) g.lt = axis[4];
+            if (have[5]) g.rt = axis[5];
+            pad_raw[s.pad_index] = raw_buttons;
+        } else if (mouse_dev) {
+            mouse_dx = mouse_dx + dx;
+            mouse_dy = mouse_dy + dy;
+            mouse_wheel = mouse_wheel + wheel;
+            mouse_buttons[0] = raw_buttons & 1;
+            mouse_buttons[1] = raw_buttons & 2;
+            mouse_buttons[2] = raw_buttons & 4;
+        }
+        (void)has_buttons;
+    }
+};
+
+// ---- BluetoothHid ------------------------------------------------------------
+
+namespace {
+BluetoothHid* g_owner = nullptr;
+
+void hci_trampoline(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
+    if (type == HCI_EVENT_PACKET && g_owner) g_owner->on_hci_event(packet);
+}
+void sm_trampoline(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
+    if (type == HCI_EVENT_PACKET && g_owner) g_owner->on_sm_event(packet);
+}
+} // namespace
+
+bool BluetoothHid::init(const BluetoothHidConfig& config) {
+    if (m_initialised) return true;
+    if (hci_get_state() != HCI_STATE_WORKING) return false; // Bluetooth::init() first
+    m_cfg = config;
+    m_impl = new Impl;
+    m_impl->owner = this;
+    Impl::g_impl_ptr() = m_impl;
+    g_owner = this;
+
+    ContextLock lock;
+    gatt_client_init();
+    hids_host_init(g_descriptor_storage, sizeof(g_descriptor_storage));
+    sm_set_io_capabilities(IO_CAPABILITY_DISPLAY_ONLY); // keyboards: show the passkey, user types it
+    // Bonding + MITM + LE Secure Connections: most keyboards refuse an unauthenticated
+    // legacy pairing. Mice/gamepads (no I/O) still fall back to Just Works.
+    sm_set_authentication_requirements(SM_AUTHREQ_BONDING | SM_AUTHREQ_MITM_PROTECTION |
+                                       SM_AUTHREQ_SECURE_CONNECTION);
+    // BTstack turns on "Secure Connections only" in sm_init() when SC support is compiled
+    // in, which rejects (pairing failed, reason 0x03) every keyboard/gamepad that only
+    // speaks legacy LE pairing -- e.g. the Microsoft foldable keyboard. Allow both.
+    sm_set_secure_connections_only_mode(false);
+
+    m_impl->hci_reg.callback = &hci_trampoline;
+    hci_add_event_handler(&m_impl->hci_reg);
+    m_impl->sm_reg.callback = &sm_trampoline;
+    sm_add_event_handler(&m_impl->sm_reg);
+
+    m_impl->load_stored();
+    m_initialised = true;
+    m_impl->arm_reconnect();
+    return true;
+}
+
+void BluetoothHid::on_hci_event(uint8_t* packet) {
+    switch (hci_event_packet_get_type(packet)) {
+    case GAP_EVENT_ADVERTISING_REPORT:
+        m_impl->on_advertisement(packet);
+        break;
+    case HCI_EVENT_META_GAP:
+        if (hci_event_gap_meta_get_subevent_code(packet) == GAP_SUBEVENT_LE_CONNECTION_COMPLETE)
+            m_impl->on_connection_complete(packet);
+        break;
+    case HCI_EVENT_DISCONNECTION_COMPLETE:
+        m_impl->on_disconnection(packet);
+        break;
+    default:
+        break;
+    }
+}
+
+void BluetoothHid::on_sm_event(uint8_t* packet) { m_impl->on_sm(packet); }
+void BluetoothHid::on_hids_event(uint8_t* packet) { m_impl->on_hids(packet); }
+
+void BluetoothHid::start_pairing() {
+    if (!m_initialised || m_pairing) return;
+    ContextLock lock;
+    m_impl->begin_scan();
+}
+
+void BluetoothHid::stop_pairing() {
+    if (!m_initialised) return;
+    ContextLock lock;
+    m_impl->end_scan();
+}
+
+bool BluetoothHid::pair(const uint8_t addr[6], uint8_t addr_type) {
+    if (!m_initialised || m_impl->pending) return false;
+    Stored dev{};
+    std::memcpy(dev.addr, addr, 6);
+    dev.addr_type = addr_type;
+    ContextLock lock;
+    m_impl->start_connect(dev);
+    return true;
+}
+
+size_t BluetoothHid::bonded_devices(BtHidDevice* out, size_t max) const {
+    if (!m_initialised) return 0;
+    ContextLock lock;
+    size_t n = 0;
+    for (size_t i = 0; i < m_impl->stored_count && n < max; ++i)
+        out[n++] = to_public(m_impl->stored[i], m_impl->slot_by_addr(m_impl->stored[i].addr) != nullptr);
+    return n;
+}
+
+bool BluetoothHid::forget(const uint8_t addr[6]) {
+    if (!m_initialised) return false;
+    ContextLock lock;
+    Impl& im = *m_impl;
+    const int i = im.find_stored(addr);
+    if (i < 0) return false;
+    const Stored dev = im.stored[i];
+    if (Slot* s = im.slot_by_addr(addr)) gap_disconnect(s->handle);
+    gap_whitelist_remove(static_cast<bd_addr_type_t>(dev.addr_type), const_cast<uint8_t*>(dev.addr));
+    gap_delete_bonding(static_cast<bd_addr_type_t>(dev.addr_type), const_cast<uint8_t*>(dev.addr));
+    for (size_t k = static_cast<size_t>(i) + 1; k < im.stored_count; ++k) im.stored[k - 1] = im.stored[k];
+    --im.stored_count;
+    im.save_stored();
+    im.emit(BtHidEventType::Forgotten, dev);
+    return true;
+}
+
+void BluetoothHid::forget_all() {
+    if (!m_initialised) return;
+    uint8_t addrs[kMaxBonded][6];
+    size_t n;
+    {
+        ContextLock lock;
+        n = m_impl->stored_count;
+        for (size_t i = 0; i < n; ++i) std::memcpy(addrs[i], m_impl->stored[i].addr, 6);
+    }
+    for (size_t i = 0; i < n; ++i) forget(addrs[i]);
+}
+
+bool BluetoothHid::is_key_down(uint8_t usage) const {
+    return m_impl && (m_impl->keys[usage >> 5] & (1u << (usage & 31)));
+}
+bool BluetoothHid::is_modifier_down(uint8_t mask) const { return m_impl && (m_impl->modifiers & mask); }
+bool BluetoothHid::consume_key_press(uint8_t usage) {
+    if (!m_impl) return false;
+    const uint32_t bit = 1u << (usage & 31);
+    if (!(m_impl->key_edges[usage >> 5] & bit)) return false;
+    m_impl->key_edges[usage >> 5] = m_impl->key_edges[usage >> 5] & ~bit;
+    return true;
+}
+
+BluetoothHid::MouseState BluetoothHid::mouse_state() const {
+    MouseState m;
+    if (!m_impl) return m;
+    m.present = connected_mouse_count() > 0;
+    m.left = m_impl->mouse_buttons[0];
+    m.right = m_impl->mouse_buttons[1];
+    m.middle = m_impl->mouse_buttons[2];
+    return m;
+}
+void BluetoothHid::consume_mouse_delta(int& dx, int& dy) {
+    if (!m_impl) { dx = dy = 0; return; }
+    dx = m_impl->mouse_dx; dy = m_impl->mouse_dy;
+    m_impl->mouse_dx = 0; m_impl->mouse_dy = 0;
+}
+int BluetoothHid::consume_mouse_wheel() {
+    if (!m_impl) return 0;
+    const int w = m_impl->mouse_wheel;
+    m_impl->mouse_wheel = 0;
+    return w;
+}
+
+GamepadState BluetoothHid::gamepad_state(size_t index) const {
+    return (m_impl && index < kMaxConnected) ? m_impl->pads[index] : GamepadState{};
+}
+uint32_t BluetoothHid::gamepad_raw_buttons(size_t index) const {
+    return (m_impl && index < kMaxConnected) ? m_impl->pad_raw[index] : 0;
+}
+
+namespace {
+uint8_t count_kind(const BluetoothHid::Impl* im, uint8_t kind);
+}
+
+uint8_t BluetoothHid::connected_keyboard_count() const { return m_impl ? count_kind(m_impl, bt_hid_kind::Keyboard) : 0; }
+uint8_t BluetoothHid::connected_mouse_count() const { return m_impl ? count_kind(m_impl, bt_hid_kind::Mouse) : 0; }
+uint8_t BluetoothHid::connected_gamepad_count() const { return m_impl ? count_kind(m_impl, bt_hid_kind::Gamepad) : 0; }
+
+namespace {
+uint8_t count_kind(const BluetoothHid::Impl* im, uint8_t kind) {
+    uint8_t n = 0;
+    for (const auto& s : im->slots) n += (s.used && (s.dev.kinds & kind)) ? 1 : 0;
+    return n;
+}
+} // namespace
+
+} // namespace pico_toolset

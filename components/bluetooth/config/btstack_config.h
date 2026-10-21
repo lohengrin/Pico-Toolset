@@ -20,17 +20,19 @@
 #define HCI_ACL_PAYLOAD_SIZE (255 + 4)
 #define HCI_ACL_CHUNK_SIZE_ALIGNMENT 4
 
-#define MAX_NR_GATT_CLIENTS 1
-#define MAX_NR_HCI_CONNECTIONS 1
-#define MAX_NR_L2CAP_CHANNELS 2
+// Room for a keyboard, a gamepad and a mouse at once (bluetooth_hid).
+#define MAX_NR_GATT_CLIENTS 3
+#define MAX_NR_HIDS_HOSTS 3 // BTstack 1.6.x name (hids_client was renamed hids_host); 0 = "Not enough memory to create client"
+#define MAX_NR_HCI_CONNECTIONS 3
+#define MAX_NR_L2CAP_CHANNELS 4
 #define MAX_NR_L2CAP_SERVICES 2
-#define MAX_NR_SM_LOOKUP_ENTRIES 3
-#define MAX_NR_WHITELIST_ENTRIES 4
-#define MAX_NR_LE_DEVICE_DB_ENTRIES 4
+#define MAX_NR_SM_LOOKUP_ENTRIES 6
+#define MAX_NR_WHITELIST_ENTRIES 8
+#define MAX_NR_LE_DEVICE_DB_ENTRIES 8
 #define MAX_NR_CONTROLLER_ACL_BUFFERS 3
 #define MAX_NR_CONTROLLER_SCO_PACKETS 3
 #define MAX_ATT_DB_SIZE 512
-#define NVM_NUM_DEVICE_DB_ENTRIES 4
+#define NVM_NUM_DEVICE_DB_ENTRIES 8
 #define NVM_NUM_LINK_KEYS 4
 
 #define ENABLE_HCI_CONTROLLER_TO_HOST_FLOW_CONTROL

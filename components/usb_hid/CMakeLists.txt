@@ -10,6 +10,12 @@ if(NOT TARGET pico_pio_usb OR NOT TARGET tinyusb_host)
     )
 endif()
 
+# GamepadState lives in components/hid_input; pull it in for consumers that add
+# this component directly (examples) instead of through the toolset's top level.
+if(NOT TARGET pico_toolset_hid_input)
+    add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../hid_input ${CMAKE_BINARY_DIR}/_toolset/hid_input)
+endif()
+
 # Keyboard layouts implemented in usb_hid_keymap.cpp. Adding a new layout:
 # implement it under a '#if PICO_TOOLSET_USB_HID_KEYMAP_<NAME>' block in
 # usb_hid_keymap.cpp AND register the name here so its entry appears in the
@@ -54,6 +60,7 @@ target_include_directories(pico_toolset_usb_hid PUBLIC
 target_link_libraries(pico_toolset_usb_hid PUBLIC
     pico_pio_usb
     tinyusb_host
+    pico_toolset_hid_input
 )
 target_link_libraries(pico_toolset_usb_hid PRIVATE
     pico_stdlib

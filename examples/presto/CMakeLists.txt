@@ -53,6 +53,7 @@ add_subdirectory(${TOOLSET_ROOT}/components/net_config   ${CMAKE_BINARY_DIR}/_to
 add_subdirectory(${TOOLSET_ROOT}/components/wifi         ${CMAKE_BINARY_DIR}/_toolset/wifi)
 add_subdirectory(${TOOLSET_ROOT}/components/https_client ${CMAKE_BINARY_DIR}/_toolset/https_client)
 add_subdirectory(${TOOLSET_ROOT}/components/bluetooth    ${CMAKE_BINARY_DIR}/_toolset/bluetooth)
+add_subdirectory(${TOOLSET_ROOT}/components/bluetooth_hid ${CMAKE_BINARY_DIR}/_toolset/bluetooth_hid)
 add_subdirectory(${TOOLSET_ROOT}/libs/screen        ${CMAKE_BINARY_DIR}/_toolset/screen)
 
 add_executable(${EXAMPLE_OUTPUT_NAME} main.cpp)
@@ -80,6 +81,13 @@ set(PRESTO_WIFI_CONFIG_DIR "$ENV{PRESTO_WIFI_CONFIG_DIR}" CACHE PATH "Directory 
 if(PRESTO_WIFI_CONFIG_DIR)
     target_include_directories(${EXAMPLE_OUTPUT_NAME} PRIVATE ${PRESTO_WIFI_CONFIG_DIR})
 endif()
+# Debug aid for Bluetooth pairing problems: dump every HCI/L2CAP/SMP packet to the
+# USB serial port. The log is paused while scanning and runs from the moment a
+# connection is started, so it holds just the pairing exchange.
+option(PRESTO_BT_HCI_DUMP "Log all Bluetooth HCI packets to the serial console" OFF)
+if(PRESTO_BT_HCI_DUMP)
+    target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE WANT_HCI_DUMP=1)
+endif()
 if(PRESTO_PALETTE)
     target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PRESTO_PALETTE=1)
 endif()
@@ -95,8 +103,13 @@ else()
     target_link_libraries(${EXAMPLE_OUTPUT_NAME} PRIVATE
         pico_toolset_wifi
         pico_toolset_bluetooth
+        pico_toolset_bluetooth_hid
         pico_toolset_https_client # only to satisfy lwIP's TLS layer (see above)
     )
+    # Bonding writes flash from core 0; core 1 only runs RAM-resident code (LCD
+    # scanout interrupts + core1_idle()), so the SDK need not stop it. See
+    # docs/components/bluetooth-hid.md.
+    target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PICO_FLASH_ASSUME_CORE1_SAFE=1)
 endif()
 pico_enable_stdio_usb(${EXAMPLE_OUTPUT_NAME} ON)
 pico_add_extra_outputs(${EXAMPLE_OUTPUT_NAME})

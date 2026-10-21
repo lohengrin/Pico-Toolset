@@ -89,6 +89,7 @@ All four are SPI0-capable pins, so the driver uses the hardware SPI (no PIO).
 | [`screen`](../components/screen.md) | -- | `St7701Driver` draws into the scanout buffer |
 | [`wifi`](../components/https-client.md) | -- | `wifi_connect()`; pins from the board header; validated |
 | [`bluetooth`](../components/bluetooth.md) | -- | BLE advertise + scan; validated |
+| [`bluetooth_hid`](../components/bluetooth-hid.md) | -- | BLE keyboard/gamepad/mouse host with bonding; keyboard validated, gamepad/mouse untested |
 | [`qwstpad`](../components/qwstpad.md) | `kPimoroniPresto` (0x21) | QW/ST I2C0; validated |
 | [`bme280`](../components/bme280.md) | `kPimoroniPrestoMultiSensorStick` (0x76) | validated |
 | [`ltr559`](../components/ltr559.md) | `kPimoroniPrestoMultiSensorStick` (0x23) | validated |
@@ -150,12 +151,17 @@ in `boards/`).
 [`examples/presto/main.cpp`](../../examples/presto/main.cpp): status squares
 (PSRAM, SD, touch bus, LCD) over colour bars, a touch crosshair with a tone
 following X and LED brightness following Y, the user button, and a QW/ST I2C
-bus scan every 5 s on USB serial. PASS2 adds: Wi-Fi join (only when credentials
+bus scan once at start-up (USB serial). PASS2 adds: Wi-Fi join (only when credentials
 are supplied), BLE advertising as `presto` plus a scan log, a QwSTPad D-pad
 square (A beeps), automatic backlight from the LTR-559 (log-scaled lux to 10..255,
 smoothed; the user button toggles auto/manual, QwSTPad +/- adjusts manual
-brightness), and BME280 / LTR-559 / LSM6DS3 readings (serial + three gauges
-along the bottom of the screen). Two more status squares show radio and
+brightness), and three gauges along the bottom of the screen (temperature,
+humidity, light; sensor values are not printed continuously). Bluetooth LE keyboards and gamepads (Xbox controllers) pair
+and bond through [`bluetooth_hid`](../components/bluetooth-hid.md): touch the status band
+to start pairing (automatic on a first boot with nothing bonded), type the shown passkey
+on a keyboard, and bonded devices reconnect after a reboot and move the on-screen square.
+Bonding writes flash, so the example's core 1 idles from RAM and defines
+`PICO_FLASH_ASSUME_CORE1_SAFE=1`. Two more status squares show radio and
 QW/ST devices (green ok, red failed, grey absent).
 
 **Wi-Fi credentials** never go in the repo. Point the build at a directory

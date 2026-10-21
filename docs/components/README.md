@@ -30,6 +30,7 @@ targets are `pico_toolset_<name>`; each component has a
 | [ltr559](ltr559.md) | `pico_toolset_ltr559` | sensor | ON | LTR-559 ambient light + proximity |
 | [lsm6ds3](lsm6ds3.md) | `pico_toolset_lsm6ds3` | sensor | ON | LSM6DS3 accelerometer/gyro, steps, taps |
 | [bluetooth](bluetooth.md) | `pico_toolset_bluetooth` | network | **OFF** | BLE advertise + scan over BTstack/CYW43 |
+| [bluetooth_hid](bluetooth-hid.md) | `pico_toolset_bluetooth_hid` | network | **OFF** | BLE HID host: pair/bond/reconnect keyboards, mice, gamepads |
 | [rgb_led](rgb-led.md) | `pico_toolset_rgb_led` | output | ON | PWM RGB LED |
 | [ws2812](ws2812.md) | `pico_toolset_ws2812` | output | ON | WS2812/SK6812 LED chain over PIO |
 | [piezo](piezo.md) | `pico_toolset_piezo` | audio | ON | PWM piezo/buzzer tones and melodies |
@@ -62,7 +63,7 @@ because config structs are driver-specific.
 ## Build options
 
 Top-level options in `CMakeLists.txt` (all `ON` unless noted): `SSD1306`,
-`ILI9486`, `ST7789`, `ST7796`, `ST7701`, `XPT2046`, `FT6236`, `WS2812`, `PIEZO`, `QWSTPAD`, `BME280`, `LTR559`, `LSM6DS3`, `BLUETOOTH` (**OFF**), `PSRAM`, `USB_HID`, `I2S_AUDIO`
+`ILI9486`, `ST7789`, `ST7796`, `ST7701`, `XPT2046`, `FT6236`, `WS2812`, `PIEZO`, `QWSTPAD`, `BME280`, `LTR559`, `LSM6DS3`, `BLUETOOTH` (**OFF**), `BLUETOOTH_HID` (**OFF**), `PSRAM`, `USB_HID`, `I2S_AUDIO`
 (**OFF**), `USB_COMPOSITE`, `LVGL_DISPLAY` (**OFF**), `SDCARD`, `FLASH_STORE`,
 `RGB_LED`, `RESET_BUTTONS`, `DVI_HDMI`, `FAULT_HANDLER`, `SCREEN`,
 `SCREEN_PIMORONI` (**OFF**), each as `PICO_TOOLSET_BUILD_<NAME>` (except the

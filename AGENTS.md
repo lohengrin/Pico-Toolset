@@ -104,6 +104,11 @@ component ships an `example/` program that doubles as a smoke test.
   launching any core1 workload; only have a core1 loop opt into
   `flash_safe_execute_core_init()` itself if it's confirmed not to use the
   raw FIFO for anything of its own.
+- **Bluetooth bonding writes flash**: `pico_toolset_bluetooth_hid` (via the SDK's BTstack
+  flash bank) erases/programs flash from the BTstack context. Another core must run only
+  RAM code and the build must define `PICO_FLASH_ASSUME_CORE1_SAFE=1` (no core1 lockout
+  registration, per the rule above). BTstack's flash bank also collides with
+  `flash_store`'s default region -- move one (see docs/components/bluetooth-hid.md).
 - **Flash store region is reserved by the consumer**: `pico_toolset_flash_store`
   uses the last N sectors of flash (default 2); the consuming app must keep its
   own image out of them (shorten the linker script's FLASH region by that
@@ -235,6 +240,9 @@ manual smoke tests of the examples on hardware.
 - BME280: Bosch Sensortec's reference driver (BSD-3-Clause) vendored under
   `components/bme280/src/bosch/`, wrapped in a config-struct class after
   Pimoroni's default settings.
+- Bluetooth HID: new BLE HID-over-GATT host on BTstack's `hids_host`, flow after
+  BTstack's hog_host_demo, generic report parsing via BTstack's HID parser;
+  `GamepadState` moved to `components/hid_input`, shared with usb_hid.
 - Bluetooth: new BLE advertise/scan helper over pico-sdk's BTstack port;
   `btstack_config.h` adapted from pico-examples (BSD-3-Clause).
 - XPT2046: touch driver + linear calibration, real-hardware-validated

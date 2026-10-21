@@ -29,6 +29,7 @@ independently.
 | WS2812    | `pico_toolset_ws2812`   | WS2812/SK6812 LED chain on one PIO state machine; Presto preset (7 LEDs). |
 | QwSTPad   | `pico_toolset_qwstpad`  | Pimoroni QwSTPad gamepad (TCA9555): 10 buttons, 4 LEDs; Presto QW/ST preset. |
 | BME280 / LTR-559 / LSM6DS3 | `pico_toolset_bme280`, `_ltr559`, `_lsm6ds3` | Multi-Sensor Stick drivers (environment, light/proximity, IMU); BME280 wraps the vendored Bosch driver. |
+| Bluetooth HID | `pico_toolset_bluetooth_hid` | BLE HID host (keyboards, mice, gamepads incl. Xbox pads): pairing, bonding stored in flash, whitelist reconnect; shares `GamepadState` with usb_hid via `hid_input`. Off by default. |
 | Bluetooth | `pico_toolset_bluetooth` | BLE advertise + scan over BTstack on the CYW43 (Pico W / Presto); off by default. |
 | Piezo     | `pico_toolset_piezo`    | PWM piezo/buzzer tones and note sequences; Presto preset. |
 | RGB LED   | `pico_toolset_rgb_led`  | PWM RGB LED on three GPIOs (8-bit color, gamma 2.8, active-high/low); validated preset for the Pimoroni Pico Display Pack. |
@@ -129,6 +130,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_WS2812`  | ON | Build WS2812 PIO LED driver + example |
 | `PICO_TOOLSET_BUILD_PIEZO`   | ON | Build PWM piezo driver + example |
 | `PICO_TOOLSET_BUILD_QWSTPAD` / `_BME280` / `_LTR559` / `_LSM6DS3` | ON | Build the I2C gamepad / sensor drivers + examples |
+| `PICO_TOOLSET_BUILD_BLUETOOTH_HID` | OFF | Build the BLE HID host (needs `PICO_TOOLSET_BUILD_BLUETOOTH`) |
 | `PICO_TOOLSET_BUILD_BLUETOOTH` | OFF | Build the BLE helper (needs a Pico W-class board; reuses the HTTPS client's mbedtls config) |
 | `PICO_TOOLSET_BUILD_XPT2046` | ON | Build XPT2046 touch driver + example |
 | `PICO_TOOLSET_BUILD_PSRAM`   | ON | Build PSRAM driver + example (RP2350 only) |

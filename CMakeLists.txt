@@ -40,6 +40,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Pico W / Pico 2 W only, so OFF by default (the default board has no radio).
 option(PICO_TOOLSET_BUILD_WIFI "Build Wi-Fi station helper (needs a Pico W board)" OFF)
 option(PICO_TOOLSET_BUILD_BLUETOOTH "Build BLE advertise/scan helper (BTstack; needs a Pico W board)" OFF)
+option(PICO_TOOLSET_BUILD_BLUETOOTH_HID "Build BLE HID host (keyboard/mouse/gamepad) over BTstack; needs PICO_TOOLSET_BUILD_BLUETOOTH" OFF)
 option(PICO_TOOLSET_BUILD_HTTPS_CLIENT "Build HTTPS GET client (lwIP altcp + mbedtls; needs a Pico W board)" OFF)
 if(PICO_TOOLSET_BUILD_HTTPS_CLIENT OR PICO_TOOLSET_BUILD_BLUETOOTH)
     # Must be set before pico_sdk_init(): one mbedtls config per build.
@@ -91,6 +92,7 @@ option(PICO_TOOLSET_SCREEN_PIMORONI "Use Pimoroni PicoGraphics backend"   OFF)
 # Header-only DisplayPanel/TouchPanel interfaces (no build option -- always
 # available; ili9486/st7789/st7796/xpt2046 depend on it unconditionally).
 add_subdirectory(components/driver_interfaces)
+add_subdirectory(components/hid_input)  # shared GamepadState (usb_hid, bluetooth_hid)
 
 if(PICO_TOOLSET_BUILD_SSD1306)
     add_subdirectory(components/ssd1306)
@@ -180,6 +182,12 @@ if(PICO_TOOLSET_BUILD_HTTPS_CLIENT)
 endif()
 if(PICO_TOOLSET_BUILD_BLUETOOTH)
     add_subdirectory(components/bluetooth)
+endif()
+if(PICO_TOOLSET_BUILD_BLUETOOTH_HID)
+    if(NOT TARGET pico_toolset_bluetooth)
+        message(FATAL_ERROR "PICO_TOOLSET_BUILD_BLUETOOTH_HID needs PICO_TOOLSET_BUILD_BLUETOOTH")
+    endif()
+    add_subdirectory(components/bluetooth_hid)
 endif()
 if(PICO_TOOLSET_BUILD_FAULT_HANDLER)
     add_subdirectory(libs/fault_handler)
