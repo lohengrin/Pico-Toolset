@@ -19,17 +19,23 @@ target_include_directories(pico_toolset_bluetooth INTERFACE
 )
 target_link_libraries(pico_toolset_bluetooth INTERFACE
     pico_stdlib
-    pico_toolset_net_config
-    pico_cyw43_arch_lwip_threadsafe_background
     pico_btstack_ble
     pico_btstack_cyw43
 )
+if(PICO_TOOLSET_BLUETOOTH_NO_WIFI)
+    # No lwIP, no mbedtls: BTstack runs on the plain threadsafe-background async context.
+    target_link_libraries(pico_toolset_bluetooth INTERFACE pico_cyw43_arch_none)
+else()
+    target_link_libraries(pico_toolset_bluetooth INTERFACE
+        pico_toolset_net_config
+        pico_cyw43_arch_lwip_threadsafe_background)
+endif()
 if(PICO_TOOLSET_BLUETOOTH_CLASSIC)
     target_link_libraries(pico_toolset_bluetooth INTERFACE pico_btstack_classic)
 endif()
 target_compile_features(pico_toolset_bluetooth INTERFACE cxx_std_20)
 
-if(PICO_CYW43_SUPPORTED AND TARGET pico_toolset_https_client)
+if(PICO_CYW43_SUPPORTED AND TARGET pico_toolset_https_client AND NOT PICO_TOOLSET_BLUETOOTH_NO_WIFI)
     add_executable(bluetooth_example example/bluetooth_example.cpp)
     target_link_libraries(bluetooth_example PRIVATE pico_toolset_bluetooth pico_toolset_https_client)
     pico_enable_stdio_usb(bluetooth_example ON)

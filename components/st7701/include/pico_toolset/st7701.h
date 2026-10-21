@@ -72,6 +72,14 @@ struct St7701Config {
     // refresh rate, giving a Scanline565 callback more time per line:
     // ~25 MHz is a line time of ~21 us at 480 wide, 16 MHz ~33 us.
     uint32_t max_pixel_clock_hz = 0;
+    // Source lines actually backed by pixels (0 = `height`). Lines from here
+    // down are scanned out as a black band from a single static line, so the
+    // framebuffer is width*visible_height and Scanline565 never calls the
+    // line callback past it. Palette8: the band shows palette entry
+    // `blank_index` (so it follows that entry's colour, black unless the
+    // application recolours it).
+    uint16_t visible_height = 0;
+    uint8_t  blank_index = 0;
 };
 
 // Pixel format of the framebuffer: RGB565 with the two bytes swapped (the DMA
@@ -98,7 +106,8 @@ public:
     [[nodiscard]] uint8_t* framebuffer8() const { return static_cast<uint8_t*>(m_cfg.framebuffer); }
     [[nodiscard]] St7701Format format() const { return m_cfg.format; }
     [[nodiscard]] int width() const { return m_cfg.width; }
-    [[nodiscard]] int height() const { return m_cfg.height; }
+    // Lines backed by pixels (visible_height, or the full height).
+    [[nodiscard]] int height() const { return m_visible_height; }
 
     // Copies a full width*height frame (st7701_encode()d pixels) into the
     // framebuffer behind the scan position so no tearing is visible. No-op if
@@ -162,6 +171,7 @@ private:
     uint16_t* volatile m_next_line_addr = nullptr; // also read by DMA (re-arm channel)
     int m_display_row = 0;
     int m_row_shift = 0;
+    int m_visible_height = 0;
     uint16_t m_timing_row = 0;
     uint16_t m_timing_phase = 0;
     volatile bool m_waiting_for_vsync = false;

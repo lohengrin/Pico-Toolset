@@ -22,7 +22,7 @@ target_link_libraries(pico_toolset_bluetooth_hid INTERFACE
 )
 target_compile_features(pico_toolset_bluetooth_hid INTERFACE cxx_std_20)
 
-if(PICO_CYW43_SUPPORTED AND TARGET pico_toolset_https_client)
+if(PICO_CYW43_SUPPORTED AND TARGET pico_toolset_https_client AND NOT PICO_TOOLSET_BLUETOOTH_NO_WIFI)
     add_executable(bluetooth_hid_example example/bluetooth_hid_example.cpp)
     target_link_libraries(bluetooth_hid_example PRIVATE
         pico_toolset_bluetooth_hid

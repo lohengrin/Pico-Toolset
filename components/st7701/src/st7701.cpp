@@ -35,6 +35,10 @@ St7701* g_inst = nullptr;
 // 1 KB aligned.
 alignas(1024) uint32_t g_palette[256];
 
+// Scanned out for every line below St7701Config::visible_height (RGB565 zero =
+// black; Palette8 fills it with blank_index). 960 bytes cover either format.
+alignas(4) uint16_t g_blank_line[480];
+
 constexpr uint32_t kBacklightPwmTop = 6200;
 
 // Panel timing, in lines / pixel clocks.
@@ -123,6 +127,10 @@ void __not_in_flash_func(St7701::start_line_xfer)() {
         return;
     }
     const int src = m_display_row >> m_row_shift;
+    if (src >= m_visible_height) {
+        m_next_line_addr = g_blank_line;
+        return;
+    }
     switch (m_cfg.format) {
     case St7701Format::Palette8:
         m_next_line_addr = reinterpret_cast<uint16_t*>(
@@ -266,6 +274,12 @@ bool St7701::init(const St7701Config& config) {
     m_cfg = config;
     g_inst = this;
     m_row_shift = (m_cfg.height == 240) ? 1 : 0;
+    m_visible_height = (m_cfg.visible_height == 0 || m_cfg.visible_height > m_cfg.height)
+                           ? m_cfg.height : m_cfg.visible_height;
+    if (m_cfg.format == St7701Format::Palette8)
+        std::memset(g_blank_line, m_cfg.blank_index, sizeof(g_blank_line));
+    else
+        std::memset(g_blank_line, 0, sizeof(g_blank_line));
     const bool palette = m_cfg.format == St7701Format::Palette8;
     const bool scanline = m_cfg.format == St7701Format::Scanline565;
     if (m_cfg.width > kMaxWidth || (scanline && !m_cfg.line_callback) ||
@@ -499,7 +513,7 @@ void St7701::present(const uint16_t* src) {
     if (!m_inited || m_cfg.format != St7701Format::Rgb565 || src == fb) return;
 
     const int w = m_cfg.width;
-    const size_t total = static_cast<size_t>(w) * m_cfg.height;
+    const size_t total = static_cast<size_t>(w) * m_visible_height;
     uint16_t* dst = fb;
     uint16_t* const end = fb + total;
     const uint16_t* s = src;
@@ -509,7 +523,7 @@ void St7701::present(const uint16_t* src) {
     // everything once it has wrapped), chasing the beam so no tear is visible.
     while (dst != end) {
         uint16_t* next = reinterpret_cast<uint16_t*>(*line_ptr);
-        if (!next || next == fb) next = fb + total;
+        if (!next || next == fb || next == g_blank_line) next = fb + total;
         next -= w;
         if (next < dst) next = end; // scan is behind the copy: race ahead of it
         if (dst < next) {
@@ -533,7 +547,7 @@ void St7701::set_backlight(uint8_t brightness) {
 void St7701::present8(const uint8_t* src) {
     if (!m_inited || m_cfg.format != St7701Format::Palette8 || src == framebuffer8()) return;
     wait_for_vsync();
-    std::memcpy(framebuffer8(), src, static_cast<size_t>(m_cfg.width) * m_cfg.height);
+    std::memcpy(framebuffer8(), src, static_cast<size_t>(m_cfg.width) * m_visible_height);
 }
 
 void St7701::set_palette_colour(uint8_t index, uint8_t r, uint8_t g, uint8_t b) {
@@ -568,7 +582,7 @@ void __not_in_flash_func(St7701::scanline_task)() {
         return;
     }
 
-    const int last = m_cfg.height - 1; // height counts source lines
+    const int last = m_visible_height - 1; // counts source lines
     while (gen == m_frame_gen) {
         int target = m_scan_src + kLineLookahead;
         if (target > last) target = last;
