@@ -29,7 +29,7 @@ independently.
 | WS2812    | `pico_toolset_ws2812`   | WS2812/SK6812 LED chain on one PIO state machine; Presto preset (7 LEDs). |
 | QwSTPad   | `pico_toolset_qwstpad`  | Pimoroni QwSTPad gamepad (TCA9555): 10 buttons, 4 LEDs; Presto QW/ST preset. |
 | BME280 / LTR-559 / LSM6DS3 | `pico_toolset_bme280`, `_ltr559`, `_lsm6ds3` | Multi-Sensor Stick drivers (environment, light/proximity, IMU); BME280 wraps the vendored Bosch driver. |
-| Bluetooth HID | `pico_toolset_bluetooth_hid` | BLE HID host (keyboards, mice, gamepads incl. Xbox pads): pairing, bonding stored in flash, whitelist reconnect; shares `GamepadState` with usb_hid via `hid_input`. Off by default. |
+| Bluetooth HID | `pico_toolset_bluetooth_hid` | Bluetooth HID host (keyboards, mice, gamepads): BLE and, opt-in, Classic (legacy PIN, pair-first, raw-channel fallback for pads with a broken SDP record); pairing, bonding stored in flash, reconnect; shares `GamepadState` with usb_hid via `hid_input`. Off by default. |
 | Bluetooth | `pico_toolset_bluetooth` | BLE advertise + scan over BTstack on the CYW43 (Pico W / Presto); off by default. |
 | Piezo     | `pico_toolset_piezo`    | PWM piezo/buzzer tones and note sequences; Presto preset. |
 | RGB LED   | `pico_toolset_rgb_led`  | PWM RGB LED on three GPIOs (8-bit color, gamma 2.8, active-high/low); validated preset for the Pimoroni Pico Display Pack. |
@@ -84,7 +84,8 @@ pico-toolset/
 │   ├── ft6236/    include/pico_toolset/*.h         src/  example/
 │   ├── ws2812/    include/pico_toolset/*.h         src/  example/
 │   ├── piezo/     include/pico_toolset/*.h         src/  example/
-│   ├── qwstpad/ bme280/ ltr559/ lsm6ds3/ bluetooth/   (same shape)
+│   ├── qwstpad/ bme280/ ltr559/ lsm6ds3/ bluetooth/ bluetooth_hid/   (same shape)
+│   ├── hid_input/ include/pico_toolset/hid_gamepad.h   # shared GamepadState (header-only)
 │   ├── xpt2046/   include/pico_toolset/*.h         src/  example/
 │   ├── psram/     include/pico_toolset/psram.h     src/  example/
 │   ├── i2s_audio/ include/pico_toolset/i2s_audio.h src/  example/

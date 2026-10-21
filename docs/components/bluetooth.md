@@ -18,7 +18,8 @@ BLE broadcaster and observer (non-connectable advertising plus scanning) over BT
 
 ## Build notes
 
-- The build has **one** `btstack_config.h` (`components/bluetooth/config/`, central + peripheral roles, no Classic).
+- The build has **one** `btstack_config.h` (`components/bluetooth/config/`): LE central + peripheral roles, pools sized for three HID devices; an `#ifdef ENABLE_CLASSIC` block adds the Classic limits. Classic support is opt-in with the CMake option `PICO_TOOLSET_BLUETOOTH_CLASSIC` (see [bluetooth_hid](bluetooth-hid.md#bluetooth-classic-older-pads-and-keyboards)).
+- Pool-size macros use this BTstack version's names (e.g. `MAX_NR_HIDS_HOSTS`); a pool of 0 shows up as "Not enough memory" in the log.
 - The shared `lwipopts.h` from `pico_toolset_net_config` enables lwIP's TLS layer, so the final executable must also link mbedtls: link `pico_toolset_https_client` and include `cmake/pico_toolset_tls_config.cmake` before `pico_sdk_init()` (the toolset's top-level does that when `PICO_TOOLSET_BUILD_BLUETOOTH` or `..._HTTPS_CLIENT` is ON).
 - Like `wifi`, the component is an INTERFACE library so the SDK's stack sources compile once, in the executable.
 - BTstack, lwIP and mbedtls together need roughly 85 KB of SRAM; with a 480x480 Presto framebuffer the link overflows RAM.

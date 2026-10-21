@@ -2,7 +2,7 @@
 
 PIO-USB TinyUSB **host**: keyboard (typed-ASCII queue, key state, LEDs), mouse,
 HID gamepads, XInput and DualSense, with double-buffered cross-core state and a
-unified `GamepadState`.
+unified `GamepadState` (defined in `components/hid_input`, `pico_toolset/hid_gamepad.h`; `usb_hid_gamepad.h` forwards to it; shared with [`bluetooth_hid`](bluetooth-hid.md)).
 
 | | |
 |---|---|

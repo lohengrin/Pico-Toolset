@@ -10,3 +10,4 @@ confirmed it.
 | [PIO GPIO window](pio-gpio-window.md) | a PIO peripheral uses a pin number of 32 or above (RP2350B: SD on the PiZero, TMDS pins) |
 | [Shared SPI bus](shared-spi-bus.md) | a display, a touch controller and/or an SD card sit on one SPI bus |
 | [USB-PIO host and TinyUSB pitfalls](usb-pio-pitfalls.md) | you use `usb_hid` or `usb_composite`, or link `tinyusb_host` |
+| [Bluetooth pairing diagnostics](bluetooth-pairing-diagnostics.md) | a Bluetooth device will not pair, connect or send input |

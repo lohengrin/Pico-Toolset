@@ -240,8 +240,10 @@ manual smoke tests of the examples on hardware.
 - BME280: Bosch Sensortec's reference driver (BSD-3-Clause) vendored under
   `components/bme280/src/bosch/`, wrapped in a config-struct class after
   Pimoroni's default settings.
-- Bluetooth HID: new BLE HID-over-GATT host on BTstack's `hids_host`, flow after
-  BTstack's hog_host_demo, generic report parsing via BTstack's HID parser;
+- Bluetooth HID: new HID host on BTstack: BLE via `hids_host` (flow after
+  BTstack's hog_host_demo) and opt-in Classic via `hid_host` (flow after
+  hid_host_demo) plus a raw L2CAP fallback for pads with a stub SDP record;
+  generic report parsing via BTstack's HID parser;
   `GamepadState` moved to `components/hid_input`, shared with usb_hid.
 - Bluetooth: new BLE advertise/scan helper over pico-sdk's BTstack port;
   `btstack_config.h` adapted from pico-examples (BSD-3-Clause).

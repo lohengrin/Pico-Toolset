@@ -1,13 +1,23 @@
 # bluetooth_hid
 
-BLE HID-over-GATT **host**: pairs, bonds and reconnects Bluetooth LE keyboards, mice and
-gamepads (e.g. Xbox wireless controllers) and exposes them through the same kind of state
-accessors as [`usb_hid`](usb-hid.md).
+Bluetooth HID **host**: pairs, bonds and reconnects Bluetooth LE (HID-over-GATT) and, when
+built in, Bluetooth Classic keyboards, mice and gamepads, and exposes them through the same
+kind of state accessors as [`usb_hid`](usb-hid.md).
 
-> **Status:** pairing, bonding and typing validated on the Presto with a Microsoft Universal
-> Foldable Keyboard (legacy LE pairing, passkey entry). Gamepads and mice, and the whole
-> Bluetooth Classic path (older pads and keyboards), are written but not yet tested on hardware;
-> the gamepad button map in particular is unverified.
+> **Status (validated on the Presto):**
+> - LE: pairing, bonding, typing and reconnect with a Microsoft Universal Foldable Keyboard
+>   (legacy LE pairing, passkey entry).
+> - Classic: pairing (legacy PIN), bonding, input and reconnect after a reset with an "SFR
+>   Gamepad" (vendor 0x2E2C, class 0x2508), through the raw L2CAP fallback below.
+>
+> **Not yet tested:** LE gamepads (e.g. Xbox wireless controllers), mice, Classic keyboards,
+> and BTstack's own Classic HID host path (no tested device had a usable SDP record). The
+> gamepad button map (`kButtonMap`) is a guess from the Linux/Xbox order; check it with
+> `gamepad_raw_buttons()` for your pad.
+>
+> **Missing:** a way to list/forget devices from the example UI (the API exists), HID output
+> (keyboard LEDs, rumble), sixaxis/DualShock 3. Debugging help:
+> [Bluetooth pairing diagnostics](../guides/bluetooth-pairing-diagnostics.md).
 
 | | |
 |---|---|

@@ -2,11 +2,12 @@
 
 > RP2350B board with a built-in 480x480 RGB-parallel LCD, capacitive touch,
 > uSD, 8 MB PSRAM, 16 MB flash, 7 WS2812 LEDs, piezo, QW/ST connector and an
-> RM2 (CYW43) Wi-Fi/Bluetooth module. **Status: validated (PASS1).** Pins come from
+> RM2 (CYW43) Wi-Fi/Bluetooth module. **Status: validated.** Pins come from
 > Pimoroni's Presto firmware and pico-sdk's `pimoroni_presto.h`, and
-> `examples/presto` ran on hardware with all of them.
-> PASS2 (Wi-Fi, BLE, QwSTPad, Multi-Sensor Stick) is implemented and its
-> presets are marked validated by `examples/presto`.
+> `examples/presto` ran on hardware with all of them: LCD (three pixel formats), touch,
+> uSD, PSRAM, LEDs, piezo, QW/ST devices (QwSTPad, Multi-Sensor Stick), Wi-Fi and
+> Bluetooth (BLE advertise, plus HID input from one LE keyboard and one Classic gamepad).
+> See "Open items" at the end of this page for what is not yet covered.
 
 ## Hardware
 
@@ -89,7 +90,7 @@ All four are SPI0-capable pins, so the driver uses the hardware SPI (no PIO).
 | [`screen`](../components/screen.md) | -- | `St7701Driver` draws into the scanout buffer |
 | [`wifi`](../components/https-client.md) | -- | `wifi_connect()`; pins from the board header; validated |
 | [`bluetooth`](../components/bluetooth.md) | -- | BLE advertise + scan; validated |
-| [`bluetooth_hid`](../components/bluetooth-hid.md) | -- | BLE keyboard/gamepad/mouse host with bonding; keyboard validated, gamepad/mouse untested |
+| [`bluetooth_hid`](../components/bluetooth-hid.md) | -- | BLE + Classic keyboard/gamepad/mouse host with bonding; validated with one LE keyboard and one Classic gamepad; LE gamepads, mice untested |
 | [`qwstpad`](../components/qwstpad.md) | `kPimoroniPresto` (0x21) | QW/ST I2C0; validated |
 | [`bme280`](../components/bme280.md) | `kPimoroniPrestoMultiSensorStick` (0x76) | validated |
 | [`ltr559`](../components/ltr559.md) | `kPimoroniPrestoMultiSensorStick` (0x23) | validated |
@@ -146,6 +147,16 @@ single example directly: `cmake -S examples/presto -B build -DPRESTO_FULL_RES=ON
 The board is `pimoroni_presto`, shipped with pico-sdk >= 2.3 (nothing is vendored
 in `boards/`).
 
+Example build options (all `cmake -S examples/presto -B build -D...`):
+
+| Option | Default | Effect |
+|---|---|---|
+| `PRESTO_FULL_RES` | OFF | drive 480x480 instead of 240x240 (RGB565 at this size leaves no RAM for the radio) |
+| `PRESTO_PALETTE` | OFF | 8-bit palette framebuffer (half the SRAM); with `PRESTO_FULL_RES` it keeps Wi-Fi/BLE |
+| `PRESTO_BT_CLASSIC` | ON | also support Bluetooth Classic HID devices (older pads/keyboards) |
+| `PRESTO_BT_HCI_DUMP` | OFF | log every HCI/L2CAP/SMP/SDP packet from the start of each connection ([diagnostics guide](../guides/bluetooth-pairing-diagnostics.md)) |
+| `PRESTO_WIFI_CONFIG_DIR` | env var | directory with a git-ignored `config.local.h` (`WIFI_SSID`/`WIFI_PASSWORD`); a copy next to `main.cpp` also works |
+
 ## Example
 
 [`examples/presto/main.cpp`](../../examples/presto/main.cpp): status squares
@@ -198,6 +209,23 @@ credentials: do not share it.
 - `Palette8` and `Scanline565` are validated (`examples/presto` with `PRESTO_PALETTE`, `st7701_palette_example`, `st7701_scanline_example`).
 - The CYW43 on the Presto sits on a PIO SPI at a divider chosen by the SDK; Pimoroni's firmware raises the divider (`CYW43_PIO_CLOCK_DIV_INT 3`) for overclock headroom, which the SDK header here does not set -- relevant only if you push sysclk above 150 MHz.
 - `wifi_connect()` and `Bluetooth::init()` both need `cyw43_arch_init()`; only `wifi_connect()` calls it. The example calls it directly when no credentials are configured.
+
+## Open items
+
+Not yet done or not yet verified on hardware:
+
+- **Gamepad button table** (`kButtonMap`) is a guess (Xbox/Linux order); the Classic pad's 15 buttons
+  need mapping from `gamepad_raw_buttons()`.
+- **Untested Bluetooth devices:** LE gamepads (e.g. Xbox wireless), mice, Classic keyboards, and
+  BTstack's own Classic HID path for pads with a normal SDP record.
+- **Pairing management UI:** the example can start pairing and shows the passkey; listing and
+  forgetting bonded devices exist in the API (`bonded_devices()`, `forget()`) but have no UI.
+- **HID output** (keyboard LEDs, gamepad rumble) is not implemented.
+- **Memory:** lwIP buffers are not placed in PSRAM; 480x480 RGB565 cannot run with the radio.
+- **Unverified pins:** LCD reset (GPIO44) and touch reset (GPIO42) are not driven by Pimoroni's firmware
+  and were never exercised here.
+- **PSRAM clock** preset is a conservative 50 MHz ceiling; not tuned with the sweep example.
+- **Clock helper:** the example runs at the SDK default 150 MHz; Pimoroni's own firmware uses 200 MHz.
 
 ## Sources
 

@@ -25,12 +25,13 @@ targets are `pico_toolset_<name>`; each component has a
 | [usb_composite](usb-composite.md) | `pico_toolset_usb_composite` | USB | ON | CDC + mass-storage device |
 | [i2s_audio](i2s-audio.md) | `pico_toolset_i2s_audio` | audio | **OFF** | I2S DAC output (needs pico-extras) |
 | [reset_buttons](reset-buttons.md) | `pico_toolset_reset_buttons` | input | ON | Debounced buttons + tagged watchdog reboot |
+| (`hid_input`) | `pico_toolset_hid_input` | types | always | Header-only `GamepadState` and `kBt*` button bits shared by `usb_hid` and `bluetooth_hid` (no page of its own) |
 | [qwstpad](qwstpad.md) | `pico_toolset_qwstpad` | input | ON | QwSTPad (TCA9555) gamepad: 10 buttons, 4 LEDs |
 | [bme280](bme280.md) | `pico_toolset_bme280` | sensor | ON | BME280 temperature/pressure/humidity (vendored Bosch driver) |
 | [ltr559](ltr559.md) | `pico_toolset_ltr559` | sensor | ON | LTR-559 ambient light + proximity |
 | [lsm6ds3](lsm6ds3.md) | `pico_toolset_lsm6ds3` | sensor | ON | LSM6DS3 accelerometer/gyro, steps, taps |
 | [bluetooth](bluetooth.md) | `pico_toolset_bluetooth` | network | **OFF** | BLE advertise + scan over BTstack/CYW43 |
-| [bluetooth_hid](bluetooth-hid.md) | `pico_toolset_bluetooth_hid` | network | **OFF** | BLE HID host: pair/bond/reconnect keyboards, mice, gamepads |
+| [bluetooth_hid](bluetooth-hid.md) | `pico_toolset_bluetooth_hid` | network | **OFF** | BLE + optional Classic HID host: pair/bond/reconnect keyboards, mice, gamepads |
 | [rgb_led](rgb-led.md) | `pico_toolset_rgb_led` | output | ON | PWM RGB LED |
 | [ws2812](ws2812.md) | `pico_toolset_ws2812` | output | ON | WS2812/SK6812 LED chain over PIO |
 | [piezo](piezo.md) | `pico_toolset_piezo` | audio | ON | PWM piezo/buzzer tones and melodies |
@@ -50,6 +51,7 @@ libs/screen  ──►  components/driver_interfaces  ◄──  components/{ili
          St7701Driver(St7701&)  (libs ──► components/st7701, a scanout panel with its own API)
 components/lvgl_display ──► driver_interfaces (+ LVGL), optional usb_hid
 components/usb_composite_hid ──► usb_hid
+components/bluetooth_hid ──► components/bluetooth, hid_input   components/usb_hid ──► hid_input
 components/sdcard ──► pico_fatfs      components/usb_hid ──► Pico-PIO-USB, tinyusb_host
 components/i2s_audio ──► pico-extras  components/psram ──► hardware_psram (RP2350 only)
 ```
@@ -63,7 +65,7 @@ because config structs are driver-specific.
 ## Build options
 
 Top-level options in `CMakeLists.txt` (all `ON` unless noted): `SSD1306`,
-`ILI9486`, `ST7789`, `ST7796`, `ST7701`, `XPT2046`, `FT6236`, `WS2812`, `PIEZO`, `QWSTPAD`, `BME280`, `LTR559`, `LSM6DS3`, `BLUETOOTH` (**OFF**), `BLUETOOTH_HID` (**OFF**), `PSRAM`, `USB_HID`, `I2S_AUDIO`
+`ILI9486`, `ST7789`, `ST7796`, `ST7701`, `XPT2046`, `FT6236`, `WS2812`, `PIEZO`, `QWSTPAD`, `BME280`, `LTR559`, `LSM6DS3`, `BLUETOOTH` (**OFF**), `BLUETOOTH_HID` (**OFF**; plus `PICO_TOOLSET_BLUETOOTH_CLASSIC`, **OFF**), `PSRAM`, `USB_HID`, `I2S_AUDIO`
 (**OFF**), `USB_COMPOSITE`, `LVGL_DISPLAY` (**OFF**), `SDCARD`, `FLASH_STORE`,
 `RGB_LED`, `RESET_BUTTONS`, `DVI_HDMI`, `FAULT_HANDLER`, `SCREEN`,
 `SCREEN_PIMORONI` (**OFF**), each as `PICO_TOOLSET_BUILD_<NAME>` (except the
