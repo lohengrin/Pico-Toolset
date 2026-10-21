@@ -143,6 +143,26 @@ int draw_text_fit(DisplayDriver& d, int x, int y, const char* text, Color fg, in
     return 8 * scale + 2;
 }
 
+#ifndef PRESTO_NO_RADIO
+// US-layout HID usage -> ASCII for the few keys the demo echoes (0 = none).
+char usage_to_ascii(uint8_t usage, bool shift) {
+    if (usage >= 0x04 && usage <= 0x1D) return static_cast<char>((shift ? 'A' : 'a') + (usage - 0x04));
+    if (usage >= 0x1E && usage <= 0x26) return static_cast<char>('1' + (usage - 0x1E));
+    switch (usage) {
+    case 0x27: return '0';
+    case 0x28: return '\n';
+    case 0x2A: return '\b';
+    case 0x2C: return ' ';
+    case 0x2D: return shift ? '_' : '-';
+    case 0x2E: return shift ? '+' : '=';
+    case 0x36: return shift ? '<' : ',';
+    case 0x37: return shift ? '>' : '.';
+    case 0x38: return shift ? '?' : '/';
+    default: return 0;
+    }
+}
+#endif
+
 constexpr Color kBars[8] = {
     Color(0xF800), Color(0xFFE0), Color(0x07E0), Color(0x07FF),
     Color(0x001F), Color(0xF81F), Color(0xFFFF), Color(0x0000),
@@ -410,6 +430,10 @@ int main() {
     bool button_prev = false;
     bool pad_a_prev = false;
     uint32_t pad_raw_prev = 0;
+#ifndef PRESTO_NO_RADIO
+    char typed[28] = "";
+    size_t typed_len = 0;
+#endif
     TouchSample prev{};
     while (true) {
         auto t = touch.read();
@@ -435,6 +459,18 @@ int main() {
                           hid.connected_mouse_count()) > 0 ? Status::Ok
                          : (hid.pairing() || g_hid_busy) ? Status::Busy
                                                          : Status::Absent;
+            // Echo typed keys on the console and the screen.
+            for (int u = 0x04; u < 0x68; ++u) {
+                if (!hid.consume_key_press(static_cast<uint8_t>(u))) continue;
+                const bool shift = hid.is_modifier_down(0x22);
+                const char c = usage_to_ascii(static_cast<uint8_t>(u), shift);
+                const char lit[2] = {c, '\0'};
+                std::printf("[key] usage 0x%02X%s%s\n", u, c ? " = " : "",
+                            c == '\n' ? "<enter>" : c == '\b' ? "<bksp>" : (c ? lit : ""));
+                if (c == '\b') { if (typed_len) typed[--typed_len] = '\0'; }
+                else if (c == '\n') { typed_len = 0; typed[0] = '\0'; }
+                else if (c && typed_len < sizeof(typed) - 1) { typed[typed_len++] = c; typed[typed_len] = '\0'; }
+            }
             // Arrow keys and the first gamepad's stick/D-pad move the square.
             const int step = kSize / 80 + 1;
             if (hid.is_key_down(0x50)) pad_x -= step;
@@ -507,6 +543,11 @@ int main() {
                     std::snprintf(digits, sizeof(digits), "%06ld", static_cast<long>(g_passkey));
                     draw_text_fit(display, 4, y, digits, Color(0xFFE0), 8);
                 }
+            }
+            if (typed_len) {
+                const int gauge_h = (kSize / 30 + 2) * 3;
+                draw_text_fit(display, 4, kSize - gauge_h - 8 * (kSize / 120 + 1) - 4, typed, kColorWhite,
+                              kSize / 120 + 1);
             }
 #endif
             if (pad_ok) {

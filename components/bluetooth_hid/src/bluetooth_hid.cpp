@@ -471,8 +471,11 @@ struct BluetoothHid::Impl {
         }
         s.hids_cid = cid;
     }
-    static void hids_trampoline_fn(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
-        if (type == HCI_EVENT_PACKET && g_impl_ptr()) g_impl_ptr()->on_hids(packet);
+    // hids_host delivers connect/disconnect events with packet_type HCI_EVENT_PACKET but
+    // HID report notifications with packet_type HCI_EVENT_GATTSERVICE_META, so the packet
+    // type must not be filtered here (filtering it dropped every key press).
+    static void hids_trampoline_fn(uint8_t, uint16_t, uint8_t* packet, uint16_t) {
+        if (g_impl_ptr()) g_impl_ptr()->on_hids(packet);
     }
 
     // ---- HID service ----
@@ -508,6 +511,7 @@ struct BluetoothHid::Impl {
         case GATTSERVICE_SUBEVENT_HID_REPORT: {
             Slot* s = slot_by_cid(gattservice_subevent_hid_report_get_hids_cid(packet));
             if (s) on_report(*s, gattservice_subevent_hid_report_get_service_index(packet),
+                             gattservice_subevent_hid_report_get_report_id(packet),
                              gattservice_subevent_hid_report_get_report(packet),
                              gattservice_subevent_hid_report_get_report_len(packet));
             break;
@@ -517,7 +521,10 @@ struct BluetoothHid::Impl {
         }
     }
 
-    void on_report(Slot& s, uint8_t service_index, const uint8_t* report, uint16_t len) {
+    // `report` is [report id][payload]: hids_host always prepends the id. The parser expects the
+    // id byte only when the descriptor uses report ids (id != 0), so otherwise skip it.
+    void on_report(Slot& s, uint8_t service_index, uint8_t report_id, const uint8_t* report, uint16_t len) {
+        if (report_id == 0 && len > 0) { ++report; --len; }
         btstack_hid_parser_t parser;
         btstack_hid_parser_init(&parser,
                                 hids_host_descriptor_storage_get_descriptor_data(s.hids_cid, service_index),
