@@ -20,6 +20,11 @@ if(NOT PICO_SDK_PATH)
 endif()
 include(${TOOLSET_ROOT}/pico_sdk_import.cmake)
 
+# Bluetooth Classic (older gamepads/keyboards) next to BLE. Must be set before the bluetooth
+# component is added below.
+option(PRESTO_BT_CLASSIC "Support Bluetooth Classic HID devices (older pads) in addition to BLE" ON)
+set(PICO_TOOLSET_BLUETOOTH_CLASSIC ${PRESTO_BT_CLASSIC} CACHE BOOL "" FORCE)
+
 # One mbedtls config per build (lwipopts.h from pico_toolset_net_config turns
 # lwIP's TLS layer on, so Wi-Fi/Bluetooth builds need mbedtls linked).
 # Must be set before pico_sdk_init().

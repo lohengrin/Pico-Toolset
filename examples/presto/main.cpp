@@ -195,6 +195,20 @@ volatile long g_passkey = -1;       // >= 0 while a keyboard is waiting for its 
 volatile bool g_hid_busy = false;   // pairing/connecting in progress
 char g_hid_message[40] = "";
 
+// Raw reports of Classic pads without a usable SDP record: print when they change, so the
+// layout of an unknown pad can be worked out from the bytes (press one control at a time).
+void on_raw_report(const uint8_t* data, uint16_t len, const BtHidDevice&, void*) {
+    static uint8_t last[32];
+    static uint16_t last_len = 0;
+    const uint16_t n = len < sizeof(last) ? len : sizeof(last);
+    if (n == last_len && std::memcmp(data, last, n) == 0) return;
+    std::memcpy(last, data, n);
+    last_len = n;
+    std::printf("[raw %u]", static_cast<unsigned>(len));
+    for (uint16_t i = 0; i < n; ++i) std::printf(" %02X", data[i]);
+    std::printf("\n");
+}
+
 void on_hid_event(const BtHidEvent& e, void*) {
 #ifdef WANT_HCI_DUMP
     // The packet log is switched on only while a link is being set up or is up:
@@ -242,7 +256,12 @@ void on_hid_event(const BtHidEvent& e, void*) {
                 d.addr[1], d.addr[2], d.addr[3], d.addr[4], d.addr[5], d.name);
     if (e.type == BtHidEventType::PairingFailed)
         std::printf(" status 0x%02X reason 0x%02X", e.status, e.reason);
-    if (e.type == BtHidEventType::DeviceFound) std::printf(" rssi %d", d.rssi);
+    if (e.type == BtHidEventType::DeviceFound) {
+        std::printf(" rssi %d", d.rssi);
+        if (e.class_of_device)
+            std::printf(" CLASSIC cod 0x%06lX vid 0x%04X pid 0x%04X", static_cast<unsigned long>(e.class_of_device),
+                        e.vendor_id, e.product_id);
+    }
     if (e.type == BtHidEventType::PasskeyDisplay)
         std::printf("\n*** PASSKEY: %06lu -- type it on the keyboard, then Enter ***", static_cast<unsigned long>(e.passkey));
     std::printf("\n");
@@ -404,6 +423,7 @@ int main() {
     if (radio_ble == Status::Ok) {
         BluetoothHidConfig hc;
         hc.callback = on_hid_event;
+        hc.raw_report_callback = on_raw_report;
         hid_ok = hid.init(hc);
 #ifdef WANT_HCI_DUMP
         hci_dump_enable_packet_log(false); // see on_hid_event()

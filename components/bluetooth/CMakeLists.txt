@@ -5,6 +5,10 @@
 # pico_toolset_net_config, which enables lwIP's TLS layer, so the final
 # executable must also link mbedtls: link pico_toolset_https_client too (and
 # include cmake/pico_toolset_tls_config.cmake before pico_sdk_init()).
+# Bluetooth Classic (BR/EDR) support, needed by bluetooth_hid for older pads/keyboards. Costs
+# flash and RAM (SDP, more L2CAP channels, link keys), so it is opt-in.
+option(PICO_TOOLSET_BLUETOOTH_CLASSIC "Link BTstack Classic support next to BLE" OFF)
+
 add_library(pico_toolset_bluetooth INTERFACE)
 target_sources(pico_toolset_bluetooth INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/src/bluetooth.cpp
@@ -20,6 +24,9 @@ target_link_libraries(pico_toolset_bluetooth INTERFACE
     pico_btstack_ble
     pico_btstack_cyw43
 )
+if(PICO_TOOLSET_BLUETOOTH_CLASSIC)
+    target_link_libraries(pico_toolset_bluetooth INTERFACE pico_btstack_classic)
+endif()
 target_compile_features(pico_toolset_bluetooth INTERFACE cxx_std_20)
 
 if(PICO_CYW43_SUPPORTED AND TARGET pico_toolset_https_client)

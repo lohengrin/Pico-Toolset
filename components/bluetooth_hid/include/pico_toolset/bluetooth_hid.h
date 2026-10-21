@@ -38,12 +38,21 @@ struct BtHidEvent {
     BtHidDevice    device;
     uint32_t       passkey;   // PasskeyDisplay only
     uint8_t        status;    // PairingFailed only: BTstack/HCI error (0x05 = authentication failure)
+    // DeviceFound of a Classic device only (0 otherwise): what the device reports about itself.
+    uint32_t       class_of_device;  // Bluetooth class of device (major 0x05 = peripheral)
+    uint16_t       vendor_id;        // Device ID profile, if the inquiry data carries one
+    uint16_t       product_id;
     uint8_t        reason;    // PairingFailed only: SM reason code when status is 0x05 (e.g. 0x03 auth requirements, 0x05 pairing not supported, 0x04 passkey/oob), else 0
 };
 
 // Called from the BTstack/CYW43 context, not from an interrupt and not from
 // the application thread: keep it short, only record state.
 using BtHidCallback = void (*)(const BtHidEvent& event, void* user);
+
+// Raw HID input report from a Classic device that could not be set up through BTstack's HID
+// host (no usable SDP record), delivered from the BTstack context. `data` is the report
+// payload without the 0xA1 transaction header. See BluetoothHidConfig::raw_report_callback.
+using BtHidRawReportCallback = void (*)(const uint8_t* data, uint16_t len, const BtHidDevice& device, void* user);
 
 // Behavior only -- the radio wiring comes from the board header.
 struct BluetoothHidConfig {
@@ -52,9 +61,17 @@ struct BluetoothHidConfig {
     bool     auto_reconnect = true;      // reconnect bonded devices after init and on disconnect
     bool     auto_pair = true;           // pair the first HID device found in pairing mode
     uint32_t pairing_timeout_ms = 30000; // pairing mode stops by itself after this
+    // Bluetooth Classic (BR/EDR) HID: only effective when the build links BTstack's
+    // classic support (CMake option PICO_TOOLSET_BLUETOOTH_CLASSIC).
+    bool     enable_classic = true;
+    const char* pin = "0000";            // answer to legacy PIN pairing requests (older pads)
+    // Some old pads have a broken SDP server, so BTstack's HID host cannot find their HID
+    // channels. For those (after pairing) the board connects to the standard HID control and
+    // interrupt channels itself and passes every input report here, unparsed.
+    BtHidRawReportCallback raw_report_callback = nullptr;
 };
 
-// BLE HID-over-GATT host: connects keyboards, mice and gamepads (e.g. Xbox
+// BLE (and, when built in, Classic) HID host: connects keyboards, mice and gamepads (e.g. Xbox
 // wireless controllers), pairs and bonds them, remembers them across reboots
 // and reconnects. Bonding keys live in BTstack's TLV store in flash (set up by
 // the pico-sdk's CYW43 BTstack port); this class additionally stores each

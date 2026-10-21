@@ -24,6 +24,9 @@ constexpr size_t kMaxBonded = BluetoothHid::kMaxBonded;
 constexpr uint32_t kConnectTimeoutMs = 10'000;
 constexpr uint32_t kReconnectDelayMs = 500;
 
+// Stored::addr_type value marking a Bluetooth Classic device (LE types are 0..3).
+constexpr uint8_t kClassicAddrType = 0xFE;
+
 constexpr uint16_t kPageDesktop = 0x01, kPageSim = 0x02, kPageKeyboard = 0x07, kPageButton = 0x09;
 
 // One bonded device as persisted (32 bytes; the keys themselves are in
@@ -39,12 +42,48 @@ static_assert(sizeof(Stored) == 32);
 struct Slot {
     bool used = false;
     hci_con_handle_t handle = HCI_CON_HANDLE_INVALID;
-    uint16_t hids_cid = 0;
+    uint16_t hids_cid = 0;       // LE: hids_host client id
+    bool classic = false;        // Bluetooth Classic HID connection
+    bool raw = false;            // Classic without SDP: raw L2CAP channels, unparsed reports
+    uint16_t classic_cid = 0;    // Classic: hid_host connection id
+    bool descriptor_ready = false;
     int pad_index = -1;
     Stored dev{};
 };
 
+// Report descriptor assumed for Classic pads reached through the raw L2CAP fallback (their SDP
+// records are unusable). It is the descriptor read from the "SFR Gamepad" (vendor 0x2E2C): the
+// common Android-style layout with report id 3 = gamepad (15 buttons, hat, X/Y/Z/Rz, brake,
+// accelerator); ids 1, 2 and 4 are keyboard, mouse and media keys.
+constexpr uint8_t kRawPadDescriptor[] = {
+    0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x85, 0x01, 0x75, 0x01, 0x95, 0x08,
+    0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00, 0x25, 0x01, 0x81, 0x02,
+    0x95, 0x01, 0x75, 0x08, 0x81, 0x03, 0x95, 0x06, 0x75, 0x08, 0x15, 0x00,
+    0x26, 0xef, 0x00, 0x05, 0x07, 0x19, 0x15, 0x29, 0xef, 0x81, 0x00, 0xc0,
+    0x05, 0x01, 0x09, 0x02, 0xa1, 0x01, 0x85, 0x02, 0x09, 0x01, 0xa1, 0x00,
+    0x05, 0x09, 0x19, 0x01, 0x29, 0x03, 0x15, 0x00, 0x25, 0x01, 0x95, 0x03,
+    0x75, 0x01, 0x81, 0x02, 0x95, 0x01, 0x75, 0x05, 0x81, 0x03, 0x05, 0x01,
+    0x09, 0x30, 0x09, 0x31, 0x09, 0x38, 0x15, 0x81, 0x25, 0x7f, 0x75, 0x08,
+    0x95, 0x03, 0x81, 0x06, 0xc0, 0xc0, 0x05, 0x01, 0x09, 0x05, 0xa1, 0x01,
+    0x85, 0x03, 0x15, 0x00, 0x25, 0x01, 0x35, 0x00, 0x45, 0x01, 0x75, 0x01,
+    0x95, 0x0f, 0x05, 0x09, 0x19, 0x01, 0x29, 0x0f, 0x81, 0x02, 0x95, 0x01,
+    0x81, 0x01, 0x05, 0x01, 0x25, 0x07, 0x46, 0x3b, 0x01, 0x75, 0x04, 0x95,
+    0x01, 0x65, 0x14, 0x09, 0x39, 0x81, 0x42, 0x65, 0x00, 0x95, 0x01, 0x81,
+    0x01, 0x26, 0xff, 0x00, 0x46, 0xff, 0x00, 0x09, 0x30, 0x09, 0x31, 0x09,
+    0x32, 0x09, 0x35, 0x75, 0x08, 0x95, 0x04, 0x81, 0x02, 0x05, 0x02, 0x15,
+    0x00, 0x26, 0xff, 0x00, 0x09, 0xc5, 0x09, 0xc4, 0x95, 0x02, 0x75, 0x08,
+    0x81, 0x02, 0x95, 0x01, 0x75, 0x08, 0x81, 0x01, 0xa1, 0x02, 0x75, 0x08,
+    0x95, 0x04, 0x15, 0x00, 0x35, 0x00, 0x46, 0xff, 0x00, 0x26, 0xff, 0x00,
+    0x09, 0x02, 0x91, 0x02, 0xc0, 0xc0, 0x05, 0x0c, 0x09, 0x01, 0xa1, 0x01,
+    0x85, 0x04, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x09, 0x40,
+    0x0a, 0x23, 0x02, 0x0a, 0x24, 0x02, 0x09, 0xcd, 0x09, 0xb5, 0x09, 0x8f,
+    0x09, 0xea, 0x09, 0xe9, 0x81, 0x02, 0x95, 0x28, 0x81, 0x03, 0xc0,
+};
+
 uint8_t g_descriptor_storage[1200];
+#ifdef ENABLE_CLASSIC
+uint8_t g_classic_descriptor_storage[1200];
+#endif
 
 struct ContextLock {
     ContextLock() { async_context_acquire_lock_blocking(cyw43_arch_async_context()); }
@@ -123,12 +162,24 @@ struct BluetoothHid::Impl {
     bool pending = false;       // an outgoing connection is being set up (by address)
     Stored pending_dev{};
     bool wl_connecting = false; // a whitelist connection attempt is outstanding
+    bool pending_paired = false; // Classic: bonding already reported as Paired for `pending_dev`
     uint8_t seen[8][6]{};
     size_t seen_count = 0;
+
+    // Classic fallback transport (broken SDP): HID control + interrupt L2CAP channels.
+    struct RawLink {
+        bool active = false;
+        Stored dev{};
+        uint16_t ctrl_cid = 0, int_cid = 0;
+        bool ctrl_open = false;
+        bool quiet = false; // background reconnect attempt: no events when it fails
+    } rawlink;
+    btstack_timer_source_t classic_retry_timer{};
 
     btstack_timer_source_t pair_timer{};
     btstack_timer_source_t connect_timer{};
     btstack_timer_source_t reconnect_timer{};
+    btstack_timer_source_t bond_timer{};
     btstack_packet_callback_registration_t hci_reg{};
     btstack_packet_callback_registration_t sm_reg{};
 
@@ -166,6 +217,10 @@ struct BluetoothHid::Impl {
     }
     Slot* slot_by_cid(uint16_t cid) {
         for (auto& s : slots) if (s.used && s.hids_cid == cid) return &s;
+        return nullptr;
+    }
+    Slot* slot_by_classic_cid(uint16_t cid) {
+        for (auto& s : slots) if (s.used && s.classic && s.classic_cid == cid) return &s;
         return nullptr;
     }
     Slot* slot_by_addr(const uint8_t* addr) {
@@ -221,6 +276,7 @@ struct BluetoothHid::Impl {
         if (connected_count() >= kMaxConnected) return;
         bool any = false;
         for (size_t i = 0; i < stored_count; ++i) {
+            if (stored[i].addr_type == kClassicAddrType) continue; // Classic devices reconnect themselves
             if (slot_by_addr(stored[i].addr)) continue;
             gap_whitelist_add(static_cast<bd_addr_type_t>(stored[i].addr_type), stored[i].addr);
             any = true;
@@ -251,6 +307,13 @@ struct BluetoothHid::Impl {
         if (wl_connecting) { gap_connect_cancel(); wl_connecting = false; }
         gap_set_scan_parameters(1, 48, 48); // active: names often sit in the scan response
         gap_start_scan();
+#ifdef ENABLE_CLASSIC
+        if (cfg().enable_classic) {
+            gap_discoverable_control(1); // lets a pad in pairing mode find and connect to us
+            uint32_t units = cfg().pairing_timeout_ms / 1280;
+            gap_inquiry_start(static_cast<uint8_t>(units < 1 ? 1 : units > 48 ? 48 : units));
+        }
+#endif
         btstack_run_loop_remove_timer(&pair_timer);
         btstack_run_loop_set_timer(&pair_timer, cfg().pairing_timeout_ms);
         btstack_run_loop_set_timer_handler(&pair_timer, &Impl::pair_timeout);
@@ -262,6 +325,9 @@ struct BluetoothHid::Impl {
         owner->m_pairing = false;
         btstack_run_loop_remove_timer(&pair_timer);
         gap_stop_scan();
+#ifdef ENABLE_CLASSIC
+        if (cfg().enable_classic) { gap_inquiry_stop(); gap_discoverable_control(0); }
+#endif
         emit(BtHidEventType::PairingStopped, Stored{});
         arm_reconnect();
     }
@@ -332,10 +398,30 @@ struct BluetoothHid::Impl {
             owner->m_pairing = false;
             btstack_run_loop_remove_timer(&pair_timer);
             gap_stop_scan();
+#ifdef ENABLE_CLASSIC
+            if (cfg().enable_classic) gap_inquiry_stop();
+#endif
             emit(BtHidEventType::PairingStopped, Stored{});
         }
         if (wl_connecting) { gap_connect_cancel(); wl_connecting = false; }
         emit(BtHidEventType::Connecting, dev);
+#ifdef ENABLE_CLASSIC
+        if (dev.addr_type == kClassicAddrType) {
+            // Pair (and bond) first: some pads only expose their full HID SDP record on an
+            // authenticated link, so a plain hid_host_connect() sees a stub record and fails.
+            // The HID connection follows when GAP_EVENT_DEDICATED_BONDING_COMPLETED arrives.
+            pending_paired = false;
+            bd_addr_t addr;
+            std::memcpy(addr, dev.addr, 6);
+            const uint8_t rc = gap_dedicated_bonding(addr, 0);
+            if (rc != ERROR_CODE_SUCCESS) {
+                pending = false;
+                emit(BtHidEventType::PairingFailed, dev, false, 0, 0, rc);
+                arm_reconnect();
+            }
+            return;
+        }
+#endif
         btstack_run_loop_remove_timer(&connect_timer);
         btstack_run_loop_set_timer(&connect_timer, kConnectTimeoutMs);
         btstack_run_loop_set_timer_handler(&connect_timer, &Impl::connect_timeout);
@@ -478,6 +564,331 @@ struct BluetoothHid::Impl {
         if (g_impl_ptr()) g_impl_ptr()->on_hids(packet);
     }
 
+#ifdef ENABLE_CLASSIC
+    // ---- Bluetooth Classic ----
+    void on_inquiry_result(uint8_t* packet) {
+        if (!owner->m_pairing || pending) return;
+        const uint32_t cod = gap_event_inquiry_result_get_class_of_device(packet);
+        if (((cod >> 8) & 0x1F) != 0x05) return; // major class: peripheral (keyboard, mouse, gamepad...)
+        Stored dev{};
+        bd_addr_t addr;
+        gap_event_inquiry_result_get_bd_addr(packet, addr);
+        std::memcpy(dev.addr, addr, 6);
+        dev.addr_type = kClassicAddrType;
+        if (gap_event_inquiry_result_get_name_available(packet)) {
+            const uint8_t n = gap_event_inquiry_result_get_name_len(packet);
+            const size_t m = n < sizeof(dev.name) - 1 ? n : sizeof(dev.name) - 1;
+            std::memcpy(dev.name, gap_event_inquiry_result_get_name(packet), m);
+        }
+        if (slot_by_addr(dev.addr) || seen_before(dev.addr)) return;
+        const int8_t rssi = gap_event_inquiry_result_get_rssi_available(packet)
+                                ? static_cast<int8_t>(gap_event_inquiry_result_get_rssi(packet)) : 0;
+        if (cfg().callback) {
+            BtHidEvent e{};
+            e.type = BtHidEventType::DeviceFound;
+            e.device = to_public(dev, false, rssi);
+            e.class_of_device = cod;
+            if (gap_event_inquiry_result_get_device_id_available(packet)) {
+                e.vendor_id = gap_event_inquiry_result_get_device_id_vendor_id(packet);
+                e.product_id = gap_event_inquiry_result_get_device_id_product_id(packet);
+            }
+            cfg().callback(e, cfg().user);
+        }
+        if (cfg().auto_pair) start_connect(dev);
+    }
+
+    static void connect_after_bonding(btstack_timer_source_t*) {
+        Impl* im = g_impl_ptr();
+        if (!im || !im->pending) return;
+        uint16_t cid = 0;
+        bd_addr_t a;
+        std::memcpy(a, im->pending_dev.addr, 6);
+        const uint8_t rc = hid_host_connect(a, HID_PROTOCOL_MODE_REPORT, &cid);
+        if (rc != ERROR_CODE_SUCCESS) {
+            im->pending = false;
+            im->emit(BtHidEventType::PairingFailed, im->pending_dev, false, 0, 0, rc);
+            im->arm_reconnect();
+        }
+    }
+
+    void on_classic_hci(uint8_t* packet) {
+        bd_addr_t addr;
+        switch (hci_event_packet_get_type(packet)) {
+        case GAP_EVENT_INQUIRY_RESULT:
+            on_inquiry_result(packet);
+            break;
+        case GAP_EVENT_DEDICATED_BONDING_COMPLETED: {
+            if (!pending || pending_dev.addr_type != kClassicAddrType) break;
+            const uint8_t status = gap_event_dedicated_bonding_completed_get_status(packet);
+            if (status != ERROR_CODE_SUCCESS) {
+                pending = false;
+                emit(BtHidEventType::PairingFailed, pending_dev, false, 0, 0, status);
+                arm_reconnect();
+                break;
+            }
+            pending_paired = true;
+            emit(BtHidEventType::Paired, pending_dev);
+            // BTstack is still tearing down the bonding link inside this very event;
+            // starting a new connection right here fails ("Command packet sent failed"),
+            // so open the HID connection a moment later.
+            btstack_run_loop_remove_timer(&bond_timer);
+            btstack_run_loop_set_timer(&bond_timer, 500);
+            btstack_run_loop_set_timer_handler(&bond_timer, &Impl::connect_after_bonding);
+            btstack_run_loop_add_timer(&bond_timer);
+            break;
+        }
+        case HCI_EVENT_PIN_CODE_REQUEST: // legacy pairing (pre Bluetooth 2.1 pads): fixed PIN
+            hci_event_pin_code_request_get_bd_addr(packet, addr);
+            gap_pin_code_response(addr, cfg().pin ? cfg().pin : "0000");
+            break;
+        case HCI_EVENT_USER_CONFIRMATION_REQUEST: // SSP numeric comparison / just works: accept
+            hci_event_user_confirmation_request_get_bd_addr(packet, addr);
+            gap_ssp_confirmation_response(addr);
+            break;
+        case HCI_EVENT_USER_PASSKEY_NOTIFICATION: { // a Classic keyboard: show the code to type on it
+            hci_event_user_passkey_notification_get_bd_addr(packet, addr);
+            Stored dev = pending ? pending_dev : Stored{};
+            std::memcpy(dev.addr, addr, 6);
+            emit(BtHidEventType::PasskeyDisplay, dev, false, 0,
+                 hci_event_user_passkey_notification_get_numeric_value(packet));
+            break;
+        }
+        case HCI_EVENT_USER_PASSKEY_REQUEST: // we have no keyboard to type the code ourselves
+            hci_event_user_passkey_request_get_bd_addr(packet, addr);
+            gap_ssp_passkey_negative(addr);
+            break;
+        default:
+            break;
+        }
+    }
+
+    static void raw_l2cap_trampoline(uint8_t packet_type, uint16_t channel, uint8_t* packet, uint16_t size) {
+        if (g_impl_ptr()) g_impl_ptr()->on_raw_l2cap(packet_type, channel, packet, size);
+    }
+
+    void start_raw(const Stored& dev, bool quiet = false) {
+        rawlink = RawLink{};
+        rawlink.active = true;
+        rawlink.quiet = quiet;
+        rawlink.dev = dev;
+        bd_addr_t a;
+        std::memcpy(a, dev.addr, 6);
+        const uint8_t rc = l2cap_create_channel(&Impl::raw_l2cap_trampoline, a, PSM_HID_CONTROL, 672, &rawlink.ctrl_cid);
+        if (rc != ERROR_CODE_SUCCESS) fail_raw(rc);
+    }
+
+    void fail_raw(uint8_t status) {
+        if (rawlink.int_cid) l2cap_disconnect(rawlink.int_cid);
+        if (rawlink.ctrl_cid) l2cap_disconnect(rawlink.ctrl_cid);
+        const Stored dev = rawlink.dev;
+        const bool quiet = rawlink.quiet;
+        rawlink = RawLink{};
+        if (quiet) return; // background attempt; the retry timer tries again later
+        pending = false;
+        emit(BtHidEventType::PairingFailed, dev, false, 0, 0, status);
+        arm_reconnect();
+    }
+
+    // Bonded Classic pads: besides waiting for the pad to call us, page them periodically.
+    static void classic_retry(btstack_timer_source_t*) {
+        if (g_impl_ptr()) g_impl_ptr()->classic_reconnect_tick();
+    }
+    void schedule_classic_retry(uint32_t ms) {
+        btstack_run_loop_remove_timer(&classic_retry_timer);
+        btstack_run_loop_set_timer(&classic_retry_timer, ms);
+        btstack_run_loop_set_timer_handler(&classic_retry_timer, &Impl::classic_retry);
+        btstack_run_loop_add_timer(&classic_retry_timer);
+    }
+    void classic_reconnect_tick() {
+        if (!cfg().enable_classic || !cfg().auto_reconnect) return;
+        schedule_classic_retry(8000);
+        if (owner->m_pairing || pending || rawlink.active) return;
+        for (size_t i = 0; i < stored_count; ++i) {
+            if (stored[i].addr_type != kClassicAddrType || slot_by_addr(stored[i].addr)) continue;
+            start_raw(stored[i], true);
+            break;
+        }
+    }
+
+    void on_raw_l2cap(uint8_t packet_type, uint16_t channel, uint8_t* packet, uint16_t size) {
+        if (packet_type == L2CAP_DATA_PACKET) {
+            if (!rawlink.active || channel != rawlink.int_cid || size < 2 || packet[0] != 0xA1) return;
+            Slot* s = slot_by_classic_cid(rawlink.int_cid);
+            if (!s) return;
+            if (cfg().raw_report_callback) {
+                const BtHidDevice d = to_public(s->dev, true);
+                cfg().raw_report_callback(packet + 1, static_cast<uint16_t>(size - 1), d, cfg().user);
+            }
+            if (packet[1] == 0x03) // gamepad report of kRawPadDescriptor
+                parse_report(*s, kRawPadDescriptor, sizeof(kRawPadDescriptor), packet + 1,
+                             static_cast<uint16_t>(size - 1));
+            return;
+        }
+        if (packet_type != HCI_EVENT_PACKET) return;
+        switch (hci_event_packet_get_type(packet)) {
+        case L2CAP_EVENT_CHANNEL_OPENED: {
+            const uint16_t cid = l2cap_event_channel_opened_get_local_cid(packet);
+            const uint8_t status = l2cap_event_channel_opened_get_status(packet);
+            if (status != ERROR_CODE_SUCCESS) {
+                if (rawlink.active) fail_raw(status);
+                break;
+            }
+            if (cid == rawlink.ctrl_cid) {
+                rawlink.ctrl_open = true;
+                bd_addr_t a;
+                std::memcpy(a, rawlink.dev.addr, 6);
+                const uint8_t rc = l2cap_create_channel(&Impl::raw_l2cap_trampoline, a, PSM_HID_INTERRUPT, 672,
+                                                        &rawlink.int_cid);
+                if (rc != ERROR_CODE_SUCCESS) fail_raw(rc);
+            } else if (cid == rawlink.int_cid) {
+                Slot* s = alloc_slot();
+                if (!s) { fail_raw(ERROR_CODE_MEMORY_CAPACITY_EXCEEDED); break; }
+                s->classic = true;
+                s->raw = true;
+                s->classic_cid = rawlink.int_cid;
+                s->descriptor_ready = true;
+                s->dev = rawlink.dev;
+                s->dev.addr_type = kClassicAddrType;
+                s->dev.kinds = bt_hid_kind::Gamepad; // class of device said "gamepad"
+                assign_pad_index(*s);
+                remember(s->dev);
+                pending = false;
+                emit(BtHidEventType::Connected, s->dev, true);
+            }
+            break;
+        }
+        case L2CAP_EVENT_CHANNEL_CLOSED: {
+            const uint16_t cid = l2cap_event_channel_closed_get_local_cid(packet);
+            if (cid != rawlink.ctrl_cid && cid != rawlink.int_cid) break;
+            const Stored dev = rawlink.dev;
+            if (Slot* s = slot_by_classic_cid(rawlink.int_cid)) {
+                clear_inputs_for(*s);
+                *s = Slot{};
+                emit(BtHidEventType::Disconnected, dev);
+            }
+            if (cid == rawlink.ctrl_cid && rawlink.int_cid) l2cap_disconnect(rawlink.int_cid);
+            if (cid == rawlink.int_cid && rawlink.ctrl_cid) l2cap_disconnect(rawlink.ctrl_cid);
+            rawlink = RawLink{};
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    void on_classic_hid(uint8_t* packet) {
+        if (hci_event_packet_get_type(packet) != HCI_EVENT_HID_META) return;
+        switch (hci_event_hid_meta_get_subevent_code(packet)) {
+        case HID_SUBEVENT_INCOMING_CONNECTION: {
+            bd_addr_t addr;
+            hid_subevent_incoming_connection_get_address(packet, addr);
+            const uint16_t cid = hid_subevent_incoming_connection_get_hid_cid(packet);
+            {
+                Stored in{};
+                std::memcpy(in.addr, addr, 6);
+                in.addr_type = kClassicAddrType;
+                const int k = find_stored(addr);
+                if (k >= 0) in = stored[k];
+                emit(BtHidEventType::Connecting, in); // the device is calling us
+            }
+            // A known pad reconnecting, or any HID device while pairing mode is on.
+            if (hid_subevent_incoming_connection_get_status(packet) == ERROR_CODE_SUCCESS &&
+                (owner->m_pairing || pending || find_stored(addr) >= 0))
+                hid_host_accept_connection(cid, HID_PROTOCOL_MODE_REPORT);
+            else
+                hid_host_decline_connection(cid);
+            break;
+        }
+        case HID_SUBEVENT_CONNECTION_OPENED: {
+            const uint8_t status = hid_subevent_connection_opened_get_status(packet);
+            bd_addr_t addr;
+            hid_subevent_connection_opened_get_bd_addr(packet, addr);
+            if (status != ERROR_CODE_SUCCESS) {
+                Stored dev = pending ? pending_dev : Stored{};
+                std::memcpy(dev.addr, addr, 6);
+                dev.addr_type = kClassicAddrType;
+                // SDP gave no HID channels (broken SDP server of an old pad, now paired): fall
+                // back to the standard HID PSMs.
+                if (status == ERROR_CODE_UNSUPPORTED_FEATURE_OR_PARAMETER_VALUE &&
+                    ((pending && pending_paired) || find_stored(addr) >= 0) && !rawlink.active) {
+                    pending = true;
+                    emit(BtHidEventType::Connecting, dev);
+                    start_raw(dev);
+                    break;
+                }
+                pending = false;
+                emit(BtHidEventType::PairingFailed, dev, false, 0, 0, status);
+                arm_reconnect();
+                break;
+            }
+            Slot* s = alloc_slot();
+            if (!s) {
+                hid_host_disconnect(hid_subevent_connection_opened_get_hid_cid(packet));
+                pending = false;
+                break;
+            }
+            s->classic = true;
+            s->classic_cid = hid_subevent_connection_opened_get_hid_cid(packet);
+            const int si = find_stored(addr);
+            if (si >= 0) s->dev = stored[si];
+            else if (pending && std::memcmp(pending_dev.addr, addr, 6) == 0) s->dev = pending_dev;
+            else std::memcpy(s->dev.addr, addr, 6);
+            s->dev.addr_type = kClassicAddrType;
+            if (si < 0 && !pending_paired) emit(BtHidEventType::Paired, s->dev); // device-initiated pairing
+            pending_paired = false;
+            pending = false;
+            break;
+        }
+        case HID_SUBEVENT_DESCRIPTOR_AVAILABLE: {
+            Slot* s = slot_by_classic_cid(hid_subevent_descriptor_available_get_hid_cid(packet));
+            if (!s) break;
+            if (hid_subevent_descriptor_available_get_status(packet) != ERROR_CODE_SUCCESS) {
+                emit(BtHidEventType::PairingFailed, s->dev, false, 0, 0,
+                     hid_subevent_descriptor_available_get_status(packet));
+                hid_host_disconnect(s->classic_cid);
+                break;
+            }
+            s->dev.kinds = scan_kinds(hid_descriptor_storage_get_descriptor_data(s->classic_cid),
+                                      hid_descriptor_storage_get_descriptor_len(s->classic_cid));
+            if (s->dev.kinds & bt_hid_kind::Gamepad) assign_pad_index(*s);
+            s->descriptor_ready = true;
+            remember(s->dev);
+            emit(BtHidEventType::Connected, s->dev, true);
+            break;
+        }
+        case HID_SUBEVENT_REPORT: {
+            Slot* s = slot_by_classic_cid(hid_subevent_report_get_hid_cid(packet));
+            if (!s || !s->descriptor_ready) break;
+            const uint8_t* report = hid_subevent_report_get_report(packet);
+            uint16_t len = hid_subevent_report_get_report_len(packet);
+            if (len < 1 || report[0] != 0xA1) break; // HID DATA header, input report
+            parse_report(*s, hid_descriptor_storage_get_descriptor_data(s->classic_cid),
+                         hid_descriptor_storage_get_descriptor_len(s->classic_cid), report + 1, len - 1);
+            break;
+        }
+        case HID_SUBEVENT_CONNECTION_CLOSED: {
+            Slot* s = slot_by_classic_cid(hid_subevent_connection_closed_get_hid_cid(packet));
+            if (!s) break;
+            clear_inputs_for(*s);
+            const Stored dev = s->dev;
+            *s = Slot{};
+            emit(BtHidEventType::Disconnected, dev);
+            break;
+        }
+        default:
+            break;
+        }
+    }
+#endif
+
+    void assign_pad_index(Slot& s) {
+        for (size_t i = 0; i < kMaxConnected && s.pad_index < 0; ++i) {
+            bool taken = false;
+            for (const auto& o : slots) taken |= (o.used && &o != &s && o.pad_index == static_cast<int>(i));
+            if (!taken) s.pad_index = static_cast<int>(i);
+        }
+    }
+
     // ---- HID service ----
     void on_hids(uint8_t* packet) {
         if (hci_event_packet_get_type(packet) != HCI_EVENT_GATTSERVICE_META) return;
@@ -497,13 +908,7 @@ struct BluetoothHid::Impl {
                 kinds |= scan_kinds(hids_host_descriptor_storage_get_descriptor_data(s->hids_cid, i),
                                     hids_host_descriptor_storage_get_descriptor_len(s->hids_cid, i));
             s->dev.kinds = kinds;
-            if (kinds & bt_hid_kind::Gamepad) {
-                for (size_t i = 0; i < kMaxConnected && s->pad_index < 0; ++i) {
-                    bool taken = false;
-                    for (const auto& o : slots) taken |= (o.used && &o != s && o.pad_index == static_cast<int>(i));
-                    if (!taken) s->pad_index = static_cast<int>(i);
-                }
-            }
+            if (kinds & bt_hid_kind::Gamepad) assign_pad_index(*s);
             remember(s->dev);
             emit(BtHidEventType::Connected, s->dev, true);
             break;
@@ -525,11 +930,16 @@ struct BluetoothHid::Impl {
     // id byte only when the descriptor uses report ids (id != 0), so otherwise skip it.
     void on_report(Slot& s, uint8_t service_index, uint8_t report_id, const uint8_t* report, uint16_t len) {
         if (report_id == 0 && len > 0) { ++report; --len; }
+        parse_report(s, hids_host_descriptor_storage_get_descriptor_data(s.hids_cid, service_index),
+                     hids_host_descriptor_storage_get_descriptor_len(s.hids_cid, service_index), report, len);
+    }
+
+    // Updates keyboard / mouse / gamepad state from one input report, using the HID report
+    // descriptor of the device (LE or Classic).
+    void parse_report(Slot& s, const uint8_t* descriptor, uint16_t descriptor_len, const uint8_t* report,
+                      uint16_t len) {
         btstack_hid_parser_t parser;
-        btstack_hid_parser_init(&parser,
-                                hids_host_descriptor_storage_get_descriptor_data(s.hids_cid, service_index),
-                                hids_host_descriptor_storage_get_descriptor_len(s.hids_cid, service_index),
-                                HID_REPORT_TYPE_INPUT, report, len);
+        btstack_hid_parser_init(&parser, descriptor, descriptor_len, HID_REPORT_TYPE_INPUT, report, len);
 
         bool has_keyboard = false, has_buttons = false;
         uint32_t key_bits[8] = {};
@@ -628,6 +1038,11 @@ BluetoothHid* g_owner = nullptr;
 void hci_trampoline(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
     if (type == HCI_EVENT_PACKET && g_owner) g_owner->on_hci_event(packet);
 }
+#ifdef ENABLE_CLASSIC
+void classic_hid_trampoline(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
+    if (type == HCI_EVENT_PACKET && g_owner) g_owner->on_hci_event(packet); // HID meta events too
+}
+#endif
 void sm_trampoline(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
     if (type == HCI_EVENT_PACKET && g_owner) g_owner->on_sm_event(packet);
 }
@@ -660,9 +1075,26 @@ bool BluetoothHid::init(const BluetoothHidConfig& config) {
     m_impl->sm_reg.callback = &sm_trampoline;
     sm_add_event_handler(&m_impl->sm_reg);
 
+#ifdef ENABLE_CLASSIC
+    if (m_cfg.enable_classic) {
+        hid_host_init(g_classic_descriptor_storage, sizeof(g_classic_descriptor_storage));
+        hid_host_register_packet_handler(&classic_hid_trampoline);
+        // Let the pad use sniff mode and make us the master, as BTstack's hid_host_demo does.
+        gap_set_default_link_policy_settings(LM_LINK_POLICY_ENABLE_SNIFF_MODE | LM_LINK_POLICY_ENABLE_ROLE_SWITCH);
+        hci_set_master_slave_policy(HCI_ROLE_MASTER);
+        gap_set_bondable_mode(1);
+        gap_ssp_set_io_capability(SSP_IO_CAPABILITY_DISPLAY_ONLY);
+        gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
+        gap_connectable_control(1); // paired pads reconnect on their own
+    }
+#endif
+
     m_impl->load_stored();
     m_initialised = true;
     m_impl->arm_reconnect();
+#ifdef ENABLE_CLASSIC
+    if (m_cfg.enable_classic && m_cfg.auto_reconnect) m_impl->schedule_classic_retry(3000);
+#endif
     return true;
 }
 
@@ -679,6 +1111,12 @@ void BluetoothHid::on_hci_event(uint8_t* packet) {
         m_impl->on_disconnection(packet);
         break;
     default:
+#ifdef ENABLE_CLASSIC
+        if (m_cfg.enable_classic) {
+            m_impl->on_classic_hci(packet);
+            m_impl->on_classic_hid(packet);
+        }
+#endif
         break;
     }
 }
@@ -724,9 +1162,16 @@ bool BluetoothHid::forget(const uint8_t addr[6]) {
     const int i = im.find_stored(addr);
     if (i < 0) return false;
     const Stored dev = im.stored[i];
-    if (Slot* s = im.slot_by_addr(addr)) gap_disconnect(s->handle);
-    gap_whitelist_remove(static_cast<bd_addr_type_t>(dev.addr_type), const_cast<uint8_t*>(dev.addr));
-    gap_delete_bonding(static_cast<bd_addr_type_t>(dev.addr_type), const_cast<uint8_t*>(dev.addr));
+    if (dev.addr_type == kClassicAddrType) {
+#ifdef ENABLE_CLASSIC
+        if (Slot* s = im.slot_by_addr(addr)) hid_host_disconnect(s->classic_cid);
+        gap_drop_link_key_for_bd_addr(const_cast<uint8_t*>(dev.addr));
+#endif
+    } else {
+        if (Slot* s = im.slot_by_addr(addr)) gap_disconnect(s->handle);
+        gap_whitelist_remove(static_cast<bd_addr_type_t>(dev.addr_type), const_cast<uint8_t*>(dev.addr));
+        gap_delete_bonding(static_cast<bd_addr_type_t>(dev.addr_type), const_cast<uint8_t*>(dev.addr));
+    }
     for (size_t k = static_cast<size_t>(i) + 1; k < im.stored_count; ++k) im.stored[k - 1] = im.stored[k];
     --im.stored_count;
     im.save_stored();

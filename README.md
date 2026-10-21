@@ -130,6 +130,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_WS2812`  | ON | Build WS2812 PIO LED driver + example |
 | `PICO_TOOLSET_BUILD_PIEZO`   | ON | Build PWM piezo driver + example |
 | `PICO_TOOLSET_BUILD_QWSTPAD` / `_BME280` / `_LTR559` / `_LSM6DS3` | ON | Build the I2C gamepad / sensor drivers + examples |
+| `PICO_TOOLSET_BLUETOOTH_CLASSIC` | OFF | Link BTstack Classic support (needed for older, non-BLE Bluetooth pads/keyboards in `bluetooth_hid`) |
 | `PICO_TOOLSET_BUILD_BLUETOOTH_HID` | OFF | Build the BLE HID host (needs `PICO_TOOLSET_BUILD_BLUETOOTH`) |
 | `PICO_TOOLSET_BUILD_BLUETOOTH` | OFF | Build the BLE helper (needs a Pico W-class board; reuses the HTTPS client's mbedtls config) |
 | `PICO_TOOLSET_BUILD_XPT2046` | ON | Build XPT2046 touch driver + example |

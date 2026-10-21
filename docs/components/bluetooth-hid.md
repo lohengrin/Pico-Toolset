@@ -5,14 +5,14 @@ gamepads (e.g. Xbox wireless controllers) and exposes them through the same kind
 accessors as [`usb_hid`](usb-hid.md).
 
 > **Status:** pairing, bonding and typing validated on the Presto with a Microsoft Universal
-> Foldable Keyboard (legacy LE pairing, passkey entry). Gamepads and mice are written but not
-> yet tested on hardware; the gamepad button map in particular is unverified. Bluetooth
-> Classic HID (DualShock 4, DualSense, Switch Pro, old keyboards) is not implemented yet.
+> Foldable Keyboard (legacy LE pairing, passkey entry). Gamepads and mice, and the whole
+> Bluetooth Classic path (older pads and keyboards), are written but not yet tested on hardware;
+> the gamepad button map in particular is unverified.
 
 | | |
 |---|---|
 | Target / option | `pico_toolset_bluetooth_hid` / `PICO_TOOLSET_BUILD_BLUETOOTH_HID` (**OFF**, needs `PICO_TOOLSET_BUILD_BLUETOOTH`) |
-| Links | INTERFACE library with sources: `pico_toolset_bluetooth`, `pico_toolset_hid_input`, `pico_btstack_flash_bank` |
+| Links | INTERFACE library with sources: `pico_toolset_bluetooth`, `pico_toolset_hid_input`, `pico_btstack_flash_bank` (+ `pico_btstack_classic` with `PICO_TOOLSET_BLUETOOTH_CLASSIC`) |
 | Example | `components/bluetooth_hid/example/bluetooth_hid_example.cpp`; integrated in [`examples/presto`](../boards/pimoroni-presto.md) |
 | Boards | [Pimoroni Presto](../boards/pimoroni-presto.md) (also Pico W / Pico 2 W) |
 | Shared types | `GamepadState` / `kBt*` live in `components/hid_input` (`usb_hid_gamepad.h` forwards to it) |
@@ -49,6 +49,42 @@ context, not an interrupt and not your thread: only record state in it.
 Events: `PairingStarted`, `PairingStopped`, `DeviceFound`, `Connecting`, `PasskeyDisplay`,
 `Paired`, `Connected`, `Disconnected`, `PairingFailed` (`status` = BTstack/HCI error, `reason` = SM reason code when `status` is 0x05),
 `Forgotten`.
+
+## Bluetooth Classic (older pads and keyboards)
+
+Devices that are not BLE (older gamepads, DualShock 4 / DualSense, Switch Pro, many keyboards)
+use Bluetooth Classic HID. It is opt-in because it adds flash and RAM: configure with
+`-DPICO_TOOLSET_BLUETOOTH_CLASSIC=ON` (the Presto example: `-DPRESTO_BT_CLASSIC=ON`, the
+default). `BluetoothHidConfig::enable_classic` (true) then turns it on at run time.
+
+- Pairing mode also runs a Classic **inquiry** and makes the board discoverable, so a pad in
+  pairing mode either shows up in the inquiry (only devices whose class is "peripheral" are
+  reported) or finds and connects to us itself. With `auto_pair` the first device found, LE or
+  Classic, is connected.
+- **Legacy PIN pairing** (older pads) is answered with `BluetoothHidConfig::pin` (default
+  `"0000"`); Secure Simple Pairing is accepted (just works / numeric comparison), and a keyboard
+  that shows a passkey triggers `PasskeyDisplay`.
+- A discovered Classic device is first **paired and bonded** (BTstack "dedicated bonding"), and the
+  HID connection is opened afterwards: some pads only reveal their full HID SDP record on an
+  authenticated link and otherwise fail with status `0x11`.
+- **Pads with a broken SDP server:** some old pads answer SDP with a stub record (just the service
+  class), so BTstack's HID host cannot find the HID channels and reports status `0x11` even
+  after pairing. For those, `bluetooth_hid` falls back to connecting to the standard HID control
+  (PSM 0x11) and interrupt (PSM 0x13) channels itself and hands every input report, unparsed, to
+  `BluetoothHidConfig::raw_report_callback`. The device is reported as a gamepad. Because there
+  is no descriptor to read, a built-in one is assumed: the Android-style layout of the "SFR
+  Gamepad" (vendor 0x2E2C; report id 3 = 15 buttons, hat, X/Y/Z/Rz, brake, accelerator), so
+  such pads appear in `gamepad_state()` like any other. A pad with a different layout needs its
+  own descriptor (or parsing of the raw reports in the callback).
+- The HID report descriptor is read over SDP, so keyboard / mouse / gamepad are detected the
+  same way as for LE, and the same accessors apply.
+- **Link keys and device records** are stored in flash like the LE bonds (same flash-safety rules).
+  Classic devices have no address type; they are recorded with `addr_type 0xFE`.
+- **Reconnect:** a paired pad reconnects by itself when you switch it on (the board stays
+  connectable). The board does not page bonded Classic devices on its own.
+- Classic names are usually empty (only reported if the device sends them in its inquiry data).
+- Not supported: sixaxis/DualShock 3 (needs a proprietary activation), HID output (LEDs,
+  rumble), a Classic device that needs a PIN other than the configured one.
 
 ## Remembering devices
 
@@ -115,5 +151,6 @@ execute from flash:
 - Same BTstack/lwIP/mbedtls requirements as [`bluetooth`](bluetooth.md); the shared
   `btstack_config.h` sizes allow 3 simultaneous HID connections.
 - `Bluetooth::start_scan()` and HID pairing share the single GAP scan: do not run both.
-- BLE only: Classic HID would add `ENABLE_CLASSIC`, `hid_host` and link-key storage (planned).
+- Classic HID needs `PICO_TOOLSET_BLUETOOTH_CLASSIC` (see above); the BTstack limits for it are
+  in `components/bluetooth/config/btstack_config.h` (`#ifdef ENABLE_CLASSIC` block).
 - No HID output yet (keyboard LEDs, rumble).

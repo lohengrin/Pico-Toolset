@@ -56,3 +56,6 @@ vcpkg.json
 
 # Wi-Fi credentials for examples/presto (see its CMakeLists.txt)
 config.local.h
+
+# Bluetooth packet captures (btmon -w)
+*.btsnoop

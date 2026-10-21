@@ -41,6 +41,20 @@
 #define HCI_HOST_SCO_PACKET_LEN 120
 #define HCI_HOST_SCO_PACKET_NUM 3
 
+#ifdef ENABLE_CLASSIC
+// Bluetooth Classic HID host (bluetooth_hid): each connection uses an L2CAP control and
+// interrupt channel, plus a temporary SDP client channel to read the HID descriptor.
+#define MAX_NR_HID_HOST_CONNECTIONS 2
+#define MAX_NR_BTSTACK_LINK_KEY_DB_MEMORY_ENTRIES 4
+#define MAX_ATTRIBUTE_VALUE_SIZE 512
+#undef MAX_NR_L2CAP_CHANNELS
+#define MAX_NR_L2CAP_CHANNELS 8
+#undef MAX_NR_L2CAP_SERVICES
+#define MAX_NR_L2CAP_SERVICES 4
+#undef NVM_NUM_LINK_KEYS
+#define NVM_NUM_LINK_KEYS 8
+#endif
+
 #define HAVE_EMBEDDED_TIME_MS
 #define HAVE_ASSERT
 #define HCI_RESET_RESEND_TIMEOUT_MS 1000

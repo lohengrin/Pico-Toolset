@@ -160,6 +160,8 @@ humidity, light; sensor values are not printed continuously). Bluetooth LE keybo
 and bond through [`bluetooth_hid`](../components/bluetooth-hid.md): touch the status band
 to start pairing (automatic on a first boot with nothing bonded), type the shown passkey
 on a keyboard, and bonded devices reconnect after a reboot and move the on-screen square.
+`-DPRESTO_BT_CLASSIC=ON` (default) also accepts older Bluetooth Classic pads and keyboards
+(legacy PIN `0000` or Secure Simple Pairing); `OFF` builds BLE only and saves RAM and flash.
 Bonding writes flash, so the example's core 1 idles from RAM and defines
 `PICO_FLASH_ASSUME_CORE1_SAFE=1`. Two more status squares show radio and
 QW/ST devices (green ok, red failed, grey absent).
