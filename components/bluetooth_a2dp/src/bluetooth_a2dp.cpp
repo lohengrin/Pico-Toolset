@@ -23,6 +23,8 @@ namespace {
 constexpr uint32_t kTlvTag = (static_cast<uint32_t>('A') << 24) | (static_cast<uint32_t>('2') << 16) |
                              (static_cast<uint32_t>('D') << 8) | 'P';
 constexpr uint32_t kAudioTimerMs = 10;
+constexpr uint32_t kCallbackWaitMs = 6000; // after bonding: time the headset gets to connect to us first
+constexpr uint32_t kRetryMs = 2500;
 // Largest SBC payload we assemble; the real limit is the L2CAP MTU the headset grants.
 #ifndef PICO_TOOLSET_A2DP_SBC_STORAGE_SIZE
 #define PICO_TOOLSET_A2DP_SBC_STORAGE_SIZE 700
@@ -395,8 +397,9 @@ void hci_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         return;
     }
     // BTstack is still tearing down the bonding link inside this event, and many headsets then
-    // call back by themselves: give them a moment to do so before opening the stream ourselves.
-    arm_connect_timer(1500);
+    // call back by themselves (a Sony MDR-ZX770BN answered our own page with 0x1F every time
+    // instead): wait for that call before opening the stream ourselves.
+    arm_connect_timer(kCallbackWaitMs);
 }
 
 void stop_pairing_internal() {
@@ -458,7 +461,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
             if (g.initiated && g.state == A2dpState::Connecting && g.retries < 3) {
                 ++g.retries;
                 g.stream_requested = false;
-                arm_connect_timer(1500);
+                arm_connect_timer(kRetryMs);
                 return;
             }
             g.state = A2dpState::Idle;

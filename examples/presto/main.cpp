@@ -302,7 +302,7 @@ void on_a2dp_event(const A2dpEvent& e, void*) {
     const auto& d = e.device;
 #ifdef WANT_HCI_DUMP
     if (e.type == A2dpEventType::Connecting) hci_dump_enable_packet_log(true);
-    else if (e.type == A2dpEventType::Disconnected || e.type == A2dpEventType::Failed) hci_dump_enable_packet_log(false);
+    else if (e.type == A2dpEventType::Disconnected || e.type == A2dpEventType::StreamStarted) hci_dump_enable_packet_log(false);
 #endif
     const unsigned long now = to_ms_since_boot(get_absolute_time());
     switch (e.type) {
