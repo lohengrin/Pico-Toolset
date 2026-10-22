@@ -177,6 +177,7 @@ char usage_to_ascii(uint8_t usage, bool shift) {
 constexpr int kStatusH = kSize / 13;
 
 volatile int g_stage = 0; // main-loop breadcrumb, read by the A2DP watchdog
+volatile uint32_t g_flash_erases = 0, g_flash_programs = 0, g_flash_last_ms = 0; // see __wrap_flash_range_*
 volatile uint32_t g_frame = 0;
 
 #ifndef PRESTO_NO_RADIO
@@ -282,6 +283,11 @@ void wd_do_work(async_context_t* ctx, async_at_time_worker_t* worker) {
                     static_cast<unsigned long>(d.dma_count[0]), static_cast<unsigned long>(d.dma_read[0]),
                     static_cast<unsigned long>(d.dma_ctrl[1]), static_cast<unsigned long>(d.dma_count[1]),
                     static_cast<unsigned long>(d.dma_read[1]));
+        std::printf("[wd] isr timing %lu/%lu eol %lu/%lu where %lu | flash erase %lu prog %lu last at %lu ms\n",
+                    static_cast<unsigned long>(d.timing_enter), static_cast<unsigned long>(d.timing_exit),
+                    static_cast<unsigned long>(d.eol_enter), static_cast<unsigned long>(d.eol_exit),
+                    static_cast<unsigned long>(d.where), static_cast<unsigned long>(g_flash_erases),
+                    static_cast<unsigned long>(g_flash_programs), static_cast<unsigned long>(g_flash_last_ms));
     }
     async_context_add_at_time_worker_in_ms(ctx, worker, 1000);
 }
@@ -497,6 +503,23 @@ void scan_qwst() {
 }
 
 } // namespace
+
+// Linked with --wrap (CMakeLists.txt): counts flash writes so the watchdog can correlate them
+// with the scanout stopping. Plain counters only -- interrupts are off while this runs.
+extern "C" {
+void __real_flash_range_erase(uint32_t flash_offs, size_t count);
+void __real_flash_range_program(uint32_t flash_offs, const uint8_t* data, size_t count);
+void __wrap_flash_range_erase(uint32_t flash_offs, size_t count) {
+    g_flash_erases = g_flash_erases + 1;
+    g_flash_last_ms = to_ms_since_boot(get_absolute_time());
+    __real_flash_range_erase(flash_offs, count);
+}
+void __wrap_flash_range_program(uint32_t flash_offs, const uint8_t* data, size_t count) {
+    g_flash_programs = g_flash_programs + 1;
+    g_flash_last_ms = to_ms_since_boot(get_absolute_time());
+    __real_flash_range_program(flash_offs, data, count);
+}
+}
 
 int main() {
     stdio_init_all();

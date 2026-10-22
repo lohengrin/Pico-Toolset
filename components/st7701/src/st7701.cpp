@@ -79,6 +79,7 @@ void __isr __no_inline_not_in_flash_func(end_of_line_isr)() { g_inst->handle_end
 // word encodes VSYNC/HSYNC levels, a delay and one PIO instruction to run
 // after it (a NOP, or an IRQ that wakes the pixel SM / the line-DMA ISR).
 void __not_in_flash_func(St7701::drive_timing)() {
+    m_dbg_timing_enter = m_dbg_timing_enter + 1;
     while (!pio_sm_is_tx_fifo_full(m_cfg.pio, m_timing_sm)) {
         uint32_t instr;
         switch (m_timing_phase) {
@@ -112,11 +113,14 @@ void __not_in_flash_func(St7701::drive_timing)() {
         pio_sm_put(m_cfg.pio, m_timing_sm, instr);
         m_timing_phase = (m_timing_phase + 1) & 3;
     }
+    m_dbg_timing_exit = m_dbg_timing_exit + 1;
 }
 
 void __not_in_flash_func(St7701::handle_end_of_line)() {
+    m_dbg_eol_enter = m_dbg_eol_enter + 1;
     if (m_cfg.pio->irq & 0x2) start_frame_xfer();
     else start_line_xfer();
+    m_dbg_eol_exit = m_dbg_eol_exit + 1;
 }
 
 void __not_in_flash_func(St7701::start_line_xfer)() {
@@ -168,7 +172,9 @@ void __not_in_flash_func(St7701::start_frame_xfer)() {
     hw_clear_bits(&m_cfg.pio->irq, 0x2);
 
     m_next_line_addr = nullptr;
+    m_dbg_where = 1;
     abort_chained_dma(m_dma, m_dma2);
+    m_dbg_where = 2;
     pio_sm_set_enabled(m_cfg.pio, m_parallel_sm, false);
     pio_sm_clear_fifos(m_cfg.pio, m_parallel_sm);
     // pio_sm_restart() empties OSR/ISR without a stallable exec: the original
@@ -216,6 +222,11 @@ St7701::Debug St7701::debug_state() const {
         d.dma_read[i] = dma_hw->ch[chans[i]].read_addr;
     }
     d.row = m_display_row;
+    d.timing_enter = m_dbg_timing_enter;
+    d.timing_exit = m_dbg_timing_exit;
+    d.eol_enter = m_dbg_eol_enter;
+    d.eol_exit = m_dbg_eol_exit;
+    d.where = m_dbg_where;
     return d;
 }
 

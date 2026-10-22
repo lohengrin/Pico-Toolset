@@ -146,6 +146,7 @@ public:
         uint32_t pc_parallel, pc_timing;
         uint32_t dma_ctrl[2], dma_count[2], dma_read[2];
         int row;
+        uint32_t timing_enter, timing_exit, eol_enter, eol_exit, where;
     };
     [[nodiscard]] Debug debug_state() const;
 
@@ -189,6 +190,8 @@ private:
     uint16_t m_timing_row = 0;
     uint16_t m_timing_phase = 0;
     volatile bool m_waiting_for_vsync = false;
+    volatile uint32_t m_dbg_timing_enter = 0, m_dbg_timing_exit = 0, m_dbg_eol_enter = 0, m_dbg_eol_exit = 0;
+    volatile uint32_t m_dbg_where = 0;
 };
 
 } // namespace pico_toolset
