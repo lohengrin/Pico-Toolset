@@ -11,26 +11,36 @@ namespace pico_toolset {
 namespace {
 
 constexpr int kMaxPasskeyListeners = 2;
+constexpr int kMaxInquiryClients = 2;
 
 struct State {
     bool initialised = false;
     const char* pin = "0000";
     btstack_packet_callback_registration_t hci_reg{};
     struct { ClassicPasskeyCallback cb; void* user; } passkey[kMaxPasskeyListeners]{};
-    bool inquiry_active = false;
+    struct InquiryClient { ClassicInquiryCallback cb; void* user; uint8_t major_class; } clients[kMaxInquiryClients]{};
+    bool inquiry_running = false; // the radio inquiry
+    uint8_t duration = 8;
     bool paging_inhibited = false;
     void (*inhibit_cb)(void*) = nullptr;
     void* inhibit_user = nullptr;
-    uint8_t major_class = 0;
-    ClassicInquiryCallback inquiry_cb = nullptr;
-    void* inquiry_user = nullptr;
 };
 State g;
 
+bool any_client() {
+    for (const auto& c : g.clients)
+        if (c.cb) return true;
+    return false;
+}
+
+void start_radio_inquiry() {
+    if (g.inquiry_running || !any_client()) return;
+    if (gap_inquiry_start(g.duration) == 0) g.inquiry_running = true;
+}
+
 void handle_inquiry_result(const uint8_t* packet) {
-    if (!g.inquiry_active || !g.inquiry_cb) return;
+    if (!any_client()) return;
     const uint32_t cod = gap_event_inquiry_result_get_class_of_device(packet);
-    if (g.major_class && ((cod >> 8) & 0x1F) != g.major_class) return;
     ClassicInquiryResult r{};
     bd_addr_t addr;
     gap_event_inquiry_result_get_bd_addr(packet, addr);
@@ -47,7 +57,8 @@ void handle_inquiry_result(const uint8_t* packet) {
         r.vendor_id = gap_event_inquiry_result_get_device_id_vendor_id(packet);
         r.product_id = gap_event_inquiry_result_get_device_id_product_id(packet);
     }
-    g.inquiry_cb(r, g.inquiry_user);
+    for (const auto& c : g.clients)
+        if (c.cb && (!c.major_class || ((cod >> 8) & 0x1F) == c.major_class)) c.cb(r, c.user);
 }
 
 void hci_handler(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
@@ -58,7 +69,8 @@ void hci_handler(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
         handle_inquiry_result(packet);
         break;
     case GAP_EVENT_INQUIRY_COMPLETE:
-        g.inquiry_active = false;
+        g.inquiry_running = false;
+        start_radio_inquiry(); // another round while a client is still looking
         break;
     case HCI_EVENT_PIN_CODE_REQUEST: // legacy pairing (pre Bluetooth 2.1 devices): fixed PIN
         hci_event_pin_code_request_get_bd_addr(packet, addr);
@@ -109,24 +121,28 @@ void BluetoothClassic::add_passkey_listener(ClassicPasskeyCallback callback, voi
 
 bool BluetoothClassic::start_inquiry(uint8_t duration_1280ms, uint8_t major_class,
                                      ClassicInquiryCallback callback, void* user) {
-    if (g.inquiry_active) return false;
-    g.major_class = major_class;
-    g.inquiry_cb = callback;
-    g.inquiry_user = user;
+    if (!callback) return false;
     if (duration_1280ms < 1) duration_1280ms = 1;
     if (duration_1280ms > 48) duration_1280ms = 48;
-    if (gap_inquiry_start(duration_1280ms) != 0) return false;
-    g.inquiry_active = true;
+    State::InquiryClient* slot = nullptr;
+    for (auto& c : g.clients) {
+        if (c.cb == callback) { slot = &c; break; }
+        if (!c.cb && !slot) slot = &c;
+    }
+    if (!slot) return false;
+    *slot = {callback, user, major_class};
+    g.duration = duration_1280ms;
+    start_radio_inquiry(); // a no-op while one is running: the new client just listens in
     return true;
 }
 
-void BluetoothClassic::stop_inquiry() {
-    if (!g.inquiry_active) return;
-    g.inquiry_active = false;
-    gap_inquiry_stop();
+void BluetoothClassic::stop_inquiry(ClassicInquiryCallback callback) {
+    for (auto& c : g.clients)
+        if (c.cb == callback) c = {};
+    if (!any_client() && g.inquiry_running) gap_inquiry_stop();
 }
 
-bool BluetoothClassic::inquiry_active() { return g.inquiry_active; }
+bool BluetoothClassic::inquiry_active() { return any_client(); }
 
 void BluetoothClassic::inhibit_background_paging(bool inhibit) {
     const bool started = inhibit && !g.paging_inhibited;

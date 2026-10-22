@@ -330,7 +330,7 @@ struct BluetoothHid::Impl {
         btstack_run_loop_remove_timer(&pair_timer);
         gap_stop_scan();
 #ifdef ENABLE_CLASSIC
-        if (cfg().enable_classic) { BluetoothClassic::stop_inquiry(); gap_discoverable_control(0); }
+        if (cfg().enable_classic) { BluetoothClassic::stop_inquiry(&Impl::inquiry_trampoline); gap_discoverable_control(0); }
 #endif
         emit(BtHidEventType::PairingStopped, Stored{});
         arm_reconnect();
@@ -403,7 +403,7 @@ struct BluetoothHid::Impl {
             btstack_run_loop_remove_timer(&pair_timer);
             gap_stop_scan();
 #ifdef ENABLE_CLASSIC
-            if (cfg().enable_classic) BluetoothClassic::stop_inquiry();
+            if (cfg().enable_classic) BluetoothClassic::stop_inquiry(&Impl::inquiry_trampoline);
 #endif
             emit(BtHidEventType::PairingStopped, Stored{});
         }
@@ -621,6 +621,9 @@ struct BluetoothHid::Impl {
         switch (hci_event_packet_get_type(packet)) {
         case GAP_EVENT_DEDICATED_BONDING_COMPLETED: {
             if (!pending || pending_dev.addr_type != kClassicAddrType) break;
+            bd_addr_t bonded;
+            gap_event_dedicated_bonding_completed_get_address(packet, bonded);
+            if (std::memcmp(bonded, pending_dev.addr, 6) != 0) break; // another component bonded (e.g. a headset)
             const uint8_t status = gap_event_dedicated_bonding_completed_get_status(packet);
             if (status != ERROR_CODE_SUCCESS) {
                 pending = false;

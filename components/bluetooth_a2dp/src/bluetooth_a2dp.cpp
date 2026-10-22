@@ -395,6 +395,9 @@ void hci_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         return;
     }
     if (hci_event_packet_get_type(packet) != GAP_EVENT_DEDICATED_BONDING_COMPLETED || !g.bonding) return;
+    bd_addr_t bonded;
+    gap_event_dedicated_bonding_completed_get_address(packet, bonded);
+    if (std::memcmp(bonded, g.peer, 6) != 0) return; // bluetooth_hid bonding a pad at the same time
     g.bonding = false;
     const uint8_t status = gap_event_dedicated_bonding_completed_get_status(packet);
     if (status != ERROR_CODE_SUCCESS) {
@@ -408,11 +411,13 @@ void hci_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
     arm_connect_timer(kCallbackWaitMs);
 }
 
+void inquiry_result(const ClassicInquiryResult& r, void*);
+
 void stop_pairing_internal() {
     if (!g.pairing) return;
     g.pairing = false;
     btstack_run_loop_remove_timer(&g.pair_timer);
-    BluetoothClassic::stop_inquiry();
+    BluetoothClassic::stop_inquiry(&inquiry_result);
     if (g.state == A2dpState::Pairing) g.state = A2dpState::Idle;
     emit(A2dpEventType::PairingStopped);
 }

@@ -37,13 +37,17 @@ public:
     // entry); several listeners may register (up to 2).
     static void add_passkey_listener(ClassicPasskeyCallback callback, void* user);
 
-    // One inquiry at a time. `major_class` filters results by the major device class of the
-    // class of device (0x05 peripheral, 0x04 audio/video); 0 = report everything. Returns
-    // false if an inquiry is already running or the command could not be started.
-    // duration_1280ms is the length in 1.28 s units (1..48).
+    // Device inquiry, shared by up to 2 clients (e.g. bluetooth_hid looking for a pad while
+    // bluetooth_a2dp looks for a headset): there is one radio inquiry, repeated for as long as any
+    // client is registered, and every client gets the results of its own `major_class` (class of
+    // device bits 8..12: 0x05 peripheral, 0x04 audio/video; 0 = everything). A client is
+    // identified by its `callback`; starting again with the same callback replaces it. Clients run
+    // their own timeouts and call stop_inquiry(callback); the radio inquiry stops with the last one.
+    // Returns false if all client slots are taken or the command could not be started.
+    // duration_1280ms is the length of one round in 1.28 s units (1..48).
     static bool start_inquiry(uint8_t duration_1280ms, uint8_t major_class, ClassicInquiryCallback callback,
                               void* user);
-    static void stop_inquiry();
+    static void stop_inquiry(ClassicInquiryCallback callback);
     [[nodiscard]] static bool inquiry_active();
 
     // Paging a bonded device in the background interrupts an established link (audible as

@@ -70,6 +70,14 @@ capability bitmaps, for diagnostics), `Connected`, `Configured` (negotiated rate
 subbands / bitpool range / resulting bit rate), `StreamStarted`, `StreamSuspended`,
 `VolumeChanged`, `Disconnected`, `Failed`.
 
+## Using it next to `bluetooth_hid`
+
+Both components pair Classic devices and can be active together: the device inquiry is shared
+(each side only sees its own device class) and each only reacts to its own bonding events. While
+the headset is connecting or streaming, `bluetooth_hid` does not page bonded Classic pads in the
+background (that would cause audio dropouts); a pad can still connect to the Pico by itself, and
+the background paging resumes when the headset is gone.
+
 ## Pairing flow and lessons learned (Sony MDR-ZX770BN)
 
 `start_pairing()` runs an inquiry for audio devices and connects to the first one whose class is a
