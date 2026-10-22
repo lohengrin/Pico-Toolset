@@ -74,6 +74,7 @@ struct State {
     bool stream_open = false;
     bool stream_requested = false; // a2dp_source_establish_stream() was called for this connection
     uint8_t retries = 0;           // connection retries after bonding
+    bool bonded_this_attempt = false; // a fresh bonding just succeeded, so the headset is known to be present
     bool streaming = false;
     bool restart_pending = false; // reconnect after a disconnect (quality change)
 
@@ -367,6 +368,7 @@ bool start_connection(const uint8_t addr[6], bool fresh_pairing = false) {
     g.initiated = true;
     g.stream_requested = false;
     g.retries = 0;
+    g.bonded_this_attempt = false;
     g.state = A2dpState::Connecting;
     emit(A2dpEventType::Connecting);
     // A headset in pairing mode has forgotten any earlier bond, and answers a stale link key with
@@ -405,6 +407,7 @@ void hci_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         emit(A2dpEventType::Failed, status);
         return;
     }
+    g.bonded_this_attempt = true;
     // BTstack is still tearing down the bonding link inside this event, and many headsets then
     // call back by themselves (a Sony MDR-ZX770BN answered our own page with 0x1F every time
     // instead): wait for that call before opening the stream ourselves.
@@ -469,7 +472,10 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
             g.a2dp_cid = 0;
             // Right after bonding the headset is often still busy (or connecting to us at the same
             // moment): retry a couple of times before giving up.
-            if (g.initiated && g.state == A2dpState::Connecting && g.retries < 3) {
+            // Only right after a successful bonding (the headset is there, just busy). A page timeout
+            // means it is away or off: retrying would keep the radio busy for 5 s per attempt.
+            if (g.initiated && g.state == A2dpState::Connecting && g.bonded_this_attempt && g.retries < 3 &&
+                status != ERROR_CODE_PAGE_TIMEOUT) {
                 ++g.retries;
                 g.stream_requested = false;
                 arm_connect_timer(kRetryMs);
