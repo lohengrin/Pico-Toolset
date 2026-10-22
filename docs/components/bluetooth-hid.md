@@ -133,7 +133,10 @@ Storing a bond erases/programs flash from the BTstack context. During that windo
 execute from flash:
 
 - Core 1 (if used) must run only from RAM. In `examples/presto` core 1 serves the LCD scanout
-  interrupts (RAM-resident) and idles in a `__not_in_flash_func` loop.
+  interrupts (RAM-resident) and idles in a `__no_inline_not_in_flash_func` loop. Keep the
+  `no_inline`: with plain `__not_in_flash_func` the compiler inlined the idle loop into the
+  flash-resident entry function, and core 1 died (LCD scanout stopped, black screen) when core 0
+  wrote flash (bonding) while core 1 was fetching instructions from there.
 - Tell the SDK that core 1 is safe: define **`PICO_FLASH_ASSUME_CORE1_SAFE=1`**. Without it
   `flash_safe_execute()` cannot lock out an unregistered core and the bond write asserts.
   (The toolset's rule against registering a flash-lockout victim on core 1 is why this is the

@@ -121,7 +121,9 @@ St7701 g_lcd;
 // core 0, and PICO_FLASH_ASSUME_CORE1_SAFE (CMakeLists.txt) tells the SDK it
 // does not need to stop core 1 for that. The scanout interrupt handlers are
 // already RAM-resident.
-void __not_in_flash_func(core1_idle)() {
+// No-inline matters: inlined into core1_main (flash) the idle loop would run from flash, and
+// core 1 dies when core 0 writes flash (bonding) while it executes an instruction fetch there.
+void __no_inline_not_in_flash_func(core1_idle)() {
     while (true) __wfe();
 }
 
