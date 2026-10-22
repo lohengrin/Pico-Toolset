@@ -751,6 +751,13 @@ int main() {
             a2dp_status = !a2dp_ok ? Status::Failed
                         : a2dp.state() == A2dpState::Streaming ? Status::Ok
                         : a2dp.state() == A2dpState::Idle ? Status::Absent : Status::Busy;
+            static absolute_time_t next_hb = get_absolute_time();
+            if (a2dp_ok && a2dp.state() != A2dpState::Idle && time_reached(next_hb)) {
+                next_hb = make_timeout_time_ms(2000);
+                std::printf("[hb] loop %lu, lcd frames %lu (missed %lu), a2dp state %d\n", static_cast<unsigned long>(frame),
+                            static_cast<unsigned long>(g_lcd.frame_generation()),
+                            static_cast<unsigned long>(g_lcd.missed_frames()), static_cast<int>(a2dp.state()));
+            }
             for (int c = getchar_timeout_us(0); c != PICO_ERROR_TIMEOUT && a2dp_ok; c = getchar_timeout_us(0)) {
                 switch (c) {
                 case 'a': a2dp.start_pairing(); break;

@@ -127,6 +127,8 @@ public:
     void scanline_task();
     // Frames skipped / lines not ready in time since init (Scanline565).
     [[nodiscard]] uint32_t missed_frames() const { return m_missed_frames; }
+    // Counts scanned frames: stops increasing if the scanout interrupts die.
+    [[nodiscard]] uint32_t frame_generation() const { return m_frame_gen; }
     [[nodiscard]] uint32_t late_lines() const { return m_late_lines; }
 
     // Blocks (WFE) until the next vertical blank.
