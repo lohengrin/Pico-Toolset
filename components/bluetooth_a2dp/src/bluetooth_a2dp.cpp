@@ -110,6 +110,7 @@ struct State {
     btstack_timer_source_t reconnect_timer{};
     btstack_packet_callback_registration_t hci_reg{};
     btstack_timer_source_t bond_timer{};
+    uint8_t last_disc_reason = 0; // HCI reason of the most recent ACL disconnection
     bool bonding = false; // dedicated bonding in progress before the A2DP connection
 
     A2dpStats stats{};
@@ -386,9 +387,12 @@ bool start_connection(const uint8_t addr[6], bool fresh_pairing = false) {
 }
 
 void hci_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
-    if (packet_type != HCI_EVENT_PACKET || hci_event_packet_get_type(packet) != GAP_EVENT_DEDICATED_BONDING_COMPLETED ||
-        !g.bonding)
+    if (packet_type != HCI_EVENT_PACKET) return;
+    if (hci_event_packet_get_type(packet) == HCI_EVENT_DISCONNECTION_COMPLETE) {
+        g.last_disc_reason = hci_event_disconnection_complete_get_reason(packet);
         return;
+    }
+    if (hci_event_packet_get_type(packet) != GAP_EVENT_DEDICATED_BONDING_COMPLETED || !g.bonding) return;
     g.bonding = false;
     const uint8_t status = gap_event_dedicated_bonding_completed_get_status(packet);
     if (status != ERROR_CODE_SUCCESS) {
@@ -478,8 +482,6 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         }
         g.state = A2dpState::Connected;
         save_last();
-        // AVRCP (volume) over its own channel.
-        if (!g.avrcp_cid) avrcp_connect(g.peer, &g.avrcp_cid);
         emit(A2dpEventType::Connected);
         break;
     }
@@ -545,6 +547,9 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
             break;
         }
         g.stream_open = true;
+        // AVRCP (volume) over its own channel: only now, and only if the headset has not opened
+        // one itself, so the two do not collide for the connection slot.
+        if (!g.avrcp_cid) avrcp_connect(g.peer, &g.avrcp_cid);
         if (g.cfg.auto_play) a2dp_source_start_stream(g.a2dp_cid, g.local_seid);
         break;
     }
@@ -580,7 +585,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         g.initiated = false;
         g.stream_requested = false;
         g.state = g.pairing ? A2dpState::Pairing : A2dpState::Idle;
-        emit(A2dpEventType::Disconnected);
+        emit(A2dpEventType::Disconnected, g.last_disc_reason);
         if (g.restart_pending && g.have_last) { // quality change: reconnect with the new preferences
             g.restart_pending = false;
             schedule_reconnect(800);

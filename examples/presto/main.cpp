@@ -342,7 +342,7 @@ void on_a2dp_event(const A2dpEvent& e, void*) {
     case A2dpEventType::VolumeChanged: std::printf("[%lu ms] [a2dp] volume %u/127\n", now, e.volume); break;
     case A2dpEventType::Disconnected:
         std::snprintf(g_a2dp_message, sizeof(g_a2dp_message), "DISCONNECTED");
-        std::printf("[%lu ms] [a2dp] disconnected\n", now);
+        std::printf("[%lu ms] [a2dp] disconnected (HCI reason 0x%02X)\n", now, e.status);
         break;
     case A2dpEventType::Failed:
         std::snprintf(g_a2dp_message, sizeof(g_a2dp_message), "FAILED 0x%02X", e.status);
