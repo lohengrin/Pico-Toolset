@@ -345,12 +345,15 @@ void bond_done_timeout(btstack_timer_source_t*) {
 
 // Headsets (older Sony ones in particular) only answer the SDP query for their A2DP sink record
 // on an authenticated link, so a new device is bonded first, like the Classic HID path does.
-bool start_connection(const uint8_t addr[6]) {
+bool start_connection(const uint8_t addr[6], bool fresh_pairing = false) {
     if (g.state == A2dpState::Connecting || g.state == A2dpState::Connected || g.state == A2dpState::Streaming) return false;
     std::memcpy(g.peer, addr, 6);
     g.initiated = true;
     g.state = A2dpState::Connecting;
     emit(A2dpEventType::Connecting);
+    // A headset in pairing mode has forgotten any earlier bond, and answers a stale link key with
+    // "PIN or key missing" (0x63): a user-initiated pairing always starts from a clean slate.
+    if (fresh_pairing) gap_drop_link_key_for_bd_addr(g.peer);
     link_key_t key;
     link_key_type_t key_type;
     if (!gap_get_link_key_for_bd_addr(g.peer, key, &key_type)) {
@@ -428,7 +431,7 @@ void inquiry_result(const ClassicInquiryResult& r, void*) {
                            minor == 0x07 || minor == 0x08 || minor == 0x0A;
     if (g.cfg.auto_connect && sink_like) {
         stop_pairing_internal();
-        start_connection(r.addr);
+        start_connection(r.addr, true);
     }
 }
 
