@@ -75,9 +75,9 @@
 #ifndef PRESTO_NO_RADIO
 #include "lwip/ip4_addr.h"
 #include "lwip/netif.h"
+#include "pico/async_context.h"
 #include "pico/cyw43_arch.h"
 #endif
-#include "pico/async_context.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
 
