@@ -70,6 +70,8 @@ struct State {
     A2dpState state = A2dpState::Idle;
     bool initiated = false;  // we started the connection (else the headset called us)
     bool stream_open = false;
+    bool stream_requested = false; // a2dp_source_establish_stream() was called for this connection
+    uint8_t retries = 0;           // connection retries after bonding
     bool streaming = false;
     bool restart_pending = false; // reconnect after a disconnect (quality change)
 
@@ -330,6 +332,7 @@ A2dpSbcConfig resolve_quality() {
 // ---- connection management ----
 bool open_stream() {
     set_preferences();
+    g.stream_requested = true;
     const uint8_t rc = a2dp_source_establish_stream(g.peer, &g.a2dp_cid);
     if (rc != ERROR_CODE_SUCCESS) {
         g.state = A2dpState::Idle;
@@ -339,8 +342,16 @@ bool open_stream() {
     return true;
 }
 
+void arm_connect_timer(uint32_t ms);
 void bond_done_timeout(btstack_timer_source_t*) {
-    if (g.state == A2dpState::Connecting) open_stream();
+    if (g.state == A2dpState::Connecting && !g.stream_requested) open_stream();
+}
+
+void arm_connect_timer(uint32_t ms) {
+    btstack_run_loop_remove_timer(&g.bond_timer);
+    btstack_run_loop_set_timer_handler(&g.bond_timer, bond_done_timeout);
+    btstack_run_loop_set_timer(&g.bond_timer, ms);
+    btstack_run_loop_add_timer(&g.bond_timer);
 }
 
 // Headsets (older Sony ones in particular) only answer the SDP query for their A2DP sink record
@@ -349,6 +360,8 @@ bool start_connection(const uint8_t addr[6], bool fresh_pairing = false) {
     if (g.state == A2dpState::Connecting || g.state == A2dpState::Connected || g.state == A2dpState::Streaming) return false;
     std::memcpy(g.peer, addr, 6);
     g.initiated = true;
+    g.stream_requested = false;
+    g.retries = 0;
     g.state = A2dpState::Connecting;
     emit(A2dpEventType::Connecting);
     // A headset in pairing mode has forgotten any earlier bond, and answers a stale link key with
@@ -381,12 +394,9 @@ void hci_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         emit(A2dpEventType::Failed, status);
         return;
     }
-    // BTstack is still tearing down the bonding link inside this event; a connection started
-    // right here fails, so open the stream a moment later.
-    btstack_run_loop_remove_timer(&g.bond_timer);
-    btstack_run_loop_set_timer_handler(&g.bond_timer, bond_done_timeout);
-    btstack_run_loop_set_timer(&g.bond_timer, 500);
-    btstack_run_loop_add_timer(&g.bond_timer);
+    // BTstack is still tearing down the bonding link inside this event, and many headsets then
+    // call back by themselves: give them a moment to do so before opening the stream ourselves.
+    arm_connect_timer(1500);
 }
 
 void stop_pairing_internal() {
@@ -443,15 +453,24 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         const uint8_t status = a2dp_subevent_signaling_connection_established_get_status(packet);
         if (status != ERROR_CODE_SUCCESS) {
             g.a2dp_cid = 0;
+            // Right after bonding the headset is often still busy (or connecting to us at the same
+            // moment): retry a couple of times before giving up.
+            if (g.initiated && g.state == A2dpState::Connecting && g.retries < 3) {
+                ++g.retries;
+                g.stream_requested = false;
+                arm_connect_timer(1500);
+                return;
+            }
             g.state = A2dpState::Idle;
             emit(A2dpEventType::Failed, status);
             return;
         }
         a2dp_subevent_signaling_connection_established_get_bd_addr(packet, addr);
         g.a2dp_cid = a2dp_subevent_signaling_connection_established_get_a2dp_cid(packet);
-        if (!g.initiated) { // the headset called us: adopt it and open the stream ourselves
+        if (!g.stream_requested) { // the headset called us first: adopt it and open the stream ourselves
             std::memcpy(g.peer, addr, 6);
-            std::memset(g.peer_name, 0, sizeof(g.peer_name));
+            if (!g.initiated) std::memset(g.peer_name, 0, sizeof(g.peer_name));
+            g.stream_requested = true;
             a2dp_source_establish_stream(g.peer, &g.a2dp_cid);
         }
         g.state = A2dpState::Connected;
@@ -556,6 +575,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         g.avrcp_cid = 0;
         g.remote_abs = false;
         g.initiated = false;
+        g.stream_requested = false;
         g.state = g.pairing ? A2dpState::Pairing : A2dpState::Idle;
         emit(A2dpEventType::Disconnected);
         if (g.restart_pending && g.have_last) { // quality change: reconnect with the new preferences
