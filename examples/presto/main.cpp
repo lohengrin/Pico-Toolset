@@ -77,6 +77,7 @@
 #include "lwip/netif.h"
 #include "pico/cyw43_arch.h"
 #endif
+#include "pico/async_context.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
 
@@ -175,6 +176,9 @@ char usage_to_ascii(uint8_t usage, bool shift) {
 
 constexpr int kStatusH = kSize / 13;
 
+volatile int g_stage = 0; // main-loop breadcrumb, read by the A2DP watchdog
+volatile uint32_t g_frame = 0;
+
 #ifndef PRESTO_NO_RADIO
 // ---- Bluetooth device manager (touch): list bonded devices, forget one, start pairing ----
 struct DeviceMenu {
@@ -259,6 +263,16 @@ AudioAction audio_hit(int x, int y) {
     const int row = (y - kAudioButtonsY) / kMenuRowH;
     if (row > 3) return AudioAction::None;
     return kAudioActions[row * 2 + (x < kSize / 2 ? 0 : 1)];
+}
+
+async_at_time_worker_t g_wd_worker;
+St7701* g_wd_lcd = nullptr;
+
+// Runs in the Bluetooth context, so it keeps printing when the main loop is stuck.
+void wd_do_work(async_context_t* ctx, async_at_time_worker_t* worker) {
+    std::printf("[wd] stage %d loop %lu lcd waiting %d row %d\n", g_stage, static_cast<unsigned long>(g_frame),
+                g_wd_lcd && g_wd_lcd->waiting_for_vsync(), g_wd_lcd ? g_wd_lcd->display_row() : -1);
+    async_context_add_at_time_worker_in_ms(ctx, worker, 1000);
 }
 
 volatile bool g_a2dp_dirty = false;
@@ -634,6 +648,11 @@ int main() {
         a2dp_status = a2dp_ok ? Status::Absent : Status::Failed;
     }
     bool audio_open = false;
+    if (a2dp_ok) {
+        g_wd_lcd = &g_lcd;
+        g_wd_worker.do_work = wd_do_work;
+        async_context_add_at_time_worker_in_ms(cyw43_arch_async_context(), &g_wd_worker, 1000);
+    }
     size_t source_index = 0;
     uint8_t a2dp_volume = a2dp.volume();
 #endif
@@ -659,7 +678,9 @@ int main() {
 #endif
     TouchSample prev{};
     while (true) {
+        g_stage = 1;
         auto t = touch.read();
+        g_stage = 2;
 
         if (time_reached(next_sensors)) {
             next_sensors = make_timeout_time_ms(250);
@@ -674,6 +695,7 @@ int main() {
         }
 
 #ifndef PRESTO_NO_RADIO
+        g_stage = 3;
         if (hid_ok) {
             // Touching the status band starts pairing mode.
             // Tap the status band: open/close the device manager. Inside it: X forgets a device,
@@ -840,6 +862,7 @@ int main() {
         }
 #endif
 
+        g_stage = 4;
         if (pad_ok) {
             using namespace qwstpad_button;
             const uint16_t b = pad.read_buttons();
@@ -866,9 +889,12 @@ int main() {
 
 
         if (lcd_ok) {
+            g_stage = 5;
             display.flush(); // wait for vblank so the redraw trails the beam
             draw_status(display, 2, status(touch.bus_ok()));
+            g_stage = 6;
             draw_ui(t);
+            g_stage = 7;
             if (!menu_open && bme_ok) {
                 draw_gauge(display, 2, (env.temperature_c - 0.0f) / 40.0f, kColorRed);
                 draw_gauge(display, 1, env.humidity_pct / 100.0f, kColorBlue);
@@ -914,6 +940,7 @@ int main() {
             std::printf("touch %d (%u,%u)\n", t.pressed, t.raw_x, t.raw_y);
         prev = t;
 
+        g_stage = 8;
         if (leds_ok) {
             const bool button = !gpio_get(kUserButtonPin);
             if (button && !button_prev && ltr_ok) {
@@ -933,6 +960,6 @@ int main() {
             leds.show();
         }
 
-        ++frame;
+        g_frame = ++frame;
     }
 }

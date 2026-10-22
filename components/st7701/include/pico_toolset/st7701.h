@@ -129,6 +129,9 @@ public:
     [[nodiscard]] uint32_t missed_frames() const { return m_missed_frames; }
     // Counts scanned frames: stops increasing if the scanout interrupts die.
     [[nodiscard]] uint32_t frame_generation() const { return m_frame_gen; }
+    // Debug: true while a caller is blocked in wait_for_vsync(); scan row within the frame.
+    [[nodiscard]] bool waiting_for_vsync() const { return m_waiting_for_vsync; }
+    [[nodiscard]] int display_row() const { return m_display_row; }
     [[nodiscard]] uint32_t late_lines() const { return m_late_lines; }
 
     // Blocks (WFE) until the next vertical blank.
