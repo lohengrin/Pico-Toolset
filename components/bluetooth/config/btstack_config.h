@@ -55,6 +55,21 @@
 #define NVM_NUM_LINK_KEYS 8
 #endif
 
+#ifdef PICO_TOOLSET_BLUETOOTH_A2DP
+// bluetooth_a2dp (A2DP source + AVRCP controller): one AVDTP connection with one stream endpoint,
+// one AVRCP connection, three SDP records. Only defined when that component is linked.
+#define MAX_NR_AVDTP_CONNECTIONS 1
+#define MAX_NR_AVDTP_STREAM_ENDPOINTS 1
+#define MAX_NR_AVRCP_CONNECTIONS 1
+#define MAX_NR_SERVICE_RECORD_ITEMS 3
+#undef MAX_NR_HCI_CONNECTIONS
+#define MAX_NR_HCI_CONNECTIONS 5
+#undef MAX_NR_L2CAP_CHANNELS
+#define MAX_NR_L2CAP_CHANNELS 10
+#undef MAX_NR_L2CAP_SERVICES
+#define MAX_NR_L2CAP_SERVICES 6
+#endif
+
 #define HAVE_EMBEDDED_TIME_MS
 #define HAVE_ASSERT
 #define HCI_RESET_RESEND_TIMEOUT_MS 1000
