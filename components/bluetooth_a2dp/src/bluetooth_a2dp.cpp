@@ -110,6 +110,7 @@ struct State {
     btstack_timer_source_t reconnect_timer{};
     btstack_packet_callback_registration_t hci_reg{};
     btstack_timer_source_t bond_timer{};
+    A2dpEvent::Cause disc_cause = A2dpEvent::CauseStack; // set by the API call that closes the link
     uint8_t last_disc_reason = 0; // HCI reason of the most recent ACL disconnection
     bool bonding = false; // dedicated bonding in progress before the A2DP connection
 
@@ -152,6 +153,7 @@ void emit(A2dpEventType type, uint8_t status = 0) {
     e.bitrate_bps = g.active.bitrate;
     e.volume = g.volume;
     e.status = status;
+    e.cause = g.disc_cause;
     g.cfg.callback(e, g.cfg.user);
 }
 
@@ -586,6 +588,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         g.stream_requested = false;
         g.state = g.pairing ? A2dpState::Pairing : A2dpState::Idle;
         emit(A2dpEventType::Disconnected, g.last_disc_reason);
+        g.disc_cause = A2dpEvent::CauseStack;
         if (g.restart_pending && g.have_last) { // quality change: reconnect with the new preferences
             g.restart_pending = false;
             schedule_reconnect(800);
@@ -762,6 +765,7 @@ bool BluetoothA2dp::connect_last() {
 void BluetoothA2dp::disconnect() {
     if (!g.inited) return;
     ContextLock lock;
+    g.disc_cause = A2dpEvent::CauseDisconnectCall;
     if (g.a2dp_cid) a2dp_source_disconnect(g.a2dp_cid);
 }
 
@@ -770,6 +774,7 @@ void BluetoothA2dp::forget_last() {
     ContextLock lock;
     if (g.have_last) gap_drop_link_key_for_bd_addr(g.last.addr);
     erase_last();
+    g.disc_cause = A2dpEvent::CauseForget;
     if (g.a2dp_cid) a2dp_source_disconnect(g.a2dp_cid);
 }
 
@@ -802,6 +807,7 @@ void BluetoothA2dp::set_quality(A2dpQuality quality) {
     set_preferences();
     if (g.a2dp_cid && !same_format) { // different rate/mode: needs a new stream configuration
         g.restart_pending = true;
+        g.disc_cause = A2dpEvent::CauseQualityChange;
         a2dp_source_disconnect(g.a2dp_cid);
     } else {
         reconfigure_encoder_bitpool(); // bitpool only: takes effect on the next frame

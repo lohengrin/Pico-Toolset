@@ -71,6 +71,8 @@ struct A2dpEvent {
     uint8_t       cap_rates, cap_modes, cap_blocks, cap_subbands, cap_alloc, cap_min_bitpool, cap_max_bitpool;
     uint8_t       volume;
     uint8_t       status;
+    // Disconnected: why this side closed the link (0 = not us / the stack decided).
+    enum Cause : uint8_t { CauseStack, CauseDisconnectCall, CauseForget, CauseQualityChange } cause;
 };
 
 // Called from the BTstack context: keep it short and only record state.
