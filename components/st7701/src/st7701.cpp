@@ -184,6 +184,25 @@ void __not_in_flash_func(St7701::start_frame_xfer)() {
     __sev();
 }
 
+St7701::Debug St7701::debug_state() const {
+    Debug d{};
+    if (!m_inited) return d;
+    d.pio_irq = m_cfg.pio->irq;
+    d.pio_fstat = m_cfg.pio->fstat;
+    d.pio_fdebug = m_cfg.pio->fdebug;
+    d.pc_parallel = pio_sm_get_pc(m_cfg.pio, m_parallel_sm);
+    d.pc_timing = pio_sm_get_pc(m_cfg.pio, m_timing_sm);
+    const int chans[2] = {m_dma, m_dma2};
+    for (int i = 0; i < 2; ++i) {
+        if (chans[i] < 0) continue;
+        d.dma_ctrl[i] = dma_hw->ch[chans[i]].ctrl_trig;
+        d.dma_count[i] = dma_hw->ch[chans[i]].transfer_count;
+        d.dma_read[i] = dma_hw->ch[chans[i]].read_addr;
+    }
+    d.row = m_display_row;
+    return d;
+}
+
 void St7701::write_command(uint8_t command, size_t len, const char* data) const {
     static uint16_t words[20];
     gpio_put(m_cfg.pin_spi_cs, 0);

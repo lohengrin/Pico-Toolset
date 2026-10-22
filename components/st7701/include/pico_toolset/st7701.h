@@ -140,6 +140,15 @@ public:
     // 0-255, perceptual curve. No-op without a backlight pin.
     void set_backlight(uint8_t brightness);
 
+    // Debug: raw scanout hardware state, readable from any core.
+    struct Debug {
+        uint32_t pio_irq, pio_fstat, pio_fdebug;
+        uint32_t pc_parallel, pc_timing;
+        uint32_t dma_ctrl[2], dma_count[2], dma_read[2];
+        int row;
+    };
+    [[nodiscard]] Debug debug_state() const;
+
     // Interrupt entry points -- not for application use.
     void drive_timing();
     void handle_end_of_line();

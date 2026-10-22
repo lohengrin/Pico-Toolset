@@ -272,6 +272,17 @@ St7701* g_wd_lcd = nullptr;
 void wd_do_work(async_context_t* ctx, async_at_time_worker_t* worker) {
     std::printf("[wd] stage %d loop %lu lcd waiting %d row %d\n", g_stage, static_cast<unsigned long>(g_frame),
                 g_wd_lcd && g_wd_lcd->waiting_for_vsync(), g_wd_lcd ? g_wd_lcd->display_row() : -1);
+    if (g_wd_lcd) {
+        const auto d = g_wd_lcd->debug_state();
+        std::printf("[wd] pio irq %02lX fstat %08lX fdebug %08lX pc par %lu tim %lu | dma0 ctrl %08lX cnt %lu rd %08lX | "
+                    "dma1 ctrl %08lX cnt %lu rd %08lX\n",
+                    static_cast<unsigned long>(d.pio_irq), static_cast<unsigned long>(d.pio_fstat),
+                    static_cast<unsigned long>(d.pio_fdebug), static_cast<unsigned long>(d.pc_parallel),
+                    static_cast<unsigned long>(d.pc_timing), static_cast<unsigned long>(d.dma_ctrl[0]),
+                    static_cast<unsigned long>(d.dma_count[0]), static_cast<unsigned long>(d.dma_read[0]),
+                    static_cast<unsigned long>(d.dma_ctrl[1]), static_cast<unsigned long>(d.dma_count[1]),
+                    static_cast<unsigned long>(d.dma_read[1]));
+    }
     async_context_add_at_time_worker_in_ms(ctx, worker, 1000);
 }
 
