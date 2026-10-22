@@ -106,6 +106,9 @@ struct A2dpStats {
     uint32_t sbc_frames_sent;
     uint32_t bytes_sent;
     uint32_t dropped_frames;  // audio discarded because the radio could not keep up
+    uint32_t encode_us_total; // time spent producing + encoding SBC frames
+    uint32_t encode_count;    // number of frames encoded (average = total / count)
+    uint32_t encode_us_max;
 };
 
 // Bluetooth A2DP **source**: streams generated audio (an AudioSource) to a headset or speaker.

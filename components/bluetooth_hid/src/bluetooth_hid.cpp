@@ -681,6 +681,17 @@ struct BluetoothHid::Impl {
         btstack_run_loop_set_timer_handler(&classic_retry_timer, &Impl::classic_retry);
         btstack_run_loop_add_timer(&classic_retry_timer);
     }
+    // A2DP (or anything else) needs the radio: a background page can hold it for ~15 s when the
+    // pad is off, which makes a headset connection attempt time out. Cancel the page in flight.
+    static void abort_background_page(void*) {
+        if (g_impl_ptr()) g_impl_ptr()->cancel_background_page();
+    }
+    void cancel_background_page() {
+        if (!rawlink.active || !rawlink.quiet || rawlink.ctrl_open || !hci_can_send_command_packet_now()) return;
+        bd_addr_t a;
+        std::memcpy(a, rawlink.dev.addr, 6);
+        hci_send_cmd(&hci_create_connection_cancel, a);
+    }
     void classic_reconnect_tick() {
         if (!cfg().enable_classic || !cfg().auto_reconnect) return;
         schedule_classic_retry(8000);
@@ -1064,6 +1075,7 @@ bool BluetoothHid::init(const BluetoothHidConfig& config) {
         // GAP defaults, PIN / SSP answers and inquiry are shared with other Classic users.
         BluetoothClassic::init(m_cfg.pin);
         BluetoothClassic::add_passkey_listener(&Impl::passkey_trampoline, m_impl);
+        BluetoothClassic::set_paging_inhibit_listener(&Impl::abort_background_page, nullptr);
     }
 #endif
 

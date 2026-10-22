@@ -134,8 +134,7 @@ A2dpDevice device_info() {
 }
 
 void emit(A2dpEventType type, uint8_t status = 0) {
-    BluetoothClassic::inhibit_background_paging(g.state == A2dpState::Connecting || g.state == A2dpState::Connected ||
-                                                g.state == A2dpState::Streaming);
+    BluetoothClassic::inhibit_background_paging(g.state != A2dpState::Idle);
     if (!g.cfg.callback) return;
     A2dpEvent e{};
     e.type = type;
@@ -227,8 +226,13 @@ void fill_sbc_storage() {
     const unsigned per_frame = g.enc->num_audio_frames(&g.enc_state);
     const uint16_t frame_bytes = g.enc->sbc_buffer_length(&g.enc_state);
     while (g.samples_ready >= per_frame && (g.max_payload - g.sbc_count) >= frame_bytes) {
+        const uint32_t t0 = time_us_32();
         produce_audio(g.pcm, per_frame);
         g.enc->encode_signed_16(&g.enc_state, g.pcm, &g.sbc_storage[1 + g.sbc_count]);
+        const uint32_t dt = time_us_32() - t0;
+        g.stats.encode_us_total += dt;
+        g.stats.encode_count++;
+        if (dt > g.stats.encode_us_max) g.stats.encode_us_max = dt;
         g.sbc_count += frame_bytes;
         g.samples_ready -= per_frame;
     }

@@ -809,10 +809,13 @@ int main() {
                     break;
                 case 's': {
                     const A2dpStats st = a2dp.stats();
-                    std::printf("a2dp packets %lu, sbc frames %lu, bytes %lu, dropped %lu, %lu kbps, remote volume %d\n",
+                    std::printf("a2dp packets %lu, sbc frames %lu, bytes %lu, dropped %lu, %lu kbps, remote volume %d, "
+                                "encode avg %lu us max %lu us per frame\n",
                                 static_cast<unsigned long>(st.packets_sent), static_cast<unsigned long>(st.sbc_frames_sent),
                                 static_cast<unsigned long>(st.bytes_sent), static_cast<unsigned long>(st.dropped_frames),
-                                static_cast<unsigned long>(a2dp.active_bitrate_bps() / 1000), a2dp.remote_volume_active());
+                                static_cast<unsigned long>(a2dp.active_bitrate_bps() / 1000), a2dp.remote_volume_active(),
+                                static_cast<unsigned long>(st.encode_count ? st.encode_us_total / st.encode_count : 0),
+                                static_cast<unsigned long>(st.encode_us_max));
                     break;
                 }
                 default: break;

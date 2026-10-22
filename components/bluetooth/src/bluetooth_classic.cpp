@@ -19,6 +19,8 @@ struct State {
     struct { ClassicPasskeyCallback cb; void* user; } passkey[kMaxPasskeyListeners]{};
     bool inquiry_active = false;
     bool paging_inhibited = false;
+    void (*inhibit_cb)(void*) = nullptr;
+    void* inhibit_user = nullptr;
     uint8_t major_class = 0;
     ClassicInquiryCallback inquiry_cb = nullptr;
     void* inquiry_user = nullptr;
@@ -126,7 +128,15 @@ void BluetoothClassic::stop_inquiry() {
 
 bool BluetoothClassic::inquiry_active() { return g.inquiry_active; }
 
-void BluetoothClassic::inhibit_background_paging(bool inhibit) { g.paging_inhibited = inhibit; }
+void BluetoothClassic::inhibit_background_paging(bool inhibit) {
+    const bool started = inhibit && !g.paging_inhibited;
+    g.paging_inhibited = inhibit;
+    if (started && g.inhibit_cb) g.inhibit_cb(g.inhibit_user);
+}
+void BluetoothClassic::set_paging_inhibit_listener(void (*callback)(void*), void* user) {
+    g.inhibit_cb = callback;
+    g.inhibit_user = user;
+}
 bool BluetoothClassic::background_paging_inhibited() { return g.paging_inhibited; }
 
 } // namespace pico_toolset

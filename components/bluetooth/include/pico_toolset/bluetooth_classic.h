@@ -49,6 +49,8 @@ public:
     // Paging a bonded device in the background interrupts an established link (audible as
     // dropouts in an A2DP stream): while any component holds this, the others should not page.
     static void inhibit_background_paging(bool inhibit);
+    // Called when inhibiting starts, so a component can cancel a page already in flight.
+    static void set_paging_inhibit_listener(void (*callback)(void*), void* user);
     [[nodiscard]] static bool background_paging_inhibited();
 };
 
