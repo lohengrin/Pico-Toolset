@@ -20,6 +20,9 @@
 // mode; a keyboard shows a passkey to type; bonded devices reconnect after a
 // reboot and steer the square with the arrow keys / left stick / D-pad.
 //
+// PRESTO_BT_A2DP builds add Bluetooth audio: device manager > AUDIO pairs a headset and
+// streams generated sounds (touch page, plus console keys; see the log at start-up).
+//
 // Wi-Fi is skipped unless a config.local.h defining WIFI_SSID/WIFI_PASSWORD
 // is on the include path (see CMakeLists.txt; never commit one).
 
@@ -32,6 +35,10 @@
 #ifndef PRESTO_NO_RADIO
 #include "pico_toolset/bluetooth.h"
 #include "pico_toolset/bluetooth_hid.h"
+#ifdef PRESTO_BT_A2DP
+#include "pico_toolset/audio_synth.h"
+#include "pico_toolset/bluetooth_a2dp.h"
+#endif
 #endif
 #include "pico_toolset/bme280.h"
 #include "pico_toolset/bme280_configs.h"
@@ -166,7 +173,7 @@ char usage_to_ascii(uint8_t usage, bool shift) {
 }
 #endif
 
-constexpr int kStatusH = kSize / 12;
+constexpr int kStatusH = kSize / 13;
 
 #ifndef PRESTO_NO_RADIO
 // ---- Bluetooth device manager (touch): list bonded devices, forget one, start pairing ----
@@ -175,7 +182,7 @@ struct DeviceMenu {
     BtHidDevice list[BluetoothHid::kMaxBonded];
     size_t count = 0;
 };
-enum class MenuAction { None, Forget, Pair, Close };
+enum class MenuAction { None, Forget, Pair, Close, Audio };
 
 constexpr int kMenuScale = kSize / 120 > 0 ? kSize / 120 : 1;  // text scale (2 at 240, 4 at 480)
 constexpr int kMenuRowH = 8 * kMenuScale + 10;                  // also the touch target height
@@ -191,6 +198,9 @@ MenuAction menu_hit(const DeviceMenu& m, int x, int y, size_t& index) {
         }
     }
     if (y >= kMenuButtonsY && y < kMenuButtonsY + kMenuRowH) return x < kSize / 2 ? MenuAction::Pair : MenuAction::Close;
+#ifdef PRESTO_BT_A2DP
+    if (y >= kMenuButtonsY + kMenuRowH && y < kMenuButtonsY + 2 * kMenuRowH) return MenuAction::Audio;
+#endif
     return MenuAction::None;
 }
 
@@ -217,6 +227,115 @@ void draw_menu(DisplayDriver& d, const DeviceMenu& m) {
     draw_text_fit(d, 8, by + 5, "PAIR NEW", kColorWhite, kMenuScale, Color(0x03E0));
     d.fill_rect(kSize / 2 + 2, by, kSize - 3, by + kMenuRowH - 2, Color(0x4208));
     draw_text_fit(d, kSize / 2 + 8, by + 5, "CLOSE", kColorWhite, kMenuScale, Color(0x4208));
+#ifdef PRESTO_BT_A2DP
+    d.fill_rect(2, by + kMenuRowH, kSize - 3, by + 2 * kMenuRowH - 2, Color(0x001F));
+    draw_text_fit(d, 8, by + kMenuRowH + 5, "AUDIO (HEADSET)", kColorWhite, kMenuScale, Color(0x001F));
+#endif
+}
+#endif
+
+#ifdef PRESTO_BT_A2DP
+// ---- Bluetooth audio page (touch): pair/connect a headset, play/pause, volume, quality, sound ----
+enum class AudioAction { None, Pair, PlayPause, VolDown, VolUp, Quality, Sound, Forget, Back };
+
+ToneSource g_sine(Waveform::Sine, 440.0f, 0.5f);
+ToneSource g_square(Waveform::Square, 330.0f, 0.3f);
+const AudioNote kScale[] = {{523, 200}, {587, 200}, {659, 200}, {698, 200}, {784, 200}, {880, 200}, {988, 200},
+                            {1047, 400}, {0, 300}};
+MelodySource g_melody(kScale, sizeof(kScale) / sizeof(kScale[0]));
+SweepSource g_sweep(200.0f, 4000.0f, 5.0f, 0.4f);
+AudioSource* const kSources[] = {&g_sine, &g_square, &g_melody, &g_sweep};
+const char* const kSourceNames[] = {"SINE", "SQUARE", "MELODY", "SWEEP"};
+constexpr size_t kSourceCount = sizeof(kSources) / sizeof(kSources[0]);
+
+constexpr int kAudioButtonsY = kMenuY0 + 4 * kMenuRowH;
+const char* const kAudioLabels[8] = {"PAIR", "PLAY/PAUSE", "VOL -", "VOL +", "QUALITY", "SOUND", "FORGET", "BACK"};
+constexpr AudioAction kAudioActions[8] = {AudioAction::Pair,    AudioAction::PlayPause, AudioAction::VolDown,
+                                          AudioAction::VolUp,   AudioAction::Quality,   AudioAction::Sound,
+                                          AudioAction::Forget,  AudioAction::Back};
+
+AudioAction audio_hit(int x, int y) {
+    if (y < kAudioButtonsY) return AudioAction::None;
+    const int row = (y - kAudioButtonsY) / kMenuRowH;
+    if (row > 3) return AudioAction::None;
+    return kAudioActions[row * 2 + (x < kSize / 2 ? 0 : 1)];
+}
+
+volatile bool g_a2dp_dirty = false;
+char g_a2dp_message[40] = "";
+
+void on_a2dp_event(const A2dpEvent& e, void*) {
+    g_a2dp_dirty = true;
+    const auto& d = e.device;
+    const unsigned long now = to_ms_since_boot(get_absolute_time());
+    switch (e.type) {
+    case A2dpEventType::PairingStarted:
+        std::snprintf(g_a2dp_message, sizeof(g_a2dp_message), "SET HEADSET IN PAIRING MODE");
+        std::printf("[%lu ms] [a2dp] pairing: scanning for audio devices...\n", now);
+        break;
+    case A2dpEventType::PairingStopped: std::printf("[%lu ms] [a2dp] pairing stopped\n", now); break;
+    case A2dpEventType::DeviceFound:
+        std::printf("[%lu ms] [a2dp] found %02X:%02X:%02X:%02X:%02X:%02X '%s' cod 0x%06lX rssi %d\n", now, d.addr[0],
+                    d.addr[1], d.addr[2], d.addr[3], d.addr[4], d.addr[5], d.name,
+                    static_cast<unsigned long>(d.class_of_device), d.rssi);
+        break;
+    case A2dpEventType::Connecting:
+        std::snprintf(g_a2dp_message, sizeof(g_a2dp_message), "CONNECTING %.20s", d.name);
+        std::printf("[%lu ms] [a2dp] connecting...\n", now);
+        break;
+    case A2dpEventType::Capabilities:
+        std::printf("[%lu ms] [a2dp] headset SBC capabilities: rates 0x%02X (48k=1 44.1k=2 32k=4 16k=8) modes 0x%02X "
+                    "(joint=1 stereo=2 dual=4 mono=8) blocks 0x%02X subbands 0x%02X alloc 0x%02X bitpool %u..%u\n",
+                    now, e.cap_rates, e.cap_modes, e.cap_blocks, e.cap_subbands, e.cap_alloc, e.cap_min_bitpool,
+                    e.cap_max_bitpool);
+        break;
+    case A2dpEventType::Connected:
+        std::snprintf(g_a2dp_message, sizeof(g_a2dp_message), "CONNECTED %.20s", d.name);
+        std::printf("[%lu ms] [a2dp] connected '%s'\n", now, d.name);
+        break;
+    case A2dpEventType::Configured:
+        std::printf("[%lu ms] [a2dp] SBC configured: %lu Hz, mode %d, blocks %u, subbands %u, bitpool %u (headset %u..%u) "
+                    "= %lu kbps\n",
+                    now, static_cast<unsigned long>(e.sbc.sample_rate), static_cast<int>(e.sbc.mode), e.blocks,
+                    e.subbands, e.sbc.bitpool, e.min_bitpool, e.max_bitpool,
+                    static_cast<unsigned long>(e.bitrate_bps / 1000));
+        break;
+    case A2dpEventType::StreamStarted: std::printf("[%lu ms] [a2dp] streaming\n", now); break;
+    case A2dpEventType::StreamSuspended: std::printf("[%lu ms] [a2dp] stream suspended\n", now); break;
+    case A2dpEventType::VolumeChanged: std::printf("[%lu ms] [a2dp] volume %u/127\n", now, e.volume); break;
+    case A2dpEventType::Disconnected:
+        std::snprintf(g_a2dp_message, sizeof(g_a2dp_message), "DISCONNECTED");
+        std::printf("[%lu ms] [a2dp] disconnected\n", now);
+        break;
+    case A2dpEventType::Failed:
+        std::snprintf(g_a2dp_message, sizeof(g_a2dp_message), "FAILED 0x%02X", e.status);
+        std::printf("[%lu ms] [a2dp] FAILED status 0x%02X\n", now, e.status);
+        break;
+    }
+}
+
+void draw_audio_page(DisplayDriver& d, const BluetoothA2dp& a2dp, size_t source_index) {
+    d.fill_rect(0, kStatusH + 2, kSize - 1, kSize - 1, kColorBlack);
+    static const char* const kStates[] = {"IDLE", "PAIRING", "CONNECTING", "CONNECTED", "STREAMING"};
+    char line[48];
+    draw_text_fit(d, 4, kMenuY0, "BT AUDIO", kColorWhite, kMenuScale);
+    const A2dpState st = a2dp.state();
+    std::snprintf(line, sizeof(line), "%s %.12s", kStates[static_cast<int>(st)],
+                  a2dp.has_last_device() ? a2dp.last_device().name : "NO HEADSET");
+    draw_text_fit(d, 4, kMenuY0 + kMenuRowH, line, st == A2dpState::Streaming ? kColorGreen : Color(0xFFE0), kMenuScale);
+    std::snprintf(line, sizeof(line), "VOL %u/127 %lukbps", a2dp.volume(),
+                  static_cast<unsigned long>(a2dp.active_bitrate_bps() / 1000));
+    draw_text_fit(d, 4, kMenuY0 + 2 * kMenuRowH, line, kColorWhite, kMenuScale);
+    std::snprintf(line, sizeof(line), "%s %s", a2dp_quality_name(a2dp.quality()), kSourceNames[source_index]);
+    draw_text_fit(d, 4, kMenuY0 + 3 * kMenuRowH, line, Color(0x07FF), kMenuScale);
+    for (int i = 0; i < 8; ++i) {
+        const int x0 = (i % 2) * (kSize / 2) + 2, x1 = x0 + kSize / 2 - 5;
+        const int y0 = kAudioButtonsY + (i / 2) * kMenuRowH;
+        const Color bg = kAudioActions[i] == AudioAction::Forget ? Color(0xB000)
+                       : kAudioActions[i] == AudioAction::Back   ? Color(0x4208) : Color(0x0320);
+        d.fill_rect(x0, y0, x1, y0 + kMenuRowH - 2, bg);
+        draw_text_fit(d, x0 + 4, y0 + 5, kAudioLabels[i], kColorWhite, kMenuScale, bg);
+    }
 }
 #endif
 
@@ -396,7 +515,7 @@ int main() {
 
     Status radio_wifi = Status::Absent, radio_ble = Status::Absent;
     Status pad_status = Status::Absent, stick_status = Status::Absent;
-    Status hid_status = Status::Absent;
+    Status hid_status = Status::Absent, a2dp_status = Status::Absent;
 
     bool menu_open = false; // Bluetooth device manager covers the bars
     auto draw_ui = [&](const TouchSample& t) {
@@ -410,6 +529,7 @@ int main() {
         draw_status(display, 6, pad_status);
         draw_status(display, 7, stick_status);
         draw_status(display, 8, hid_status);
+        draw_status(display, 9, a2dp_status);
         if (t.pressed && !menu_open) {
             display.draw_line(t.raw_x, 0, t.raw_x, kSize - 1, kColorWhite);
             display.draw_line(0, t.raw_y, kSize - 1, t.raw_y, kColorWhite);
@@ -496,6 +616,23 @@ int main() {
                     static_cast<unsigned>(nb));
         if (hid_ok && nb == 0) hid.start_pairing();
     }
+#ifdef PRESTO_BT_A2DP
+    BluetoothA2dp a2dp;
+    bool a2dp_ok = false;
+    if (radio_ble == Status::Ok) {
+        A2dpConfig ac;
+        ac.source = kSources[0];
+        ac.callback = on_a2dp_event;
+        a2dp_ok = a2dp.init(ac);
+        std::printf("Bluetooth A2DP %s (quality %s). Console: a pair, c connect last, x disconnect, F forget, "
+                    "p play/pause, +/- volume, q quality, w sound, s stats\n",
+                    a2dp_ok ? "ok" : "FAILED", a2dp_quality_name(a2dp.quality()));
+        a2dp_status = a2dp_ok ? Status::Absent : Status::Failed;
+    }
+    bool audio_open = false;
+    size_t source_index = 0;
+    uint8_t a2dp_volume = a2dp.volume();
+#endif
 #endif
 
     uint32_t frame = 0;
@@ -545,8 +682,40 @@ int main() {
             }
             if (tap) {
                 if (t.raw_y < kStatusH + 2) {
+#ifdef PRESTO_BT_A2DP
+                    if (audio_open) audio_open = false;
+                    else
+#endif
                     if (menu.open) menu.open = false;
                     else if (!hid.pairing() && !g_hid_busy) { refresh_menu(); menu.open = true; }
+#ifdef PRESTO_BT_A2DP
+                } else if (audio_open) {
+                    switch (audio_hit(t.raw_x, t.raw_y)) {
+                    case AudioAction::Pair: a2dp.start_pairing(); break;
+                    case AudioAction::PlayPause:
+                        a2dp.state() == A2dpState::Streaming ? a2dp.pause() : a2dp.play();
+                        break;
+                    case AudioAction::VolDown:
+                        a2dp_volume = a2dp_volume < 10 ? 0 : a2dp_volume - 10;
+                        a2dp.set_volume(a2dp_volume);
+                        break;
+                    case AudioAction::VolUp:
+                        a2dp_volume = a2dp_volume > 117 ? 127 : a2dp_volume + 10;
+                        a2dp.set_volume(a2dp_volume);
+                        break;
+                    case AudioAction::Quality:
+                        a2dp.set_quality(static_cast<A2dpQuality>((static_cast<int>(a2dp.quality()) + 1) %
+                                                                  (static_cast<int>(A2dpQuality::MonoLow) + 1)));
+                        break;
+                    case AudioAction::Sound:
+                        source_index = (source_index + 1) % kSourceCount;
+                        a2dp.set_source(kSources[source_index]);
+                        break;
+                    case AudioAction::Forget: a2dp.forget_last(); break;
+                    case AudioAction::Back: audio_open = false; break;
+                    default: break;
+                    }
+#endif
                 } else if (menu.open) {
                     size_t idx = 0;
                     switch (menu_hit(menu, t.raw_x, t.raw_y, idx)) {
@@ -561,12 +730,56 @@ int main() {
                     case MenuAction::Close:
                         menu.open = false;
                         break;
+#ifdef PRESTO_BT_A2DP
+                    case MenuAction::Audio:
+                        menu.open = false;
+                        audio_open = a2dp_ok;
+                        break;
+#endif
                     default:
                         break;
                     }
                 }
             }
             menu_open = menu.open;
+#ifdef PRESTO_BT_A2DP
+            menu_open = menu_open || audio_open;
+            a2dp_status = !a2dp_ok ? Status::Failed
+                        : a2dp.state() == A2dpState::Streaming ? Status::Ok
+                        : a2dp.state() == A2dpState::Idle ? Status::Absent : Status::Busy;
+            for (int c = getchar_timeout_us(0); c != PICO_ERROR_TIMEOUT && a2dp_ok; c = getchar_timeout_us(0)) {
+                switch (c) {
+                case 'a': a2dp.start_pairing(); break;
+                case 'c': a2dp.connect_last(); break;
+                case 'x': a2dp.disconnect(); break;
+                case 'F': a2dp.forget_last(); break;
+                case 'p': a2dp.state() == A2dpState::Streaming ? a2dp.pause() : a2dp.play(); break;
+                case '+': a2dp_volume = a2dp_volume > 117 ? 127 : a2dp_volume + 10; a2dp.set_volume(a2dp_volume); break;
+                case '-': a2dp_volume = a2dp_volume < 10 ? 0 : a2dp_volume - 10; a2dp.set_volume(a2dp_volume); break;
+                case 'q': {
+                    const A2dpQuality next = static_cast<A2dpQuality>((static_cast<int>(a2dp.quality()) + 1) %
+                                                                      (static_cast<int>(A2dpQuality::MonoLow) + 1));
+                    a2dp.set_quality(next);
+                    std::printf("quality -> %s\n", a2dp_quality_name(next));
+                    break;
+                }
+                case 'w':
+                    source_index = (source_index + 1) % kSourceCount;
+                    a2dp.set_source(kSources[source_index]);
+                    std::printf("sound -> %s\n", kSourceNames[source_index]);
+                    break;
+                case 's': {
+                    const A2dpStats st = a2dp.stats();
+                    std::printf("a2dp packets %lu, sbc frames %lu, bytes %lu, dropped %lu, %lu kbps, remote volume %d\n",
+                                static_cast<unsigned long>(st.packets_sent), static_cast<unsigned long>(st.sbc_frames_sent),
+                                static_cast<unsigned long>(st.bytes_sent), static_cast<unsigned long>(st.dropped_frames),
+                                static_cast<unsigned long>(a2dp.active_bitrate_bps() / 1000), a2dp.remote_volume_active());
+                    break;
+                }
+                default: break;
+                }
+            }
+#endif
             hid_status = (hid.connected_keyboard_count() + hid.connected_gamepad_count() +
                           hid.connected_mouse_count()) > 0 ? Status::Ok
                          : (hid.pairing() || g_hid_busy) ? Status::Busy
@@ -645,7 +858,12 @@ int main() {
             }
             if (!menu_open && ltr_ok) draw_gauge(display, 0, light.lux / 1000.0f, kColorWhite);
 #ifndef PRESTO_NO_RADIO
-            if (menu_open) draw_menu(display, menu);
+            if (menu.open) draw_menu(display, menu);
+#ifdef PRESTO_BT_A2DP
+            if (audio_open) draw_audio_page(display, a2dp, source_index);
+            else if (a2dp_ok && g_a2dp_message[0] && a2dp.state() != A2dpState::Idle && !menu.open)
+                draw_text_fit(display, 4, kStatusH + 6, g_a2dp_message, kColorWhite, kSize / 120 + 1);
+#endif
             if (g_hid_busy || g_passkey >= 0) {
                 const int scale = kSize / 120 + 1;
                 int y = kStatusH + 6;

@@ -30,6 +30,8 @@ independently.
 | QwSTPad   | `pico_toolset_qwstpad`  | Pimoroni QwSTPad gamepad (TCA9555): 10 buttons, 4 LEDs; Presto QW/ST preset. |
 | BME280 / LTR-559 / LSM6DS3 | `pico_toolset_bme280`, `_ltr559`, `_lsm6ds3` | Multi-Sensor Stick drivers (environment, light/proximity, IMU); BME280 wraps the vendored Bosch driver. |
 | Bluetooth HID | `pico_toolset_bluetooth_hid` | Bluetooth HID host (keyboards, mice, gamepads): BLE and, opt-in, Classic (legacy PIN, pair-first, raw-channel fallback for pads with a broken SDP record); pairing, bonding stored in flash, reconnect; shares `GamepadState` with usb_hid via `hid_input`. Off by default. |
+| Bluetooth A2DP | `pico_toolset_bluetooth_a2dp` | A2DP source: streams generated sound (`audio_synth` tones/melodies) to a headset; SBC quality presets down to 110 kbps mono, volume (AVRCP or software), reconnect. Optional; implies Classic. Off by default. |
+| Audio synth | `pico_toolset_audio_synth` | Header-only tone/sweep/melody `AudioSource`s. |
 | Bluetooth | `pico_toolset_bluetooth` | BLE advertise + scan over BTstack on the CYW43 (Pico W / Presto); off by default. |
 | Piezo     | `pico_toolset_piezo`    | PWM piezo/buzzer tones and note sequences; Presto preset. |
 | RGB LED   | `pico_toolset_rgb_led`  | PWM RGB LED on three GPIOs (8-bit color, gamma 2.8, active-high/low); validated preset for the Pimoroni Pico Display Pack. |
@@ -84,7 +86,7 @@ pico-toolset/
 │   ├── ft6236/    include/pico_toolset/*.h         src/  example/
 │   ├── ws2812/    include/pico_toolset/*.h         src/  example/
 │   ├── piezo/     include/pico_toolset/*.h         src/  example/
-│   ├── qwstpad/ bme280/ ltr559/ lsm6ds3/ bluetooth/ bluetooth_hid/   (same shape)
+│   ├── qwstpad/ bme280/ ltr559/ lsm6ds3/ bluetooth/ bluetooth_hid/ bluetooth_a2dp/ audio_synth/   (same shape)
 │   ├── hid_input/ include/pico_toolset/hid_gamepad.h   # shared GamepadState (header-only)
 │   ├── xpt2046/   include/pico_toolset/*.h         src/  example/
 │   ├── psram/     include/pico_toolset/psram.h     src/  example/
@@ -132,6 +134,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_PIEZO`   | ON | Build PWM piezo driver + example |
 | `PICO_TOOLSET_BUILD_QWSTPAD` / `_BME280` / `_LTR559` / `_LSM6DS3` | ON | Build the I2C gamepad / sensor drivers + examples |
 | `PICO_TOOLSET_BLUETOOTH_CLASSIC` | OFF | Link BTstack Classic support (needed for older, non-BLE Bluetooth pads/keyboards in `bluetooth_hid`) |
+| `PICO_TOOLSET_BUILD_BLUETOOTH_A2DP` | OFF | Build the A2DP source (headset audio); forces `PICO_TOOLSET_BLUETOOTH_CLASSIC` |
 | `PICO_TOOLSET_BUILD_BLUETOOTH_HID` | OFF | Build the BLE HID host (needs `PICO_TOOLSET_BUILD_BLUETOOTH`) |
 | `PICO_TOOLSET_BUILD_BLUETOOTH` | OFF | Build the BLE helper (needs a Pico W-class board; reuses the HTTPS client's mbedtls config) |
 | `PICO_TOOLSET_BUILD_XPT2046` | ON | Build XPT2046 touch driver + example |

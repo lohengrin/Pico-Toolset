@@ -50,6 +50,14 @@ sudo btmon -w cap.btsnoop      # start BEFORE connecting; read with: btmon -r ca
 `hid-recorder` gives the exact report layout; `btmon` shows how BlueZ sets the connection up
 (a capture started after the device is connected only contains the report stream).
 
+## Headsets (A2DP)
+
+Use the `Capabilities` / `Configured` log lines from [bluetooth_a2dp](../components/bluetooth-a2dp.md):
+the headset must be in pairing mode (or already bonded and idle, not connected to a phone). If
+`found` never appears, check the headset's class of device (0x24xxxx audio). If `Failed` shows
+an AVDTP/L2CAP status after `Connecting`, try `PRESTO_BT_HCI_DUMP` and compare with the headset's
+capability bitmaps; `s` shows `dropped` frames when the link cannot keep up (lower the quality).
+
 ## Case file: the "SFR Gamepad" (Classic, broken SDP)
 
 Symptoms: found by inquiry, pairs (legacy PIN `0000`), then `FAILED status 0x11`. The dump showed

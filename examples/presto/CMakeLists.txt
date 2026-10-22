@@ -23,6 +23,10 @@ include(${TOOLSET_ROOT}/pico_sdk_import.cmake)
 # Bluetooth Classic (older gamepads/keyboards) next to BLE. Must be set before the bluetooth
 # component is added below.
 option(PRESTO_BT_CLASSIC "Support Bluetooth Classic HID devices (older pads) in addition to BLE" ON)
+option(PRESTO_BT_A2DP "Bluetooth audio: stream generated sound to a headset (A2DP source; implies Classic)" OFF)
+if(PRESTO_BT_A2DP)
+    set(PRESTO_BT_CLASSIC ON CACHE BOOL "" FORCE)
+endif()
 set(PICO_TOOLSET_BLUETOOTH_CLASSIC ${PRESTO_BT_CLASSIC} CACHE BOOL "" FORCE)
 
 # One mbedtls config per build (lwipopts.h from pico_toolset_net_config turns
@@ -59,6 +63,10 @@ add_subdirectory(${TOOLSET_ROOT}/components/wifi         ${CMAKE_BINARY_DIR}/_to
 add_subdirectory(${TOOLSET_ROOT}/components/https_client ${CMAKE_BINARY_DIR}/_toolset/https_client)
 add_subdirectory(${TOOLSET_ROOT}/components/bluetooth    ${CMAKE_BINARY_DIR}/_toolset/bluetooth)
 add_subdirectory(${TOOLSET_ROOT}/components/bluetooth_hid ${CMAKE_BINARY_DIR}/_toolset/bluetooth_hid)
+if(PRESTO_BT_A2DP)
+    add_subdirectory(${TOOLSET_ROOT}/components/audio_synth    ${CMAKE_BINARY_DIR}/_toolset/audio_synth)
+    add_subdirectory(${TOOLSET_ROOT}/components/bluetooth_a2dp ${CMAKE_BINARY_DIR}/_toolset/bluetooth_a2dp)
+endif()
 add_subdirectory(${TOOLSET_ROOT}/libs/screen        ${CMAKE_BINARY_DIR}/_toolset/screen)
 
 add_executable(${EXAMPLE_OUTPUT_NAME} main.cpp)
@@ -111,6 +119,10 @@ else()
         pico_toolset_bluetooth_hid
         pico_toolset_https_client # only to satisfy lwIP's TLS layer (see above)
     )
+    if(PRESTO_BT_A2DP)
+        target_link_libraries(${EXAMPLE_OUTPUT_NAME} PRIVATE pico_toolset_bluetooth_a2dp)
+        target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PRESTO_BT_A2DP=1)
+    endif()
     # Bonding writes flash from core 0; core 1 only runs RAM-resident code (LCD
     # scanout interrupts + core1_idle()), so the SDK need not stop it. See
     # docs/components/bluetooth-hid.md.

@@ -245,6 +245,9 @@ manual smoke tests of the examples on hardware.
   hid_host_demo) plus a raw L2CAP fallback for pads with a stub SDP record;
   generic report parsing via BTstack's HID parser;
   `GamepadState` moved to `components/hid_input`, shared with usb_hid.
+- Bluetooth A2DP: A2DP source flow after BTstack's `a2dp_source_demo` (BSD-style
+  BTstack licence) with BTstack's Bluedroid SBC encoder; `audio_synth` is new code.
+  `BluetoothClassic` is the Classic pairing code extracted from `bluetooth_hid`.
 - Bluetooth: new BLE advertise/scan helper over pico-sdk's BTstack port;
   `btstack_config.h` adapted from pico-examples (BSD-3-Clause).
 - XPT2046: touch driver + linear calibration, real-hardware-validated

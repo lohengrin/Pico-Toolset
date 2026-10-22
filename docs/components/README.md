@@ -31,6 +31,8 @@ targets are `pico_toolset_<name>`; each component has a
 | [ltr559](ltr559.md) | `pico_toolset_ltr559` | sensor | ON | LTR-559 ambient light + proximity |
 | [lsm6ds3](lsm6ds3.md) | `pico_toolset_lsm6ds3` | sensor | ON | LSM6DS3 accelerometer/gyro, steps, taps |
 | [bluetooth](bluetooth.md) | `pico_toolset_bluetooth` | network | **OFF** | BLE advertise + scan over BTstack/CYW43 |
+| [bluetooth_a2dp](bluetooth-a2dp.md) | `pico_toolset_bluetooth_a2dp` | network | **OFF** | A2DP source: stream generated audio to a headset (SBC presets, volume) |
+| [audio_synth](audio-synth.md) | `pico_toolset_audio_synth` | audio | ON | Header-only tone / sweep / melody `AudioSource`s |
 | [bluetooth_hid](bluetooth-hid.md) | `pico_toolset_bluetooth_hid` | network | **OFF** | BLE + optional Classic HID host: pair/bond/reconnect keyboards, mice, gamepads |
 | [rgb_led](rgb-led.md) | `pico_toolset_rgb_led` | output | ON | PWM RGB LED |
 | [ws2812](ws2812.md) | `pico_toolset_ws2812` | output | ON | WS2812/SK6812 LED chain over PIO |

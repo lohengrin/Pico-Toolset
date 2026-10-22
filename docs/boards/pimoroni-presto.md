@@ -154,6 +154,7 @@ Example build options (all `cmake -S examples/presto -B build -D...`):
 | `PRESTO_FULL_RES` | OFF | drive 480x480 instead of 240x240 (RGB565 at this size leaves no RAM for the radio) |
 | `PRESTO_PALETTE` | OFF | 8-bit palette framebuffer (half the SRAM); with `PRESTO_FULL_RES` it keeps Wi-Fi/BLE |
 | `PRESTO_BT_CLASSIC` | ON | also support Bluetooth Classic HID devices (older pads/keyboards) |
+| `PRESTO_BT_A2DP` | OFF | Bluetooth audio to a headset ([bluetooth_a2dp](../components/bluetooth-a2dp.md)); implies `PRESTO_BT_CLASSIC`; touch page under the device manager's `AUDIO (HEADSET)` button plus console keys |
 | `PRESTO_BT_HCI_DUMP` | OFF | log every HCI/L2CAP/SMP/SDP packet from the start of each connection ([diagnostics guide](../guides/bluetooth-pairing-diagnostics.md)) |
 | `PRESTO_WIFI_CONFIG_DIR` | env var | directory with a git-ignored `config.local.h` (`WIFI_SSID`/`WIFI_PASSWORD`); a copy next to `main.cpp` also works |
 
@@ -220,6 +221,8 @@ Not yet done or not yet verified on hardware:
   need mapping from `gamepad_raw_buttons()`.
 - **Untested Bluetooth devices:** LE gamepads (e.g. Xbox wireless), mice, Classic keyboards, and
   BTstack's own Classic HID path for pads with a normal SDP record.
+- **Bluetooth audio (A2DP):** builds in every variant but is untested with a real headset
+  (HUAWEI FreeBuds 6i, Sony MDR-ZX770BN planned); see the first-test steps in the component page.
 - **Device manager:** written and builds in every variant, not yet exercised on hardware (touch
   hit areas, list refresh, forget of a connected device).
 - **HID output** (keyboard LEDs, gamepad rumble) is not implemented.
