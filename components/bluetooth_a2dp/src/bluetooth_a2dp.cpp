@@ -105,6 +105,8 @@ struct State {
     btstack_timer_source_t pair_timer{};
     btstack_timer_source_t reconnect_timer{};
     btstack_packet_callback_registration_t hci_reg{};
+    btstack_timer_source_t bond_timer{};
+    bool bonding = false; // dedicated bonding in progress before the A2DP connection
 
     A2dpStats stats{};
 };
@@ -312,11 +314,7 @@ A2dpSbcConfig resolve_quality() {
 }
 
 // ---- connection management ----
-bool start_connection(const uint8_t addr[6]) {
-    if (g.state == A2dpState::Connecting || g.state == A2dpState::Connected || g.state == A2dpState::Streaming) return false;
-    std::memcpy(g.peer, addr, 6);
-    g.initiated = true;
-    g.state = A2dpState::Connecting;
+bool open_stream() {
     set_preferences();
     const uint8_t rc = a2dp_source_establish_stream(g.peer, &g.a2dp_cid);
     if (rc != ERROR_CODE_SUCCESS) {
@@ -324,8 +322,54 @@ bool start_connection(const uint8_t addr[6]) {
         emit(A2dpEventType::Failed, rc);
         return false;
     }
-    emit(A2dpEventType::Connecting);
     return true;
+}
+
+void bond_done_timeout(btstack_timer_source_t*) {
+    if (g.state == A2dpState::Connecting) open_stream();
+}
+
+// Headsets (older Sony ones in particular) only answer the SDP query for their A2DP sink record
+// on an authenticated link, so a new device is bonded first, like the Classic HID path does.
+bool start_connection(const uint8_t addr[6]) {
+    if (g.state == A2dpState::Connecting || g.state == A2dpState::Connected || g.state == A2dpState::Streaming) return false;
+    std::memcpy(g.peer, addr, 6);
+    g.initiated = true;
+    g.state = A2dpState::Connecting;
+    emit(A2dpEventType::Connecting);
+    link_key_t key;
+    link_key_type_t key_type;
+    if (!gap_get_link_key_for_bd_addr(g.peer, key, &key_type)) {
+        g.bonding = true;
+        const uint8_t rc = gap_dedicated_bonding(g.peer, 1);
+        if (rc != ERROR_CODE_SUCCESS) {
+            g.bonding = false;
+            g.state = A2dpState::Idle;
+            emit(A2dpEventType::Failed, rc);
+            return false;
+        }
+        return true;
+    }
+    return open_stream();
+}
+
+void hci_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
+    if (packet_type != HCI_EVENT_PACKET || hci_event_packet_get_type(packet) != GAP_EVENT_DEDICATED_BONDING_COMPLETED ||
+        !g.bonding)
+        return;
+    g.bonding = false;
+    const uint8_t status = gap_event_dedicated_bonding_completed_get_status(packet);
+    if (status != ERROR_CODE_SUCCESS) {
+        g.state = A2dpState::Idle;
+        emit(A2dpEventType::Failed, status);
+        return;
+    }
+    // BTstack is still tearing down the bonding link inside this event; a connection started
+    // right here fails, so open the stream a moment later.
+    btstack_run_loop_remove_timer(&g.bond_timer);
+    btstack_run_loop_set_timer_handler(&g.bond_timer, bond_done_timeout);
+    btstack_run_loop_set_timer(&g.bond_timer, 500);
+    btstack_run_loop_add_timer(&g.bond_timer);
 }
 
 void stop_pairing_internal() {
@@ -452,7 +496,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
     case A2DP_SUBEVENT_STREAM_ESTABLISHED: {
         const uint8_t status = a2dp_subevent_stream_established_get_status(packet);
         if (status != ERROR_CODE_SUCCESS) {
-            emit(A2dpEventType::Failed, status);
+            if (g.state != A2dpState::Idle) emit(A2dpEventType::Failed, status);
             break;
         }
         g.stream_open = true;
@@ -591,6 +635,8 @@ bool BluetoothA2dp::init(const A2dpConfig& config) {
 
     ContextLock lock;
     BluetoothClassic::init(config.pin);
+    g.hci_reg.callback = &hci_handler;
+    hci_add_event_handler(&g.hci_reg);
 
     a2dp_source_init();
     a2dp_source_register_packet_handler(&a2dp_handler);

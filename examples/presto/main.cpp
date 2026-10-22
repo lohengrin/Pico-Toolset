@@ -267,6 +267,10 @@ char g_a2dp_message[40] = "";
 void on_a2dp_event(const A2dpEvent& e, void*) {
     g_a2dp_dirty = true;
     const auto& d = e.device;
+#ifdef WANT_HCI_DUMP
+    if (e.type == A2dpEventType::Connecting) hci_dump_enable_packet_log(true);
+    else if (e.type == A2dpEventType::Disconnected || e.type == A2dpEventType::Failed) hci_dump_enable_packet_log(false);
+#endif
     const unsigned long now = to_ms_since_boot(get_absolute_time());
     switch (e.type) {
     case A2dpEventType::PairingStarted:
