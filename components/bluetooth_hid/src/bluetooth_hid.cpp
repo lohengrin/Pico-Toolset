@@ -10,6 +10,9 @@
 #include "btstack.h"
 #include "btstack_tlv.h"
 #include "ble/gatt-service/hids_host.h"
+#ifdef ENABLE_CLASSIC
+#include "pico_toolset/bluetooth_classic.h"
+#endif
 #include "pico/async_context.h"
 #include "pico/cyw43_arch.h"
 
@@ -310,8 +313,9 @@ struct BluetoothHid::Impl {
 #ifdef ENABLE_CLASSIC
         if (cfg().enable_classic) {
             gap_discoverable_control(1); // lets a pad in pairing mode find and connect to us
-            uint32_t units = cfg().pairing_timeout_ms / 1280;
-            gap_inquiry_start(static_cast<uint8_t>(units < 1 ? 1 : units > 48 ? 48 : units));
+            const uint32_t units = cfg().pairing_timeout_ms / 1280;
+            BluetoothClassic::start_inquiry(static_cast<uint8_t>(units < 1 ? 1 : units > 48 ? 48 : units), 0x05,
+                                            &Impl::inquiry_trampoline, this); // peripherals only
         }
 #endif
         btstack_run_loop_remove_timer(&pair_timer);
@@ -326,7 +330,7 @@ struct BluetoothHid::Impl {
         btstack_run_loop_remove_timer(&pair_timer);
         gap_stop_scan();
 #ifdef ENABLE_CLASSIC
-        if (cfg().enable_classic) { gap_inquiry_stop(); gap_discoverable_control(0); }
+        if (cfg().enable_classic) { BluetoothClassic::stop_inquiry(); gap_discoverable_control(0); }
 #endif
         emit(BtHidEventType::PairingStopped, Stored{});
         arm_reconnect();
@@ -399,7 +403,7 @@ struct BluetoothHid::Impl {
             btstack_run_loop_remove_timer(&pair_timer);
             gap_stop_scan();
 #ifdef ENABLE_CLASSIC
-            if (cfg().enable_classic) gap_inquiry_stop();
+            if (cfg().enable_classic) BluetoothClassic::stop_inquiry();
 #endif
             emit(BtHidEventType::PairingStopped, Stored{});
         }
@@ -566,35 +570,37 @@ struct BluetoothHid::Impl {
 
 #ifdef ENABLE_CLASSIC
     // ---- Bluetooth Classic ----
-    void on_inquiry_result(uint8_t* packet) {
+    static void inquiry_trampoline(const ClassicInquiryResult& r, void* user) {
+        static_cast<Impl*>(user)->on_inquiry_result(r);
+    }
+    static void passkey_trampoline(const uint8_t addr[6], uint32_t passkey, void* user) {
+        static_cast<Impl*>(user)->on_classic_passkey(addr, passkey);
+    }
+
+    void on_inquiry_result(const ClassicInquiryResult& r) {
         if (!owner->m_pairing || pending) return;
-        const uint32_t cod = gap_event_inquiry_result_get_class_of_device(packet);
-        if (((cod >> 8) & 0x1F) != 0x05) return; // major class: peripheral (keyboard, mouse, gamepad...)
         Stored dev{};
-        bd_addr_t addr;
-        gap_event_inquiry_result_get_bd_addr(packet, addr);
-        std::memcpy(dev.addr, addr, 6);
+        std::memcpy(dev.addr, r.addr, 6);
         dev.addr_type = kClassicAddrType;
-        if (gap_event_inquiry_result_get_name_available(packet)) {
-            const uint8_t n = gap_event_inquiry_result_get_name_len(packet);
-            const size_t m = n < sizeof(dev.name) - 1 ? n : sizeof(dev.name) - 1;
-            std::memcpy(dev.name, gap_event_inquiry_result_get_name(packet), m);
-        }
+        std::memcpy(dev.name, r.name, sizeof(dev.name) < sizeof(r.name) ? sizeof(dev.name) : sizeof(r.name));
+        dev.name[sizeof(dev.name) - 1] = '\0';
         if (slot_by_addr(dev.addr) || seen_before(dev.addr)) return;
-        const int8_t rssi = gap_event_inquiry_result_get_rssi_available(packet)
-                                ? static_cast<int8_t>(gap_event_inquiry_result_get_rssi(packet)) : 0;
         if (cfg().callback) {
             BtHidEvent e{};
             e.type = BtHidEventType::DeviceFound;
-            e.device = to_public(dev, false, rssi);
-            e.class_of_device = cod;
-            if (gap_event_inquiry_result_get_device_id_available(packet)) {
-                e.vendor_id = gap_event_inquiry_result_get_device_id_vendor_id(packet);
-                e.product_id = gap_event_inquiry_result_get_device_id_product_id(packet);
-            }
+            e.device = to_public(dev, false, r.rssi_valid ? r.rssi : 0);
+            e.class_of_device = r.class_of_device;
+            e.vendor_id = r.vendor_id;
+            e.product_id = r.product_id;
             cfg().callback(e, cfg().user);
         }
         if (cfg().auto_pair) start_connect(dev);
+    }
+
+    void on_classic_passkey(const uint8_t addr[6], uint32_t passkey) { // a Classic keyboard: show the code
+        Stored dev = pending ? pending_dev : Stored{};
+        std::memcpy(dev.addr, addr, 6);
+        emit(BtHidEventType::PasskeyDisplay, dev, false, 0, passkey);
     }
 
     static void connect_after_bonding(btstack_timer_source_t*) {
@@ -612,11 +618,7 @@ struct BluetoothHid::Impl {
     }
 
     void on_classic_hci(uint8_t* packet) {
-        bd_addr_t addr;
         switch (hci_event_packet_get_type(packet)) {
-        case GAP_EVENT_INQUIRY_RESULT:
-            on_inquiry_result(packet);
-            break;
         case GAP_EVENT_DEDICATED_BONDING_COMPLETED: {
             if (!pending || pending_dev.addr_type != kClassicAddrType) break;
             const uint8_t status = gap_event_dedicated_bonding_completed_get_status(packet);
@@ -637,26 +639,6 @@ struct BluetoothHid::Impl {
             btstack_run_loop_add_timer(&bond_timer);
             break;
         }
-        case HCI_EVENT_PIN_CODE_REQUEST: // legacy pairing (pre Bluetooth 2.1 pads): fixed PIN
-            hci_event_pin_code_request_get_bd_addr(packet, addr);
-            gap_pin_code_response(addr, cfg().pin ? cfg().pin : "0000");
-            break;
-        case HCI_EVENT_USER_CONFIRMATION_REQUEST: // SSP numeric comparison / just works: accept
-            hci_event_user_confirmation_request_get_bd_addr(packet, addr);
-            gap_ssp_confirmation_response(addr);
-            break;
-        case HCI_EVENT_USER_PASSKEY_NOTIFICATION: { // a Classic keyboard: show the code to type on it
-            hci_event_user_passkey_notification_get_bd_addr(packet, addr);
-            Stored dev = pending ? pending_dev : Stored{};
-            std::memcpy(dev.addr, addr, 6);
-            emit(BtHidEventType::PasskeyDisplay, dev, false, 0,
-                 hci_event_user_passkey_notification_get_numeric_value(packet));
-            break;
-        }
-        case HCI_EVENT_USER_PASSKEY_REQUEST: // we have no keyboard to type the code ourselves
-            hci_event_user_passkey_request_get_bd_addr(packet, addr);
-            gap_ssp_passkey_negative(addr);
-            break;
         default:
             break;
         }
@@ -1079,13 +1061,9 @@ bool BluetoothHid::init(const BluetoothHidConfig& config) {
     if (m_cfg.enable_classic) {
         hid_host_init(g_classic_descriptor_storage, sizeof(g_classic_descriptor_storage));
         hid_host_register_packet_handler(&classic_hid_trampoline);
-        // Let the pad use sniff mode and make us the master, as BTstack's hid_host_demo does.
-        gap_set_default_link_policy_settings(LM_LINK_POLICY_ENABLE_SNIFF_MODE | LM_LINK_POLICY_ENABLE_ROLE_SWITCH);
-        hci_set_master_slave_policy(HCI_ROLE_MASTER);
-        gap_set_bondable_mode(1);
-        gap_ssp_set_io_capability(SSP_IO_CAPABILITY_DISPLAY_ONLY);
-        gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
-        gap_connectable_control(1); // paired pads reconnect on their own
+        // GAP defaults, PIN / SSP answers and inquiry are shared with other Classic users.
+        BluetoothClassic::init(m_cfg.pin);
+        BluetoothClassic::add_passkey_listener(&Impl::passkey_trampoline, m_impl);
     }
 #endif
 

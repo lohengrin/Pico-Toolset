@@ -32,6 +32,7 @@ else()
 endif()
 if(PICO_TOOLSET_BLUETOOTH_CLASSIC)
     target_link_libraries(pico_toolset_bluetooth INTERFACE pico_btstack_classic)
+    target_sources(pico_toolset_bluetooth INTERFACE ${CMAKE_CURRENT_LIST_DIR}/src/bluetooth_classic.cpp)
 endif()
 target_compile_features(pico_toolset_bluetooth INTERFACE cxx_std_20)
 
