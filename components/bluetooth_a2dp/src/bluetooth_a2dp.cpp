@@ -407,7 +407,12 @@ void inquiry_result(const ClassicInquiryResult& r, void*) {
         e.volume = g.volume;
         g.cfg.callback(e, g.cfg.user);
     }
-    if (g.cfg.auto_connect) {
+    // Audio/Video major class also covers set-top boxes, TVs, cameras... : only headsets,
+    // speakers and the like are worth connecting to. The others are still reported above.
+    const uint8_t minor = (r.class_of_device >> 2) & 0x3F;
+    const bool sink_like = minor == 0x00 || minor == 0x01 || minor == 0x02 || minor == 0x05 || minor == 0x06 ||
+                           minor == 0x07 || minor == 0x08 || minor == 0x0A;
+    if (g.cfg.auto_connect && sink_like) {
         stop_pairing_internal();
         start_connection(r.addr);
     }
