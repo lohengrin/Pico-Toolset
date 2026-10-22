@@ -754,12 +754,18 @@ int main() {
             static absolute_time_t next_hb = get_absolute_time();
             if (a2dp_ok && a2dp.state() != A2dpState::Idle && time_reached(next_hb)) {
                 next_hb = make_timeout_time_ms(2000);
-                std::printf("[hb] loop %lu, lcd frames %lu (missed %lu), a2dp state %d\n", static_cast<unsigned long>(frame),
-                            static_cast<unsigned long>(g_lcd.frame_generation()),
-                            static_cast<unsigned long>(g_lcd.missed_frames()), static_cast<int>(a2dp.state()));
+                std::printf("[hb] loop %lu, lcd frames %lu (missed %lu), a2dp state %d, backlight %d (%s), lux %.1f\n",
+                            static_cast<unsigned long>(frame), static_cast<unsigned long>(g_lcd.frame_generation()),
+                            static_cast<unsigned long>(g_lcd.missed_frames()), static_cast<int>(a2dp.state()),
+                            static_cast<int>(backlight), auto_backlight ? "auto" : "manual", light.lux);
             }
             for (int c = getchar_timeout_us(0); c != PICO_ERROR_TIMEOUT && a2dp_ok; c = getchar_timeout_us(0)) {
                 switch (c) {
+                case 'b': // backlight to full, manual
+                    auto_backlight = false;
+                    backlight = 255.0f;
+                    display.set_backlight(255);
+                    break;
                 case 'a': a2dp.start_pairing(); break;
                 case 'c': a2dp.connect_last(); break;
                 case 'x': a2dp.disconnect(); break;
