@@ -684,7 +684,7 @@ struct BluetoothHid::Impl {
     void classic_reconnect_tick() {
         if (!cfg().enable_classic || !cfg().auto_reconnect) return;
         schedule_classic_retry(8000);
-        if (owner->m_pairing || pending || rawlink.active) return;
+        if (owner->m_pairing || pending || rawlink.active || BluetoothClassic::background_paging_inhibited()) return;
         for (size_t i = 0; i < stored_count; ++i) {
             if (stored[i].addr_type != kClassicAddrType || slot_by_addr(stored[i].addr)) continue;
             start_raw(stored[i], true);

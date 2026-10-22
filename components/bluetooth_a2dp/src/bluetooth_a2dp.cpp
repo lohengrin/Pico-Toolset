@@ -134,6 +134,8 @@ A2dpDevice device_info() {
 }
 
 void emit(A2dpEventType type, uint8_t status = 0) {
+    BluetoothClassic::inhibit_background_paging(g.state == A2dpState::Connecting || g.state == A2dpState::Connected ||
+                                                g.state == A2dpState::Streaming);
     if (!g.cfg.callback) return;
     A2dpEvent e{};
     e.type = type;
@@ -191,6 +193,13 @@ void apply_volume() {
 }
 
 // ---- encoder / media ----
+// The Bluedroid encoder only knows its frame length after the first encode; the packing code
+// needs it up front, so encode one silent frame right after every configure.
+void prime_encoder() {
+    std::memset(g.pcm, 0, sizeof(g.pcm));
+    g.enc->encode_signed_16(&g.enc_state, g.pcm, g.sbc_storage);
+}
+
 void produce_audio(int16_t* pcm, unsigned frames) {
     if (g.source) g.source->fill(pcm, frames);
     else std::memset(pcm, 0, frames * g.active.channels * sizeof(int16_t));
@@ -299,6 +308,7 @@ void reconfigure_encoder_bitpool() {
                      : g.active.mode == A2dpChannelMode::Dual ? SBC_CHANNEL_MODE_DUAL_CHANNEL
                      : g.active.mode == A2dpChannelMode::Stereo ? SBC_CHANNEL_MODE_STEREO
                                                                 : SBC_CHANNEL_MODE_JOINT_STEREO);
+    prime_encoder();
     g.active.bitrate = static_cast<uint32_t>((static_cast<uint64_t>(g.enc->sbc_buffer_length(&g.enc_state)) * 8u *
                                               g.active.rate) / g.enc->num_audio_frames(&g.enc_state));
 }
@@ -492,6 +502,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         g.enc->configure(&g.enc_state, SBC_MODE_STANDARD, blocks, subbands,
                          g.active.alloc, static_cast<uint16_t>(rate),
                          g.active.bitpool, sbc_mode);
+        prime_encoder();
         g.active.bitrate = static_cast<uint32_t>((static_cast<uint64_t>(g.enc->sbc_buffer_length(&g.enc_state)) * 8u *
                                                   rate) / g.enc->num_audio_frames(&g.enc_state));
         g.active.valid = true;

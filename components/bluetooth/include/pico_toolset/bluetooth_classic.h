@@ -45,6 +45,11 @@ public:
                               void* user);
     static void stop_inquiry();
     [[nodiscard]] static bool inquiry_active();
+
+    // Paging a bonded device in the background interrupts an established link (audible as
+    // dropouts in an A2DP stream): while any component holds this, the others should not page.
+    static void inhibit_background_paging(bool inhibit);
+    [[nodiscard]] static bool background_paging_inhibited();
 };
 
 } // namespace pico_toolset

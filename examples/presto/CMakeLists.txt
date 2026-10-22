@@ -122,6 +122,8 @@ else()
     if(PRESTO_BT_A2DP)
         target_link_libraries(${EXAMPLE_OUTPUT_NAME} PRIVATE pico_toolset_bluetooth_a2dp)
         target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PRESTO_BT_A2DP=1)
+        # The SBC encoder runs in the BTstack IRQ context on the core 0 stack (default 2 KB).
+        target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PICO_STACK_SIZE=0x1000)
     endif()
     # Bonding writes flash from core 0; core 1 only runs RAM-resident code (LCD
     # scanout interrupts + core1_idle()), so the SDK need not stop it. See
