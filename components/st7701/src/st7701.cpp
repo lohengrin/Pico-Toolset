@@ -147,12 +147,28 @@ void __not_in_flash_func(St7701::start_line_xfer)() {
     }
 }
 
+namespace {
+
+// RP2350-E5: aborting a channel that is chained to another one can re-trigger it before the
+// abort completes, so the busy wait never ends. The scanout interrupt on core 1 hung forever
+// there (seen as a black screen, mostly while the radio was busy). The SDK-documented workaround
+// is to clear the enable bit of the channel and its chain partner before aborting.
+void __not_in_flash_func(abort_chained_dma)(int a, int b) {
+    hw_clear_bits(&dma_hw->ch[a].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+    hw_clear_bits(&dma_hw->ch[b].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+    dma_hw->abort = (1u << a) | (1u << b);
+    while ((dma_hw->ch[a].ctrl_trig | dma_hw->ch[b].ctrl_trig) & DMA_CH0_CTRL_TRIG_BUSY_BITS) tight_loop_contents();
+    hw_set_bits(&dma_hw->ch[a].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+    hw_set_bits(&dma_hw->ch[b].al1_ctrl, DMA_CH0_CTRL_TRIG_EN_BITS);
+}
+
+} // namespace
+
 void __not_in_flash_func(St7701::start_frame_xfer)() {
     hw_clear_bits(&m_cfg.pio->irq, 0x2);
 
     m_next_line_addr = nullptr;
-    dma_channel_abort(m_dma);
-    dma_channel_wait_for_finish_blocking(m_dma);
+    abort_chained_dma(m_dma, m_dma2);
     pio_sm_set_enabled(m_cfg.pio, m_parallel_sm, false);
     pio_sm_clear_fifos(m_cfg.pio, m_parallel_sm);
     // pio_sm_restart() empties OSR/ISR without a stallable exec: the original
@@ -499,10 +515,7 @@ void St7701::cleanup() {
         dma_channel_unclaim(m_dma4);
         dma_channel_unclaim(m_dma3);
     }
-    do {
-        dma_channel_abort(m_dma);
-        sleep_us(10);
-    } while (dma_channel_is_busy(m_dma));
+    abort_chained_dma(m_dma, m_dma2);
     dma_channel_unclaim(m_dma);
     dma_channel_unclaim(m_dma2);
 
