@@ -341,7 +341,7 @@ bool start_connection(const uint8_t addr[6]) {
     link_key_type_t key_type;
     if (!gap_get_link_key_for_bd_addr(g.peer, key, &key_type)) {
         g.bonding = true;
-        const uint8_t rc = gap_dedicated_bonding(g.peer, 1);
+        const uint8_t rc = gap_dedicated_bonding(g.peer, 0);
         if (rc != ERROR_CODE_SUCCESS) {
             g.bonding = false;
             g.state = A2dpState::Idle;
