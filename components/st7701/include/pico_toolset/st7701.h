@@ -127,11 +127,6 @@ public:
     void scanline_task();
     // Frames skipped / lines not ready in time since init (Scanline565).
     [[nodiscard]] uint32_t missed_frames() const { return m_missed_frames; }
-    // Counts scanned frames: stops increasing if the scanout interrupts die.
-    [[nodiscard]] uint32_t frame_generation() const { return m_frame_gen; }
-    // Debug: true while a caller is blocked in wait_for_vsync(); scan row within the frame.
-    [[nodiscard]] bool waiting_for_vsync() const { return m_waiting_for_vsync; }
-    [[nodiscard]] int display_row() const { return m_display_row; }
     [[nodiscard]] uint32_t late_lines() const { return m_late_lines; }
 
     // Blocks (WFE) until the next vertical blank.
@@ -139,16 +134,6 @@ public:
 
     // 0-255, perceptual curve. No-op without a backlight pin.
     void set_backlight(uint8_t brightness);
-
-    // Debug: raw scanout hardware state, readable from any core.
-    struct Debug {
-        uint32_t pio_irq, pio_fstat, pio_fdebug;
-        uint32_t pc_parallel, pc_timing;
-        uint32_t dma_ctrl[2], dma_count[2], dma_read[2];
-        int row;
-        uint32_t timing_enter, timing_exit, eol_enter, eol_exit, where;
-    };
-    [[nodiscard]] Debug debug_state() const;
 
     // Interrupt entry points -- not for application use.
     void drive_timing();
@@ -190,8 +175,6 @@ private:
     uint16_t m_timing_row = 0;
     uint16_t m_timing_phase = 0;
     volatile bool m_waiting_for_vsync = false;
-    volatile uint32_t m_dbg_timing_enter = 0, m_dbg_timing_exit = 0, m_dbg_eol_enter = 0, m_dbg_eol_exit = 0;
-    volatile uint32_t m_dbg_where = 0;
 };
 
 } // namespace pico_toolset

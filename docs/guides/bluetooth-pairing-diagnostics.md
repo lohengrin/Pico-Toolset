@@ -58,6 +58,19 @@ the headset must be in pairing mode (or already bonded and idle, not connected t
 an AVDTP/L2CAP status after `Connecting`, try `PRESTO_BT_HCI_DUMP` and compare with the headset's
 capability bitmaps; `s` shows `dropped` frames when the link cannot keep up (lower the quality).
 
+Failure codes seen on a Sony MDR-ZX770BN, in the order they appeared:
+
+| Status | Meaning | Cause / fix |
+|---|---|---|
+| SDP `0x82` | service not found | stream opened before the link was authenticated: bond first |
+| `0x63` | PIN or link key missing | stale link key kept from an earlier pairing: drop it before pairing |
+| `0x1F` | unspecified error | our page right after bonding collides with the headset calling back: wait ~6 s, then retry |
+| long `connecting`, then failure | radio busy | a bonded Classic gamepad is being paged in the background; paging is suspended while A2DP connects |
+| `HCI reason 0x16` | closed by this device | look at the "closed by" text: an API call (e.g. serial input `x`/`F`) or the stack |
+
+A set-top box in the room (class `0x28....`) can show up first in the inquiry; only
+headset / headphone / speaker classes (`0x24....`) are connected automatically.
+
 ## Case file: the "SFR Gamepad" (Classic, broken SDP)
 
 Symptoms: found by inquiry, pairs (legacy PIN `0000`), then `FAILED status 0x11`. The dump showed

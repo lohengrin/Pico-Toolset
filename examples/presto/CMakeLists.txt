@@ -122,7 +122,6 @@ else()
     if(PRESTO_BT_A2DP)
         target_link_libraries(${EXAMPLE_OUTPUT_NAME} PRIVATE pico_toolset_bluetooth_a2dp)
         target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PRESTO_BT_A2DP=1)
-        target_link_options(${EXAMPLE_OUTPUT_NAME} PRIVATE -Wl,--wrap=flash_range_erase -Wl,--wrap=flash_range_program)
         # The SBC encoder runs in the BTstack IRQ context on the core 0 stack (default 2 KB).
         target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PICO_STACK_SIZE=0x1000)
     endif()

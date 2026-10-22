@@ -4,9 +4,12 @@ Bluetooth **A2DP source**: streams generated audio (an [`AudioSource`](audio-syn
 Bluetooth headset or speaker, with SBC bit-rate presets, volume control, pairing and
 reconnect to the last headset. Playback only: no microphone / hands-free, no file playback.
 
-> **Status: written and builds, not yet tested on hardware.** The intended test devices are a
-> HUAWEI FreeBuds 6i and a Sony MDR-ZX770BN. At the first connect the example logs the headset's
-> SBC capabilities (see "First test" below); please paste that log if something is off.
+> **Status: validated on the Presto with a Sony MDR-ZX770BN** (pairing, SBC negotiation at 44.1 kHz
+> joint stereo / bitpool 25 = 173 kbps, continuous generated tone, no dropped frames, ~0.33 ms
+> encode time per SBC frame at the default 150 MHz clock). Not yet tested: the HUAWEI FreeBuds 6i,
+> volume control on a headset (the Sony's remote volume was not exercised), the other quality
+> presets, and a reconnect after a reset. At the first connect the example logs the headset's SBC
+> capabilities; paste that log if something is off.
 
 | | |
 |---|---|
@@ -67,13 +70,46 @@ capability bitmaps, for diagnostics), `Connected`, `Configured` (negotiated rate
 subbands / bitpool range / resulting bit rate), `StreamStarted`, `StreamSuspended`,
 `VolumeChanged`, `Disconnected`, `Failed`.
 
+## Pairing flow and lessons learned (Sony MDR-ZX770BN)
+
+`start_pairing()` runs an inquiry for audio devices and connects to the first one whose class is a
+headset / headphones / speaker (set-top boxes and TVs share the Audio/Video major class and are
+reported but skipped). Then:
+
+1. Any stored link key for that device is dropped first. A headset in pairing mode has forgotten the
+   old bond and answers a stale key with status `0x63` ("PIN or key missing").
+2. The device is bonded on its own (`gap_dedicated_bonding`, no MITM -- we are display-only, the
+   headset display-yes/no, so an authenticated link is impossible and BTstack rejected the
+   confirmation otherwise). Older Sonys only show their A2DP record on an authenticated link: opening
+   the stream first fails with SDP `0x82`.
+3. BTstack drops the bonding link, and many headsets then call back by themselves. We wait 6 s for
+   that (an incoming connection is adopted and the stream opened), then page the headset ourselves,
+   retrying 3 times 2.5 s apart. Paging at once made this Sony answer `0x1F` every time.
+4. While pairing/connecting/streaming, `BluetoothClassic::inhibit_background_paging()` is held: the
+   background page of a bonded Classic gamepad (see below) otherwise blocks the radio for up to 15 s
+   and the headset leaves pairing mode before our attempt gets through. A page already in flight is
+   cancelled.
+
+Build requirements worth knowing: `HCI_ACL_PAYLOAD_SIZE` is raised to 1 KB under A2DP (at the
+default 255 bytes an SBC packet holds only 3 frames and the stream starves), `MAX_NR_AVRCP_CONNECTIONS`
+is 2 (the headset opens its own remote-control channel while we open ours) and our AVRCP connect is
+made only after the stream is open. The SBC encoder runs in the BTstack context on core 0's stack, so
+give it room (`PICO_STACK_SIZE=0x1000` in the Presto example).
+
+Debugging aids: `A2dpEventType::Disconnected` carries the HCI reason (`status`; `0x16` only means *we*
+closed the link, whatever the underlying reason) and `cause` (which API call closed it, if any --
+another process writing keys to the serial console once triggered `forget`). `stats()` includes encode
+time per SBC frame. With the Presto's `PRESTO_BT_HCI_DUMP=ON` the HCI packets of each connection
+attempt are logged.
+
 ## First test (Presto)
 
 1. `cmake -S examples/presto -B build -DPRESTO_BT_A2DP=ON`, flash, open the serial console.
-2. Put the headset in pairing mode (FreeBuds 6i: hold the case button until the LED blinks white;
+2. Put the headset in pairing mode (keep it close, and unpair it from phones first; FreeBuds 6i: hold the case button until the LED blinks white;
    MDR-ZX770BN: hold the power button ~7 s until it announces pairing).
 3. Touch the status band, `AUDIO (HEADSET)`, `PAIR` (or press `a` on the console). Expect
-   `found` -> `Capabilities` -> `Configured` -> `streaming`; a tone should play.
+   `found` -> `connecting` -> (a few seconds) -> `connected` -> `Capabilities` -> `Configured` ->
+   `streaming`; a tone should play. Bonding is followed by a deliberate wait of up to ~6 s.
 4. `+`/`-`, `q` (quality), `w` (sound), `p` (pause), `s` (stats; `dropped` should stay ~0).
 5. Reset the board: `connect_last()` / auto-reconnect should bring the headset back (it must be on
    and not connected to a phone).

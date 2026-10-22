@@ -221,8 +221,8 @@ Not yet done or not yet verified on hardware:
   need mapping from `gamepad_raw_buttons()`.
 - **Untested Bluetooth devices:** LE gamepads (e.g. Xbox wireless), mice, Classic keyboards, and
   BTstack's own Classic HID path for pads with a normal SDP record.
-- **Bluetooth audio (A2DP):** builds in every variant but is untested with a real headset
-  (HUAWEI FreeBuds 6i, Sony MDR-ZX770BN planned); see the first-test steps in the component page.
+- **Bluetooth audio (A2DP):** validated with a Sony MDR-ZX770BN; the HUAWEI FreeBuds 6i, headset
+  volume buttons and reconnect-after-reset are untested (see the component page).
 - **Device manager:** written and builds in every variant, not yet exercised on hardware (touch
   hit areas, list refresh, forget of a connected device).
 - **HID output** (keyboard LEDs, gamepad rumble) is not implemented.

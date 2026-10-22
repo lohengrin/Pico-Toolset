@@ -75,7 +75,6 @@
 #ifndef PRESTO_NO_RADIO
 #include "lwip/ip4_addr.h"
 #include "lwip/netif.h"
-#include "pico/async_context.h"
 #include "pico/cyw43_arch.h"
 #endif
 #include "pico/multicore.h"
@@ -178,10 +177,6 @@ char usage_to_ascii(uint8_t usage, bool shift) {
 
 constexpr int kStatusH = kSize / 13;
 
-volatile int g_stage = 0; // main-loop breadcrumb, read by the A2DP watchdog
-volatile uint32_t g_flash_erases = 0, g_flash_programs = 0, g_flash_last_ms = 0; // see __wrap_flash_range_*
-volatile uint32_t g_frame = 0;
-
 #ifndef PRESTO_NO_RADIO
 // ---- Bluetooth device manager (touch): list bonded devices, forget one, start pairing ----
 struct DeviceMenu {
@@ -266,32 +261,6 @@ AudioAction audio_hit(int x, int y) {
     const int row = (y - kAudioButtonsY) / kMenuRowH;
     if (row > 3) return AudioAction::None;
     return kAudioActions[row * 2 + (x < kSize / 2 ? 0 : 1)];
-}
-
-async_at_time_worker_t g_wd_worker;
-St7701* g_wd_lcd = nullptr;
-
-// Runs in the Bluetooth context, so it keeps printing when the main loop is stuck.
-void wd_do_work(async_context_t* ctx, async_at_time_worker_t* worker) {
-    std::printf("[wd] stage %d loop %lu lcd waiting %d row %d\n", g_stage, static_cast<unsigned long>(g_frame),
-                g_wd_lcd && g_wd_lcd->waiting_for_vsync(), g_wd_lcd ? g_wd_lcd->display_row() : -1);
-    if (g_wd_lcd) {
-        const auto d = g_wd_lcd->debug_state();
-        std::printf("[wd] pio irq %02lX fstat %08lX fdebug %08lX pc par %lu tim %lu | dma0 ctrl %08lX cnt %lu rd %08lX | "
-                    "dma1 ctrl %08lX cnt %lu rd %08lX\n",
-                    static_cast<unsigned long>(d.pio_irq), static_cast<unsigned long>(d.pio_fstat),
-                    static_cast<unsigned long>(d.pio_fdebug), static_cast<unsigned long>(d.pc_parallel),
-                    static_cast<unsigned long>(d.pc_timing), static_cast<unsigned long>(d.dma_ctrl[0]),
-                    static_cast<unsigned long>(d.dma_count[0]), static_cast<unsigned long>(d.dma_read[0]),
-                    static_cast<unsigned long>(d.dma_ctrl[1]), static_cast<unsigned long>(d.dma_count[1]),
-                    static_cast<unsigned long>(d.dma_read[1]));
-        std::printf("[wd] isr timing %lu/%lu eol %lu/%lu where %lu | flash erase %lu prog %lu last at %lu ms\n",
-                    static_cast<unsigned long>(d.timing_enter), static_cast<unsigned long>(d.timing_exit),
-                    static_cast<unsigned long>(d.eol_enter), static_cast<unsigned long>(d.eol_exit),
-                    static_cast<unsigned long>(d.where), static_cast<unsigned long>(g_flash_erases),
-                    static_cast<unsigned long>(g_flash_programs), static_cast<unsigned long>(g_flash_last_ms));
-    }
-    async_context_add_at_time_worker_in_ms(ctx, worker, 1000);
 }
 
 volatile bool g_a2dp_dirty = false;
@@ -509,23 +478,6 @@ void scan_qwst() {
 
 } // namespace
 
-// Linked with --wrap (CMakeLists.txt): counts flash writes so the watchdog can correlate them
-// with the scanout stopping. Plain counters only -- interrupts are off while this runs.
-extern "C" {
-void __real_flash_range_erase(uint32_t flash_offs, size_t count);
-void __real_flash_range_program(uint32_t flash_offs, const uint8_t* data, size_t count);
-void __wrap_flash_range_erase(uint32_t flash_offs, size_t count) {
-    g_flash_erases = g_flash_erases + 1;
-    g_flash_last_ms = to_ms_since_boot(get_absolute_time());
-    __real_flash_range_erase(flash_offs, count);
-}
-void __wrap_flash_range_program(uint32_t flash_offs, const uint8_t* data, size_t count) {
-    g_flash_programs = g_flash_programs + 1;
-    g_flash_last_ms = to_ms_since_boot(get_absolute_time());
-    __real_flash_range_program(flash_offs, data, count);
-}
-}
-
 int main() {
     stdio_init_all();
     sleep_ms(2000);
@@ -687,11 +639,6 @@ int main() {
         a2dp_status = a2dp_ok ? Status::Absent : Status::Failed;
     }
     bool audio_open = false;
-    if (a2dp_ok) {
-        g_wd_lcd = &g_lcd;
-        g_wd_worker.do_work = wd_do_work;
-        async_context_add_at_time_worker_in_ms(cyw43_arch_async_context(), &g_wd_worker, 1000);
-    }
     size_t source_index = 0;
     uint8_t a2dp_volume = a2dp.volume();
 #endif
@@ -717,9 +664,7 @@ int main() {
 #endif
     TouchSample prev{};
     while (true) {
-        g_stage = 1;
         auto t = touch.read();
-        g_stage = 2;
 
         if (time_reached(next_sensors)) {
             next_sensors = make_timeout_time_ms(250);
@@ -734,7 +679,6 @@ int main() {
         }
 
 #ifndef PRESTO_NO_RADIO
-        g_stage = 3;
         if (hid_ok) {
             // Touching the status band starts pairing mode.
             // Tap the status band: open/close the device manager. Inside it: X forgets a device,
@@ -812,14 +756,6 @@ int main() {
             a2dp_status = !a2dp_ok ? Status::Failed
                         : a2dp.state() == A2dpState::Streaming ? Status::Ok
                         : a2dp.state() == A2dpState::Idle ? Status::Absent : Status::Busy;
-            static absolute_time_t next_hb = get_absolute_time();
-            if (a2dp_ok && a2dp.state() != A2dpState::Idle && time_reached(next_hb)) {
-                next_hb = make_timeout_time_ms(2000);
-                std::printf("[hb] loop %lu, lcd frames %lu (missed %lu), a2dp state %d, backlight %d (%s), lux %.1f\n",
-                            static_cast<unsigned long>(frame), static_cast<unsigned long>(g_lcd.frame_generation()),
-                            static_cast<unsigned long>(g_lcd.missed_frames()), static_cast<int>(a2dp.state()),
-                            static_cast<int>(backlight), auto_backlight ? "auto" : "manual", light.lux);
-            }
             for (int c = getchar_timeout_us(0); c != PICO_ERROR_TIMEOUT && a2dp_ok; c = getchar_timeout_us(0)) {
                 switch (c) {
                 case 'b': // backlight to full, manual
@@ -904,7 +840,6 @@ int main() {
         }
 #endif
 
-        g_stage = 4;
         if (pad_ok) {
             using namespace qwstpad_button;
             const uint16_t b = pad.read_buttons();
@@ -931,12 +866,9 @@ int main() {
 
 
         if (lcd_ok) {
-            g_stage = 5;
             display.flush(); // wait for vblank so the redraw trails the beam
             draw_status(display, 2, status(touch.bus_ok()));
-            g_stage = 6;
             draw_ui(t);
-            g_stage = 7;
             if (!menu_open && bme_ok) {
                 draw_gauge(display, 2, (env.temperature_c - 0.0f) / 40.0f, kColorRed);
                 draw_gauge(display, 1, env.humidity_pct / 100.0f, kColorBlue);
@@ -982,7 +914,6 @@ int main() {
             std::printf("touch %d (%u,%u)\n", t.pressed, t.raw_x, t.raw_y);
         prev = t;
 
-        g_stage = 8;
         if (leds_ok) {
             const bool button = !gpio_get(kUserButtonPin);
             if (button && !button_prev && ltr_ok) {
@@ -1002,6 +933,6 @@ int main() {
             leds.show();
         }
 
-        g_frame = ++frame;
+        ++frame;
     }
 }

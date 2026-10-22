@@ -107,7 +107,9 @@ component ships an `example/` program that doubles as a smoke test.
 - **Bluetooth bonding writes flash**: `pico_toolset_bluetooth_hid` (via the SDK's BTstack
   flash bank) erases/programs flash from the BTstack context. Another core must run only
   RAM code and the build must define `PICO_FLASH_ASSUME_CORE1_SAFE=1` (no core1 lockout
-  registration, per the rule above). BTstack's flash bank also collides with
+  registration, per the rule above). That also means core 1's idle loop must really live in RAM:
+  mark it `__no_inline_not_in_flash_func` (plain `__not_in_flash_func` got inlined into a
+  flash-resident caller and core 1 died during bonding, blanking the Presto LCD). BTstack's flash bank also collides with
   `flash_store`'s default region -- move one (see docs/components/bluetooth-hid.md).
 - **Flash store region is reserved by the consumer**: `pico_toolset_flash_store`
   uses the last N sectors of flash (default 2); the consuming app must keep its
