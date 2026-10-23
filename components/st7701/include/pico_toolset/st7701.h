@@ -80,6 +80,15 @@ struct St7701Config {
     // application recolours it).
     uint16_t visible_height = 0;
     uint8_t  blank_index = 0;
+    // Source lines scanned out as the same black band *above* the framebuffer
+    // (Rgb565 and Palette8 only; ignored for Scanline565). Together with
+    // `visible_height` it positions a smaller picture inside the panel
+    // without paying for the surrounding lines: e.g. 480x320 pixels centred
+    // in 480x480 is top_blank_lines = 80, visible_height = 320 (a 300 KB
+    // RGB565 framebuffer, 80 black lines above and below). Clamped so that
+    // top_blank_lines + visible_height <= height. Band colour as for
+    // `visible_height` (black, or Palette8 entry `blank_index`).
+    uint16_t top_blank_lines = 0;
 };
 
 // Pixel format of the framebuffer: RGB565 with the two bytes swapped (the DMA
@@ -106,7 +115,8 @@ public:
     [[nodiscard]] uint8_t* framebuffer8() const { return static_cast<uint8_t*>(m_cfg.framebuffer); }
     [[nodiscard]] St7701Format format() const { return m_cfg.format; }
     [[nodiscard]] int width() const { return m_cfg.width; }
-    // Lines backed by pixels (visible_height, or the full height).
+    // Lines backed by pixels (visible_height, or the full height); the
+    // framebuffer holds exactly this many lines, starting top_blank_lines down.
     [[nodiscard]] int height() const { return m_visible_height; }
 
     // Copies a full width*height frame (st7701_encode()d pixels) into the
@@ -179,6 +189,7 @@ private:
     int m_display_row = 0;
     int m_row_shift = 0;
     int m_visible_height = 0;
+    int m_top_blank = 0; // source lines of blank band above the framebuffer
     uint16_t m_timing_row = 0;
     uint16_t m_timing_phase = 0;
     volatile bool m_waiting_for_vsync = false;

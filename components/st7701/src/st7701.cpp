@@ -126,11 +126,12 @@ void __not_in_flash_func(St7701::start_line_xfer)() {
         m_next_line_addr = nullptr;
         return;
     }
-    const int src = m_display_row >> m_row_shift;
-    if (src >= m_visible_height) {
+    int src = m_display_row >> m_row_shift;
+    if (src < m_top_blank || src >= m_top_blank + m_visible_height) {
         m_next_line_addr = g_blank_line;
         return;
     }
+    src -= m_top_blank; // framebuffer line (always 0 top blank for Scanline565)
     switch (m_cfg.format) {
     case St7701Format::Palette8:
         m_next_line_addr = reinterpret_cast<uint16_t*>(
@@ -192,8 +193,11 @@ void __not_in_flash_func(St7701::start_frame_xfer)() {
         m_scan_src = 0;
         m_next_line_addr = m_line_ring[0];
     } else {
-        m_next_line_addr = static_cast<uint16_t*>(m_cfg.framebuffer);
-        dma_channel_set_read_addr(m_dma, m_cfg.framebuffer, true);
+        // Line 0 of the panel: the blank band when a top band is configured
+        // (m_top_blank is 0 for Scanline565, handled above).
+        void* first = m_top_blank > 0 ? static_cast<void*>(g_blank_line) : m_cfg.framebuffer;
+        m_next_line_addr = static_cast<uint16_t*>(first);
+        dma_channel_set_read_addr(m_dma, first, true);
     }
 
     m_waiting_for_vsync = false;
@@ -292,6 +296,11 @@ bool St7701::init(const St7701Config& config) {
     m_row_shift = (m_cfg.height == 240) ? 1 : 0;
     m_visible_height = (m_cfg.visible_height == 0 || m_cfg.visible_height > m_cfg.height)
                            ? m_cfg.height : m_cfg.visible_height;
+    m_top_blank = 0;
+    if (m_cfg.format != St7701Format::Scanline565 && m_cfg.top_blank_lines > 0) {
+        const int max_top = m_cfg.height - m_visible_height;
+        m_top_blank = m_cfg.top_blank_lines > max_top ? max_top : m_cfg.top_blank_lines;
+    }
     if (m_cfg.format == St7701Format::Palette8)
         std::memset(g_blank_line, m_cfg.blank_index, sizeof(g_blank_line));
     else
