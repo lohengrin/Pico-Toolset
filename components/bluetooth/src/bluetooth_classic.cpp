@@ -15,7 +15,8 @@ constexpr int kMaxInquiryClients = 2;
 
 struct State {
     bool initialised = false;
-    const char* pin = "0000";
+    char pin[17] = "0000"; // copied: the caller's string need not outlive init()
+    struct { bool (*open)(void*); void* user; } gates[2]{};
     btstack_packet_callback_registration_t hci_reg{};
     struct { ClassicPasskeyCallback cb; void* user; } passkey[kMaxPasskeyListeners]{};
     struct InquiryClient { ClassicInquiryCallback cb; void* user; uint8_t major_class; } clients[kMaxInquiryClients]{};
@@ -26,6 +27,18 @@ struct State {
     void* inhibit_user = nullptr;
 };
 State g;
+
+// Without registered gates everything is allowed; otherwise a pairing request is answered only
+// while some component has a pairing window open (a nearby device cannot bond with us unasked).
+bool pairing_allowed() {
+    bool any_gate = false;
+    for (const auto& gt : g.gates) {
+        if (!gt.open) continue;
+        any_gate = true;
+        if (gt.open(gt.user)) return true;
+    }
+    return !any_gate;
+}
 
 bool any_client() {
     for (const auto& c : g.clients)
@@ -74,11 +87,13 @@ void hci_handler(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
         break;
     case HCI_EVENT_PIN_CODE_REQUEST: // legacy pairing (pre Bluetooth 2.1 devices): fixed PIN
         hci_event_pin_code_request_get_bd_addr(packet, addr);
-        gap_pin_code_response(addr, g.pin ? g.pin : "0000");
+        if (pairing_allowed()) gap_pin_code_response(addr, g.pin);
+        else gap_pin_code_negative(addr);
         break;
     case HCI_EVENT_USER_CONFIRMATION_REQUEST: // SSP numeric comparison / just works: accept
         hci_event_user_confirmation_request_get_bd_addr(packet, addr);
-        gap_ssp_confirmation_response(addr);
+        if (pairing_allowed()) gap_ssp_confirmation_response(addr);
+        else gap_ssp_confirmation_negative(addr);
         break;
     case HCI_EVENT_USER_PASSKEY_NOTIFICATION: // a keyboard: the user types this code on it
         hci_event_user_passkey_notification_get_bd_addr(packet, addr);
@@ -97,7 +112,10 @@ void hci_handler(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
 } // namespace
 
 void BluetoothClassic::init(const char* pin) {
-    if (pin) g.pin = pin;
+    if (pin) {
+        std::strncpy(g.pin, pin, sizeof(g.pin) - 1);
+        g.pin[sizeof(g.pin) - 1] = '\0';
+    }
     if (g.initialised) return;
     g.initialised = true;
     // Let the remote use sniff mode and make us the master, as BTstack's HID and A2DP demos do.
@@ -114,6 +132,13 @@ void BluetoothClassic::init(const char* pin) {
     hci_set_inquiry_mode(INQUIRY_MODE_RSSI_AND_EIR); // names and device ids in inquiry results
     g.hci_reg.callback = &hci_handler;
     hci_add_event_handler(&g.hci_reg);
+}
+
+void BluetoothClassic::add_pairing_gate(bool (*is_open)(void*), void* user) {
+    for (auto& gt : g.gates) {
+        if (gt.open == is_open && gt.user == user) return;
+        if (!gt.open) { gt.open = is_open; gt.user = user; return; }
+    }
 }
 
 void BluetoothClassic::add_passkey_listener(ClassicPasskeyCallback callback, void* user) {

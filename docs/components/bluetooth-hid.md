@@ -17,7 +17,9 @@ kind of state accessors as [`usb_hid`](usb-hid.md).
 >
 > **Missing:** HID output (keyboard LEDs, rumble), sixaxis/DualShock 3. The Presto example has a
 > touch device manager (list / forget / pair) built on `bonded_devices()`, `forget()` and
-> `start_pairing()`; it is not yet tested on hardware. Debugging help:
+> `start_pairing()`; PAIR NEW and the audio page behind it are used on hardware, forgetting a
+> connected device is not specifically tested. Works together with `bluetooth_a2dp` (keyboard +
+> gamepad + headset validated at once). Debugging help:
 > [Bluetooth pairing diagnostics](../guides/bluetooth-pairing-diagnostics.md).
 
 | | |

@@ -263,10 +263,22 @@ struct BluetoothHid::Impl {
         if (len > 0) stored_count = static_cast<size_t>(len) / sizeof(Stored);
         if (stored_count > kMaxBonded) stored_count = kMaxBonded;
     }
+    // Removes the keys BTstack holds for a device (link key / LE bonding, whitelist entry).
+    void drop_bond(const Stored& dev) {
+        if (dev.addr_type == kClassicAddrType) {
+#ifdef ENABLE_CLASSIC
+            gap_drop_link_key_for_bd_addr(const_cast<uint8_t*>(dev.addr));
+#endif
+        } else {
+            gap_whitelist_remove(static_cast<bd_addr_type_t>(dev.addr_type), const_cast<uint8_t*>(dev.addr));
+            gap_delete_bonding(static_cast<bd_addr_type_t>(dev.addr_type), const_cast<uint8_t*>(dev.addr));
+        }
+    }
     void remember(const Stored& dev) {
         int i = find_stored(dev.addr);
         if (i < 0) {
             if (stored_count == kMaxBonded) { // drop the oldest to make room
+                drop_bond(stored[0]);
                 for (size_t k = 1; k < kMaxBonded; ++k) stored[k - 1] = stored[k];
                 stored_count = kMaxBonded - 1;
             }
@@ -1111,6 +1123,8 @@ bool BluetoothHid::init(const BluetoothHidConfig& config) {
         // GAP defaults, PIN / SSP answers and inquiry are shared with other Classic users.
         BluetoothClassic::init(m_cfg.pin);
         BluetoothClassic::add_passkey_listener(&Impl::passkey_trampoline, m_impl);
+        BluetoothClassic::add_pairing_gate(
+            [](void*) { Impl* im = Impl::g_impl_ptr(); return im && (im->owner->m_pairing || im->pending); }, nullptr);
         BluetoothClassic::set_paging_inhibit_listener(&Impl::abort_background_page, nullptr);
     }
 #endif
@@ -1188,16 +1202,16 @@ bool BluetoothHid::forget(const uint8_t addr[6]) {
     const int i = im.find_stored(addr);
     if (i < 0) return false;
     const Stored dev = im.stored[i];
-    if (dev.addr_type == kClassicAddrType) {
+    if (Slot* s = im.slot_by_addr(addr)) {
+        if (dev.addr_type == kClassicAddrType) {
 #ifdef ENABLE_CLASSIC
-        if (Slot* s = im.slot_by_addr(addr)) hid_host_disconnect(s->classic_cid);
-        gap_drop_link_key_for_bd_addr(const_cast<uint8_t*>(dev.addr));
+            hid_host_disconnect(s->classic_cid);
 #endif
-    } else {
-        if (Slot* s = im.slot_by_addr(addr)) gap_disconnect(s->handle);
-        gap_whitelist_remove(static_cast<bd_addr_type_t>(dev.addr_type), const_cast<uint8_t*>(dev.addr));
-        gap_delete_bonding(static_cast<bd_addr_type_t>(dev.addr_type), const_cast<uint8_t*>(dev.addr));
+        } else {
+            gap_disconnect(s->handle);
+        }
     }
+    im.drop_bond(dev);
     for (size_t k = static_cast<size_t>(i) + 1; k < im.stored_count; ++k) im.stored[k - 1] = im.stored[k];
     --im.stored_count;
     im.save_stored();
@@ -1223,6 +1237,7 @@ bool BluetoothHid::is_key_down(uint8_t usage) const {
 bool BluetoothHid::is_modifier_down(uint8_t mask) const { return m_impl && (m_impl->modifiers & mask); }
 bool BluetoothHid::consume_key_press(uint8_t usage) {
     if (!m_impl) return false;
+    ContextLock lock; // the edge bits are set from the BTstack context: no lost presses
     const uint32_t bit = 1u << (usage & 31);
     if (!(m_impl->key_edges[usage >> 5] & bit)) return false;
     m_impl->key_edges[usage >> 5] = m_impl->key_edges[usage >> 5] & ~bit;
@@ -1240,18 +1255,22 @@ BluetoothHid::MouseState BluetoothHid::mouse_state() const {
 }
 void BluetoothHid::consume_mouse_delta(int& dx, int& dy) {
     if (!m_impl) { dx = dy = 0; return; }
+    ContextLock lock;
     dx = m_impl->mouse_dx; dy = m_impl->mouse_dy;
     m_impl->mouse_dx = 0; m_impl->mouse_dy = 0;
 }
 int BluetoothHid::consume_mouse_wheel() {
     if (!m_impl) return 0;
+    ContextLock lock;
     const int w = m_impl->mouse_wheel;
     m_impl->mouse_wheel = 0;
     return w;
 }
 
 GamepadState BluetoothHid::gamepad_state(size_t index) const {
-    return (m_impl && index < kMaxConnected) ? m_impl->pads[index] : GamepadState{};
+    if (!m_impl || index >= kMaxConnected) return GamepadState{};
+    ContextLock lock; // a consistent copy, not one torn by a report arriving meanwhile
+    return m_impl->pads[index];
 }
 uint32_t BluetoothHid::gamepad_raw_buttons(size_t index) const {
     return (m_impl && index < kMaxConnected) ? m_impl->pad_raw[index] : 0;

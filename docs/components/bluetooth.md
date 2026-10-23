@@ -20,6 +20,10 @@ BLE broadcaster and observer (non-connectable advertising plus scanning) over BT
 
 - The build has **one** `btstack_config.h` (`components/bluetooth/config/`): LE central + peripheral roles, pools sized for three HID devices; an `#ifdef ENABLE_CLASSIC` block adds the Classic limits. Classic support is opt-in with the CMake option `PICO_TOOLSET_BLUETOOTH_CLASSIC` (see [bluetooth_hid](bluetooth-hid.md#bluetooth-classic-older-pads-and-keyboards)).
 - `BluetoothClassic` (`bluetooth_classic.h`, only with `PICO_TOOLSET_BLUETOOTH_CLASSIC`) is the shared Classic helper used by `bluetooth_hid` and `bluetooth_a2dp`: GAP defaults, PIN/SSP answers and device inquiry. The inquiry is shared by up to two clients, each filtered by its own device class and stopped by its own callback (an earlier single-client version made "pair a gamepad" silently do nothing while an A2DP headset search was running). It also carries the "inhibit background paging" flag that A2DP sets while it connects/streams.
+- Pairing security: `BluetoothClassic` answers legacy PIN and SSP confirmation requests only while a
+  component has a pairing window open (`add_pairing_gate()`: `bluetooth_hid` while pairing or connecting a
+  new device, `bluetooth_a2dp` while it is not idle). Outside such a window a device that tries to bond with
+  us is refused. The PIN string is copied (max 16 characters).
 - The AVDTP/AVRCP pool sizes for [bluetooth_a2dp](bluetooth-a2dp.md) are only enabled when that component is linked (`PICO_TOOLSET_BLUETOOTH_A2DP`).
 - Pool-size macros use this BTstack version's names (e.g. `MAX_NR_HIDS_HOSTS`); a pool of 0 shows up as "Not enough memory" in the log.
 - The shared `lwipopts.h` from `pico_toolset_net_config` enables lwIP's TLS layer, so the final executable must also link mbedtls: link `pico_toolset_https_client` and include `cmake/pico_toolset_tls_config.cmake` before `pico_sdk_init()` (the toolset's top-level does that when `PICO_TOOLSET_BUILD_BLUETOOTH` or `..._HTTPS_CLIENT` is ON).

@@ -112,6 +112,7 @@ struct State {
     btstack_packet_callback_registration_t hci_reg{};
     btstack_timer_source_t bond_timer{};
     A2dpEvent::Cause disc_cause = A2dpEvent::CauseStack; // set by the API call that closes the link
+    char local_name[32]{};
     uint8_t last_disc_reason = 0; // HCI reason of the most recent ACL disconnection
     bool bonding = false; // dedicated bonding in progress before the A2DP connection
 
@@ -700,6 +701,7 @@ bool BluetoothA2dp::init(const A2dpConfig& config) {
 
     ContextLock lock;
     BluetoothClassic::init(config.pin);
+    BluetoothClassic::add_pairing_gate([](void*) { return g.state != A2dpState::Idle; }, nullptr);
     g.hci_reg.callback = &hci_handler;
     hci_add_event_handler(&g.hci_reg);
 
@@ -727,7 +729,9 @@ bool BluetoothA2dp::init(const A2dpConfig& config) {
                                        AVRCP_FEATURE_MASK_CATEGORY_MONITOR_OR_AMPLIFIER, nullptr, nullptr);
     sdp_register_service(g_sdp_avrcp_controller);
 
-    gap_set_local_name(config.local_name ? config.local_name : "pico-toolset");
+    // BTstack keeps the pointer it is given: hand it our own copy.
+    std::strncpy(g.local_name, config.local_name ? config.local_name : "pico-toolset", sizeof(g.local_name) - 1);
+    gap_set_local_name(g.local_name);
     gap_set_class_of_device(0x200408); // audio source, as in BTstack's A2DP demo
     load_last();
     apply_volume();

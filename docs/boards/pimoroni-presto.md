@@ -226,8 +226,8 @@ Not yet done or not yet verified on hardware:
   a second try to connect after a reset (not diagnosed).
 - **Bluetooth audio (A2DP):** validated with a Sony MDR-ZX770BN; the HUAWEI FreeBuds 6i, headset
   volume buttons and reconnect-after-reset are untested (see the component page).
-- **Device manager:** written and builds in every variant, not yet exercised on hardware (touch
-  hit areas, list refresh, forget of a connected device).
+- **Device manager:** PAIR NEW and the AUDIO page are used on hardware; forgetting a connected
+  device and the list refresh while connections change are not specifically tested.
 - **HID output** (keyboard LEDs, gamepad rumble) is not implemented.
 - **Memory:** lwIP buffers are not placed in PSRAM; 480x480 RGB565 cannot run with the radio.
 - **Unverified pins:** LCD reset (GPIO44) and touch reset (GPIO42) are not driven by Pimoroni's firmware

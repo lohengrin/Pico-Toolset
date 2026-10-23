@@ -31,7 +31,12 @@ public:
     // display-only I/O, sniff + role switch allowed, we become master, connectable) and starts
     // answering pairing requests: legacy PIN requests with `pin`, numeric-comparison /
     // just-works confirmations with "yes", passkey requests with "no" (we have no keyboard).
-    static void init(const char* pin = "0000");
+    static void init(const char* pin = "0000"); // `pin` is copied (max 16 chars)
+
+    // Pairing is answered (PIN, SSP confirmation) only while at least one registered gate reports
+    // an open pairing window; with no gate registered everything is answered. A component
+    // registers one that is true while it is pairing or connecting a new device (up to 2).
+    static void add_pairing_gate(bool (*is_open)(void*), void* user);
 
     // Passkey shown by a device that asks the user to type it on the other side (SSP passkey
     // entry); several listeners may register (up to 2).
