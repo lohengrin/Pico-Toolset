@@ -585,32 +585,16 @@ int main() {
     const int sensors = bme_ok + ltr_ok + imu_ok;
     stick_status = sensors == 3 ? Status::Ok : sensors == 0 ? Status::Absent : Status::Failed;
 
-    // -- Radio: Wi-Fi (if credentials are configured) + BLE. The WS2812 PIO
-    // setup above already ran: the CYW43 PIO SPI then picks a PIO that still
-    // fits (see docs/boards/pimoroni-presto.md, "Resource map"). --
+    // -- Radio. Bluetooth comes up first and Wi-Fi (slow to join, if credentials are configured)
+    // after it: a gamepad that lost its link when the Pico reset only retries for a short while,
+    // so the Pico must be connectable as early as possible. The WS2812 PIO setup above already ran:
+    // the CYW43 PIO SPI then picks a PIO that still fits (see docs/boards/pimoroni-presto.md,
+    // "Resource map"). --
     bool radio_ok = false;
 #ifdef PRESTO_NO_RADIO
     std::printf("Wi-Fi/BLE not built (full-res leaves no SRAM for the radio stack)\n");
-#elif defined(WIFI_SSID)
-    {
-        WifiConfig wc;
-        wc.ssid = WIFI_SSID;
-        wc.password = WIFI_PASSWORD;
-        wc.power_save = false;
-        if (lcd_ok) draw_ui({});
-        radio_ok = wifi_connect(wc); // initialises cyw43_arch
-        radio_wifi = radio_ok ? Status::Ok : Status::Failed;
-        // wifi_connect() failing after a successful cyw43 init still leaves the radio usable.
-        radio_ok = radio_ok || cyw43_is_initialized(&cyw43_state);
-        if (radio_wifi == Status::Ok) {
-            cyw43_arch_lwip_begin();
-            std::printf("Wi-Fi up, IP %s\n", ip4addr_ntoa(netif_ip4_addr(netif_default)));
-            cyw43_arch_lwip_end();
-        }
-    }
 #else
     radio_ok = cyw43_arch_init() == 0;
-    std::printf("Wi-Fi skipped (no config.local.h)\n");
 #endif
 #ifndef PRESTO_NO_RADIO
     Bluetooth bt;
@@ -636,8 +620,8 @@ int main() {
         hid_status = hid_ok ? Status::Absent : Status::Failed;
         BtHidDevice bonded[BluetoothHid::kMaxBonded];
         const size_t nb = hid_ok ? hid.bonded_devices(bonded, BluetoothHid::kMaxBonded) : 0;
-        std::printf("Bluetooth HID %s, %u bonded device(s)\n", hid_ok ? "ok" : "FAILED",
-                    static_cast<unsigned>(nb));
+        std::printf("Bluetooth HID %s, %u bonded device(s), connectable %lu ms after boot\n", hid_ok ? "ok" : "FAILED",
+                    static_cast<unsigned>(nb), static_cast<unsigned long>(to_ms_since_boot(get_absolute_time())));
         if (hid_ok && nb == 0) hid.start_pairing();
     }
 #ifdef PRESTO_BT_A2DP
@@ -657,6 +641,25 @@ int main() {
     size_t source_index = 0;
     uint8_t a2dp_volume = a2dp.volume();
 #endif
+#endif
+
+#if !defined(PRESTO_NO_RADIO) && defined(WIFI_SSID)
+    if (radio_ok) {
+        WifiConfig wc;
+        wc.ssid = WIFI_SSID;
+        wc.password = WIFI_PASSWORD;
+        wc.power_save = false;
+        if (lcd_ok) draw_ui({});
+        const bool wifi_ok = wifi_connect(wc);
+        radio_wifi = wifi_ok ? Status::Ok : Status::Failed;
+        if (wifi_ok) {
+            cyw43_arch_lwip_begin();
+            std::printf("Wi-Fi up, IP %s\n", ip4addr_ntoa(netif_ip4_addr(netif_default)));
+            cyw43_arch_lwip_end();
+        }
+    }
+#elif !defined(PRESTO_NO_RADIO)
+    std::printf("Wi-Fi skipped (no config.local.h)\n");
 #endif
 
     uint32_t frame = 0;

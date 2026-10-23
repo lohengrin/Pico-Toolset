@@ -45,6 +45,11 @@ ever), each lasting at most the 3.84 s page timeout. `bluetooth_a2dp` likewise d
 last headset (`reconnect_delay_ms`, 15 s). A pad that waits to be paged instead of paging gets its
 connection within `classic_page_delay_ms` + one interval.
 
+A pad whose link dropped because the Pico reset only retries for a short time (some seconds), then goes to
+its "searching" state, in which it did not answer the Pico's pages on the "SFR Gamepad" tested: switch it off
+and on again once the Pico is up. To make the first window count, bring Bluetooth up as early as possible
+(the Presto example starts it before the Wi-Fi connection and prints "connectable N ms after boot").
+
 ## Using it
 
 ```cpp

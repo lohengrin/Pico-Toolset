@@ -12,7 +12,8 @@ bool wifi_connect(const WifiConfig& config) {
     if (!config.ssid) {
         return false;
     }
-    if (cyw43_arch_init()) {
+    // A caller that brought the radio up earlier (e.g. Bluetooth first) must not initialise it twice.
+    if (!cyw43_is_initialized(&cyw43_state) && cyw43_arch_init()) {
         std::printf("cyw43 init failed\n");
         return false;
     }
