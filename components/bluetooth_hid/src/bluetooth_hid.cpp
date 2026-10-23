@@ -29,6 +29,9 @@ constexpr uint32_t kReconnectDelayMs = 500;
 
 // Stored::addr_type value marking a Bluetooth Classic device (LE types are 0..3).
 constexpr uint8_t kClassicAddrType = 0xFE;
+// Stored.kinds bit (above the public bt_hid_kind bits): this pad has to be served over our own L2CAP
+// channels because its SDP record is a stub (see start_raw()).
+constexpr uint8_t kRawLinkFlag = 0x80;
 
 constexpr uint16_t kPageDesktop = 0x01, kPageSim = 0x02, kPageKeyboard = 0x07, kPageButton = 0x09;
 
@@ -97,7 +100,7 @@ BtHidDevice to_public(const Stored& s, bool connected, int8_t rssi = 0) {
     BtHidDevice d{};
     std::memcpy(d.addr, s.addr, 6);
     d.addr_type = s.addr_type;
-    d.kinds = s.kinds;
+    d.kinds = s.kinds & 0x7F;
     d.rssi = rssi;
     d.connected = connected;
     std::memcpy(d.name, s.name, sizeof(d.name));
@@ -183,6 +186,8 @@ struct BluetoothHid::Impl {
     btstack_timer_source_t connect_timer{};
     btstack_timer_source_t reconnect_timer{};
     btstack_timer_source_t bond_timer{};
+    btstack_timer_source_t raw_timer{};
+    Stored raw_target{};
     btstack_packet_callback_registration_t hci_reg{};
     btstack_packet_callback_registration_t sm_reg{};
 
@@ -745,7 +750,7 @@ struct BluetoothHid::Impl {
                 s->descriptor_ready = true;
                 s->dev = rawlink.dev;
                 s->dev.addr_type = kClassicAddrType;
-                s->dev.kinds = bt_hid_kind::Gamepad; // class of device said "gamepad"
+                s->dev.kinds = bt_hid_kind::Gamepad | kRawLinkFlag; // class of device said "gamepad"
                 assign_pad_index(*s);
                 remember(s->dev);
                 pending = false;
@@ -772,6 +777,13 @@ struct BluetoothHid::Impl {
         }
     }
 
+    static void raw_after_decline(btstack_timer_source_t*) {
+        if (g_impl_ptr()) g_impl_ptr()->start_raw_target();
+    }
+    void start_raw_target() {
+        if (!rawlink.active && slot_by_addr(raw_target.addr) == nullptr) start_raw(raw_target, true);
+    }
+
     void on_classic_hid(uint8_t* packet) {
         if (hci_event_packet_get_type(packet) != HCI_EVENT_HID_META) return;
         switch (hci_event_hid_meta_get_subevent_code(packet)) {
@@ -786,6 +798,18 @@ struct BluetoothHid::Impl {
                 const int k = find_stored(addr);
                 if (k >= 0) in = stored[k];
                 emit(BtHidEventType::Connecting, in); // the device is calling us
+            }
+            // A known raw-link pad calling us: hid_host would query its stub SDP record, decline the
+            // pad's interrupt channel meanwhile, and this pad sends its reports on the channel it was
+            // refused. Decline here and open the channels ourselves over the same ACL link.
+            if (const int k = find_stored(addr); k >= 0 && (stored[k].kinds & kRawLinkFlag) && !rawlink.active) {
+                hid_host_decline_connection(cid);
+                raw_target = stored[k];
+                btstack_run_loop_remove_timer(&raw_timer);
+                btstack_run_loop_set_timer(&raw_timer, 300);
+                btstack_run_loop_set_timer_handler(&raw_timer, &Impl::raw_after_decline);
+                btstack_run_loop_add_timer(&raw_timer);
+                break;
             }
             // A known pad reconnecting, or any HID device while pairing mode is on.
             if (hid_subevent_incoming_connection_get_status(packet) == ERROR_CODE_SUCCESS &&
@@ -807,6 +831,10 @@ struct BluetoothHid::Impl {
                 // back to the standard HID PSMs.
                 if (status == ERROR_CODE_UNSUPPORTED_FEATURE_OR_PARAMETER_VALUE &&
                     ((pending && pending_paired) || find_stored(addr) >= 0) && !rawlink.active) {
+                    if (const int k = find_stored(addr); k >= 0 && !(stored[k].kinds & kRawLinkFlag)) {
+                        stored[k].kinds |= kRawLinkFlag; // next time it calls us, skip hid_host
+                        save_stored();
+                    }
                     pending = true;
                     emit(BtHidEventType::Connecting, dev);
                     start_raw(dev);
