@@ -70,6 +70,15 @@ capability bitmaps, for diagnostics), `Connected`, `Configured` (negotiated rate
 subbands / bitpool range / resulting bit rate), `StreamStarted`, `StreamSuspended`,
 `VolumeChanged`, `Disconnected`, `Failed`.
 
+## Headset buttons (AVRCP target)
+
+The component is also an AVRCP target, so the headset can control it. Each button press is reported
+as `A2dpEventType::RemoteKey` with `remote_key` (`Play`, `Pause`, `Stop`, `Next`, `Previous`,
+`VolumeUp`, `VolumeDown`). With `A2dpConfig::remote_key_actions` (default on) play, pause/stop and the
+volume keys also act by themselves (volume in steps of 8 of 127); `Next`/`Previous` are left to the
+application. Playback status (playing/paused) is reported back to the headset. Not yet tested on a
+headset: the Sony's behaviour with these buttons is unconfirmed.
+
 ## Using it next to `bluetooth_hid`
 
 Both components pair Classic devices and can be active together: the device inquiry is shared

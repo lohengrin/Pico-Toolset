@@ -311,6 +311,10 @@ void on_a2dp_event(const A2dpEvent& e, void*) {
     case A2dpEventType::StreamStarted: std::printf("[%lu ms] [a2dp] streaming\n", now); break;
     case A2dpEventType::StreamSuspended: std::printf("[%lu ms] [a2dp] stream suspended\n", now); break;
     case A2dpEventType::VolumeChanged: std::printf("[%lu ms] [a2dp] volume %u/127\n", now, e.volume); break;
+    case A2dpEventType::RemoteKey:
+        std::printf("[%lu ms] [a2dp] headset button %d (0 play, 1 pause, 2 stop, 3 next, 4 previous, 5 vol+, 6 vol-)\n",
+                    now, static_cast<int>(e.remote_key));
+        break;
     case A2dpEventType::Disconnected:
         std::snprintf(g_a2dp_message, sizeof(g_a2dp_message), "DISCONNECTED");
         std::printf("[%lu ms] [a2dp] disconnected (HCI reason 0x%02X, closed by %s)\n", now, e.status,

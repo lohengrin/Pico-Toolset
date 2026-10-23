@@ -92,8 +92,9 @@ default). `BluetoothHidConfig::enable_classic` (true) then turns it on at run ti
   `BluetoothHidConfig::raw_report_callback`. The device is reported as a gamepad. Because there
   is no descriptor to read, a built-in one is assumed: the Android-style layout of the "SFR
   Gamepad" (vendor 0x2E2C; report id 3 = 15 buttons, hat, X/Y/Z/Rz, brake, accelerator), so
-  such pads appear in `gamepad_state()` like any other. A pad with a different layout needs its
-  own descriptor (or parsing of the raw reports in the callback).
+  such pads appear in `gamepad_state()` like any other. A pad with a different layout sets
+  `BluetoothHidConfig::raw_descriptor` / `raw_descriptor_len` / `raw_report_id` (or parses the raw
+  reports in the callback).
   Such a pad is flagged in the stored device record. When it later connects *to us* (the pad
   starts the L2CAP connection after a button press) the HID host is told to accept it in
   boot-protocol mode, which makes BTstack skip the SDP query and take both of the pad's channels

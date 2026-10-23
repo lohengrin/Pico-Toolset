@@ -69,6 +69,12 @@ struct BluetoothHidConfig {
     // channels. For those (after pairing) the board connects to the standard HID control and
     // interrupt channels itself and passes every input report here, unparsed.
     BtHidRawReportCallback raw_report_callback = nullptr;
+    // Such pads have no readable descriptor either, so reports are parsed with this one (default: the
+    // Android-style layout of the "SFR Gamepad", report id 3 = gamepad). Only reports whose first
+    // byte equals raw_report_id are parsed (0 = all); the callback above sees every report.
+    const uint8_t* raw_descriptor = nullptr;
+    uint16_t       raw_descriptor_len = 0;
+    uint8_t        raw_report_id = 3;
 };
 
 // BLE (and, when built in, Classic) HID host: connects keyboards, mice and gamepads (e.g. Xbox

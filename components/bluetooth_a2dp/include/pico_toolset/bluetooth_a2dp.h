@@ -49,9 +49,13 @@ enum class A2dpEventType : uint8_t {
     StreamStarted,
     StreamSuspended,
     VolumeChanged,    // `volume` 0..127, from the headset's buttons or from set_volume()
+    RemoteKey,        // a button on the headset (`remote_key`); play/pause/stop/volume act by default
     Disconnected,
     Failed,           // `status` = BTstack/HCI error
 };
+
+// Buttons the headset reports over AVRCP (pressed events only).
+enum class A2dpRemoteKey : uint8_t { Play, Pause, Stop, Next, Previous, VolumeUp, VolumeDown };
 
 struct A2dpDevice {
     uint8_t  addr[6];
@@ -71,6 +75,7 @@ struct A2dpEvent {
     uint8_t       cap_rates, cap_modes, cap_blocks, cap_subbands, cap_alloc, cap_min_bitpool, cap_max_bitpool;
     uint8_t       volume;
     uint8_t       status;
+    A2dpRemoteKey remote_key;     // RemoteKey
     // Disconnected: why this side closed the link (0 = not us / the stack decided).
     enum Cause : uint8_t { CauseStack, CauseDisconnectCall, CauseForget, CauseQualityChange } cause;
 };
@@ -97,6 +102,7 @@ struct A2dpConfig {
     bool           auto_play = true;      // start streaming as soon as the stream is open
     bool           auto_connect = true;   // pairing mode connects to the first audio device found
     bool           auto_reconnect = true; // one attempt to the last headset after init()
+    bool           remote_key_actions = true; // headset buttons play/pause/stop and change the volume by themselves
     uint32_t       pairing_timeout_ms = 30000;
     A2dpVolumeMode volume_mode = A2dpVolumeMode::Auto;
     uint8_t        initial_volume = 64;   // 0..127

@@ -61,7 +61,7 @@
 #define MAX_NR_AVDTP_CONNECTIONS 1
 #define MAX_NR_AVDTP_STREAM_ENDPOINTS 1
 #define MAX_NR_AVRCP_CONNECTIONS 2
-#define MAX_NR_SERVICE_RECORD_ITEMS 3
+#define MAX_NR_SERVICE_RECORD_ITEMS 4
 // Media packets are bounded by the L2CAP MTU, which follows the HCI ACL buffer: at the default 255
 // bytes an SBC packet holds only 3 frames and the stream needs ~115 packets/s.
 #undef HCI_ACL_PAYLOAD_SIZE

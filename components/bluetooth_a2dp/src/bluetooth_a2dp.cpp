@@ -41,6 +41,7 @@ struct Stored {
 // the headset's capabilities and our preferences decide what is actually configured).
 uint8_t g_sdp_a2dp_source[150];
 uint8_t g_sdp_avrcp_controller[200];
+uint8_t g_sdp_avrcp_target[200];
 uint8_t g_sbc_capabilities[4] = {
     static_cast<uint8_t>(((AVDTP_SBC_16000 | AVDTP_SBC_32000 | AVDTP_SBC_44100 | AVDTP_SBC_48000) << 4) |
                          AVDTP_SBC_MONO | AVDTP_SBC_DUAL_CHANNEL | AVDTP_SBC_STEREO | AVDTP_SBC_JOINT_STEREO),
@@ -113,6 +114,7 @@ struct State {
     btstack_timer_source_t bond_timer{};
     A2dpEvent::Cause disc_cause = A2dpEvent::CauseStack; // set by the API call that closes the link
     char local_name[32]{};
+    A2dpRemoteKey remote_key = A2dpRemoteKey::Play; // payload of the RemoteKey event being emitted
     uint8_t last_disc_reason = 0; // HCI reason of the most recent ACL disconnection
     bool bonding = false; // dedicated bonding in progress before the A2DP connection
 
@@ -157,6 +159,7 @@ void emit(A2dpEventType type, uint8_t status = 0) {
     e.volume = g.volume;
     e.status = status;
     e.cause = g.disc_cause;
+    e.remote_key = g.remote_key;
     g.cfg.callback(e, g.cfg.user);
 }
 
@@ -572,6 +575,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         break;
     case A2DP_SUBEVENT_STREAM_STARTED:
         set_state(A2dpState::Streaming);
+        if (g.avrcp_cid) avrcp_target_set_playback_status(g.avrcp_cid, AVRCP_PLAYBACK_STATUS_PLAYING);
         apply_volume();
         media_start();
         emit(A2dpEventType::StreamStarted);
@@ -582,6 +586,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
     case A2DP_SUBEVENT_STREAM_SUSPENDED:
         media_stop();
         if (g.state == A2dpState::Streaming) set_state(A2dpState::Connected);
+        if (g.avrcp_cid) avrcp_target_set_playback_status(g.avrcp_cid, AVRCP_PLAYBACK_STATUS_PAUSED);
         emit(A2dpEventType::StreamSuspended);
         break;
     case A2DP_SUBEVENT_STREAM_RELEASED:
@@ -619,6 +624,11 @@ void avrcp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
             return;
         }
         g.avrcp_cid = avrcp_subevent_connection_established_get_avrcp_cid(packet);
+        // Target side: tell the headset which playback events we can report.
+        avrcp_target_support_event(g.avrcp_cid, AVRCP_NOTIFICATION_EVENT_PLAYBACK_STATUS_CHANGED);
+        avrcp_target_set_now_playing_info(g.avrcp_cid, nullptr, 1);
+        avrcp_target_set_playback_status(g.avrcp_cid, g.state == A2dpState::Streaming ? AVRCP_PLAYBACK_STATUS_PLAYING
+                                                                                       : AVRCP_PLAYBACK_STATUS_PAUSED);
         // If the headset lets us register for volume changes it supports absolute volume.
         avrcp_controller_enable_notification(g.avrcp_cid, AVRCP_NOTIFICATION_EVENT_VOLUME_CHANGED);
         break;
@@ -646,6 +656,53 @@ void avrcp_controller_handler(uint8_t packet_type, uint16_t, uint8_t* packet, ui
         g.volume = avrcp_subevent_notification_volume_changed_get_absolute_volume(packet);
         emit(A2dpEventType::VolumeChanged);
         break;
+    default:
+        break;
+    }
+}
+
+// The headset is the AVRCP controller of its own buttons; we are the target and see them here.
+void avrcp_target_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
+    if (packet_type != HCI_EVENT_PACKET || hci_event_packet_get_type(packet) != HCI_EVENT_AVRCP_META) return;
+    switch (packet[2]) {
+    case AVRCP_SUBEVENT_PLAY_STATUS_QUERY:
+        avrcp_target_play_status(g.avrcp_cid, 0xFFFFFFFF, 0xFFFFFFFF, // length / position unknown
+                                 g.state == A2dpState::Streaming ? AVRCP_PLAYBACK_STATUS_PLAYING
+                                                                 : AVRCP_PLAYBACK_STATUS_PAUSED);
+        break;
+    case AVRCP_SUBEVENT_OPERATION: {
+        if (!avrcp_subevent_operation_get_button_pressed(packet)) break;
+        bool known = true;
+        switch (static_cast<avrcp_operation_id_t>(avrcp_subevent_operation_get_operation_id(packet))) {
+        case AVRCP_OPERATION_ID_PLAY: g.remote_key = A2dpRemoteKey::Play; break;
+        case AVRCP_OPERATION_ID_PAUSE: g.remote_key = A2dpRemoteKey::Pause; break;
+        case AVRCP_OPERATION_ID_STOP: g.remote_key = A2dpRemoteKey::Stop; break;
+        case AVRCP_OPERATION_ID_FORWARD: g.remote_key = A2dpRemoteKey::Next; break;
+        case AVRCP_OPERATION_ID_BACKWARD: g.remote_key = A2dpRemoteKey::Previous; break;
+        case AVRCP_OPERATION_ID_VOLUME_UP: g.remote_key = A2dpRemoteKey::VolumeUp; break;
+        case AVRCP_OPERATION_ID_VOLUME_DOWN: g.remote_key = A2dpRemoteKey::VolumeDown; break;
+        default: known = false; break;
+        }
+        if (!known) break;
+        if (g.cfg.remote_key_actions && g.a2dp_cid) {
+            switch (g.remote_key) {
+            case A2dpRemoteKey::Play: a2dp_source_start_stream(g.a2dp_cid, g.local_seid); break;
+            case A2dpRemoteKey::Pause:
+            case A2dpRemoteKey::Stop: a2dp_source_pause_stream(g.a2dp_cid, g.local_seid); break;
+            case A2dpRemoteKey::VolumeUp:
+                g.volume = g.volume > 119 ? 127 : static_cast<uint8_t>(g.volume + 8);
+                apply_volume();
+                break;
+            case A2dpRemoteKey::VolumeDown:
+                g.volume = g.volume < 8 ? 0 : static_cast<uint8_t>(g.volume - 8);
+                apply_volume();
+                break;
+            default: break;
+            }
+        }
+        emit(A2dpEventType::RemoteKey);
+        break;
+    }
     default:
         break;
     }
@@ -681,6 +738,8 @@ bool BluetoothA2dp::init(const A2dpConfig& config) {
 
     avrcp_init();
     avrcp_register_packet_handler(&avrcp_handler);
+    avrcp_target_init();
+    avrcp_target_register_packet_handler(&avrcp_target_handler);
     avrcp_controller_init();
     avrcp_controller_register_packet_handler(&avrcp_controller_handler);
 
@@ -689,6 +748,10 @@ bool BluetoothA2dp::init(const A2dpConfig& config) {
     a2dp_source_create_sdp_record(g_sdp_a2dp_source, sdp_create_service_record_handle(),
                                   AVDTP_SOURCE_FEATURE_MASK_PLAYER, nullptr, nullptr);
     sdp_register_service(g_sdp_a2dp_source);
+    std::memset(g_sdp_avrcp_target, 0, sizeof(g_sdp_avrcp_target));
+    avrcp_target_create_sdp_record(g_sdp_avrcp_target, sdp_create_service_record_handle(),
+                                   AVRCP_FEATURE_MASK_CATEGORY_PLAYER_OR_RECORDER, nullptr, nullptr);
+    sdp_register_service(g_sdp_avrcp_target);
     std::memset(g_sdp_avrcp_controller, 0, sizeof(g_sdp_avrcp_controller));
     avrcp_controller_create_sdp_record(g_sdp_avrcp_controller, sdp_create_service_record_handle(),
                                        AVRCP_FEATURE_MASK_CATEGORY_MONITOR_OR_AMPLIFIER, nullptr, nullptr);

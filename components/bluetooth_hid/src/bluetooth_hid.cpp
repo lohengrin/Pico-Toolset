@@ -637,9 +637,7 @@ struct BluetoothHid::Impl {
                 const BtHidDevice d = to_public(s->dev, true);
                 cfg().raw_report_callback(packet + 1, static_cast<uint16_t>(size - 1), d, cfg().user);
             }
-            if (packet[1] == 0x03) // gamepad report of kRawPadDescriptor
-                parse_report(*s, hid_report::kRawPadDescriptor, hid_report::kRawPadDescriptorSize, packet + 1,
-                             static_cast<uint16_t>(size - 1));
+            parse_raw_report(*s, packet + 1, static_cast<uint16_t>(size - 1));
             return;
         }
         if (packet_type != HCI_EVENT_PACKET) return;
@@ -806,8 +804,7 @@ struct BluetoothHid::Impl {
                     const BtHidDevice d = to_public(s->dev, true);
                     cfg().raw_report_callback(report + 1, static_cast<uint16_t>(len - 1), d, cfg().user);
                 }
-                if (len > 1 && report[1] == 0x03) // gamepad report of kRawPadDescriptor
-                    parse_report(*s, hid_report::kRawPadDescriptor, hid_report::kRawPadDescriptorSize, report + 1, len - 1);
+                parse_raw_report(*s, report + 1, static_cast<uint16_t>(len - 1));
                 break;
             }
             parse_report(*s, hid_descriptor_storage_get_descriptor_data(s->classic_cid),
@@ -880,6 +877,15 @@ struct BluetoothHid::Impl {
         if (report_id == 0 && len > 0) { ++report; --len; }
         parse_report(s, hids_host_descriptor_storage_get_descriptor_data(s.hids_cid, service_index),
                      hids_host_descriptor_storage_get_descriptor_len(s.hids_cid, service_index), report, len);
+    }
+
+    // `data` = [report id][payload] of a Classic pad served without SDP (see BluetoothHidConfig).
+    void parse_raw_report(Slot& s, const uint8_t* data, uint16_t len) {
+        if (len < 1 || (cfg().raw_report_id != 0 && data[0] != cfg().raw_report_id)) return;
+        const bool custom = cfg().raw_descriptor != nullptr;
+        parse_report(s, custom ? cfg().raw_descriptor : hid_report::kRawPadDescriptor,
+                     custom ? cfg().raw_descriptor_len : static_cast<uint16_t>(hid_report::kRawPadDescriptorSize),
+                     data, len);
     }
 
     // Updates keyboard / mouse / gamepad state from one input report, using the HID report
