@@ -21,6 +21,7 @@ target_link_libraries(pico_toolset_bluetooth_hid INTERFACE
     pico_toolset_bluetooth
     pico_toolset_hid_input
     pico_btstack_flash_bank
+    pico_rand   # get_rand_32(); the lwIP cyw43 arch used to pull it in, cyw43_arch_none (PICO_TOOLSET_BLUETOOTH_NO_WIFI) does not
 )
 target_compile_features(pico_toolset_bluetooth_hid INTERFACE cxx_std_20)
 
