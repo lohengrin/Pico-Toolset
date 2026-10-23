@@ -4,6 +4,7 @@
 // bonded devices, persistent device records, and generic report parsing into
 // keyboard / mouse / GamepadState.
 #include "pico_toolset/bluetooth_hid.h"
+#include "hid_report.h"
 #include "pico_toolset/bluetooth_detail.h"
 
 #include <cstring>
@@ -34,8 +35,6 @@ constexpr uint8_t kClassicAddrType = 0xFE;
 // channels because its SDP record is a stub (see start_raw()).
 constexpr uint8_t kRawLinkFlag = 0x80;
 
-constexpr uint16_t kPageDesktop = 0x01, kPageSim = 0x02, kPageKeyboard = 0x07, kPageButton = 0x09;
-
 // One bonded device as persisted (32 bytes; the keys themselves are in
 // BTstack's own device database).
 struct Stored {
@@ -58,35 +57,6 @@ struct Slot {
     Stored dev{};
 };
 
-// Report descriptor assumed for Classic pads reached through the raw L2CAP fallback (their SDP
-// records are unusable). It is the descriptor read from the "SFR Gamepad" (vendor 0x2E2C): the
-// common Android-style layout with report id 3 = gamepad (15 buttons, hat, X/Y/Z/Rz, brake,
-// accelerator); ids 1, 2 and 4 are keyboard, mouse and media keys.
-constexpr uint8_t kRawPadDescriptor[] = {
-    0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x85, 0x01, 0x75, 0x01, 0x95, 0x08,
-    0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00, 0x25, 0x01, 0x81, 0x02,
-    0x95, 0x01, 0x75, 0x08, 0x81, 0x03, 0x95, 0x06, 0x75, 0x08, 0x15, 0x00,
-    0x26, 0xef, 0x00, 0x05, 0x07, 0x19, 0x15, 0x29, 0xef, 0x81, 0x00, 0xc0,
-    0x05, 0x01, 0x09, 0x02, 0xa1, 0x01, 0x85, 0x02, 0x09, 0x01, 0xa1, 0x00,
-    0x05, 0x09, 0x19, 0x01, 0x29, 0x03, 0x15, 0x00, 0x25, 0x01, 0x95, 0x03,
-    0x75, 0x01, 0x81, 0x02, 0x95, 0x01, 0x75, 0x05, 0x81, 0x03, 0x05, 0x01,
-    0x09, 0x30, 0x09, 0x31, 0x09, 0x38, 0x15, 0x81, 0x25, 0x7f, 0x75, 0x08,
-    0x95, 0x03, 0x81, 0x06, 0xc0, 0xc0, 0x05, 0x01, 0x09, 0x05, 0xa1, 0x01,
-    0x85, 0x03, 0x15, 0x00, 0x25, 0x01, 0x35, 0x00, 0x45, 0x01, 0x75, 0x01,
-    0x95, 0x0f, 0x05, 0x09, 0x19, 0x01, 0x29, 0x0f, 0x81, 0x02, 0x95, 0x01,
-    0x81, 0x01, 0x05, 0x01, 0x25, 0x07, 0x46, 0x3b, 0x01, 0x75, 0x04, 0x95,
-    0x01, 0x65, 0x14, 0x09, 0x39, 0x81, 0x42, 0x65, 0x00, 0x95, 0x01, 0x81,
-    0x01, 0x26, 0xff, 0x00, 0x46, 0xff, 0x00, 0x09, 0x30, 0x09, 0x31, 0x09,
-    0x32, 0x09, 0x35, 0x75, 0x08, 0x95, 0x04, 0x81, 0x02, 0x05, 0x02, 0x15,
-    0x00, 0x26, 0xff, 0x00, 0x09, 0xc5, 0x09, 0xc4, 0x95, 0x02, 0x75, 0x08,
-    0x81, 0x02, 0x95, 0x01, 0x75, 0x08, 0x81, 0x01, 0xa1, 0x02, 0x75, 0x08,
-    0x95, 0x04, 0x15, 0x00, 0x35, 0x00, 0x46, 0xff, 0x00, 0x26, 0xff, 0x00,
-    0x09, 0x02, 0x91, 0x02, 0xc0, 0xc0, 0x05, 0x0c, 0x09, 0x01, 0xa1, 0x01,
-    0x85, 0x04, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x09, 0x40,
-    0x0a, 0x23, 0x02, 0x0a, 0x24, 0x02, 0x09, 0xcd, 0x09, 0xb5, 0x09, 0x8f,
-    0x09, 0xea, 0x09, 0xe9, 0x81, 0x02, 0x95, 0x28, 0x81, 0x03, 0xc0,
-};
-
 uint8_t g_descriptor_storage[1200];
 #ifdef ENABLE_CLASSIC
 uint8_t g_classic_descriptor_storage[1200];
@@ -102,54 +72,6 @@ BtHidDevice to_public(const Stored& s, bool connected, int8_t rssi = 0) {
     std::memcpy(d.name, s.name, sizeof(d.name));
     d.name[sizeof(d.name) - 1] = '\0';
     return d;
-}
-
-// Scales a HID field to 0-255 using its bit size and logical minimum
-// (assumes the field spans the full range of its size, true for the 8-bit
-// and 16-bit sticks and the 10-bit triggers of common gamepads).
-uint8_t norm_axis(int32_t value, uint8_t size_bits, int32_t logical_min) {
-    int64_t v = static_cast<int64_t>(value) - logical_min;
-    if (v < 0) v = 0;
-    if (size_bits > 8) v >>= (size_bits - 8);
-    else if (size_bits < 8) v <<= (8 - size_bits);
-    return static_cast<uint8_t>(v > 255 ? 255 : v);
-}
-
-// HID button usage -> unified kBt* bit (Xbox-style layout; usage numbers
-// follow the Linux gamepad order Xbox controllers use over Bluetooth). Verify
-// against gamepad_raw_buttons() for other controllers.
-struct ButtonMap { uint8_t usage; uint16_t mask; };
-constexpr ButtonMap kButtonMap[] = {
-    {1, kBtA}, {2, kBtB}, {4, kBtX}, {5, kBtY}, {7, kBtLB}, {8, kBtRB},
-    {11, kBtBack}, {12, kBtStart}, {13, kBtGuide}, {14, kBtLS}, {15, kBtRS},
-};
-
-// Top-level application collections of a report descriptor -> kinds.
-uint8_t scan_kinds(const uint8_t* descriptor, uint16_t len) {
-    uint8_t kinds = 0;
-    btstack_hid_descriptor_iterator_t it;
-    btstack_hid_descriptor_iterator_init(&it, descriptor, len);
-    uint16_t page = 0, usage = 0;
-    int depth = 0;
-    while (btstack_hid_descriptor_iterator_has_more(&it)) {
-        const hid_descriptor_item_t* item = btstack_hid_descriptor_iterator_get_item(&it);
-        if (item->item_type == Global && item->item_tag == UsagePage) {
-            page = static_cast<uint16_t>(item->item_value);
-        } else if (item->item_type == Local && item->item_tag == Usage) {
-            usage = static_cast<uint16_t>(item->item_value);
-        } else if (item->item_type == Main && item->item_tag == Coll) {
-            if (depth == 0 && page == kPageDesktop) {
-                if (usage == 0x06) kinds |= bt_hid_kind::Keyboard;
-                else if (usage == 0x02) kinds |= bt_hid_kind::Mouse;
-                else if (usage == 0x04 || usage == 0x05) kinds |= bt_hid_kind::Gamepad;
-            }
-            ++depth;
-        } else if (item->item_type == Main && item->item_tag == EndColl) {
-            if (depth > 0) --depth;
-        }
-        if (item->item_type == Main) usage = 0;
-    }
-    return kinds;
 }
 
 } // namespace
@@ -716,7 +638,7 @@ struct BluetoothHid::Impl {
                 cfg().raw_report_callback(packet + 1, static_cast<uint16_t>(size - 1), d, cfg().user);
             }
             if (packet[1] == 0x03) // gamepad report of kRawPadDescriptor
-                parse_report(*s, kRawPadDescriptor, sizeof(kRawPadDescriptor), packet + 1,
+                parse_report(*s, hid_report::kRawPadDescriptor, hid_report::kRawPadDescriptorSize, packet + 1,
                              static_cast<uint16_t>(size - 1));
             return;
         }
@@ -865,7 +787,7 @@ struct BluetoothHid::Impl {
                 hid_host_disconnect(s->classic_cid);
                 break;
             }
-            s->dev.kinds = scan_kinds(hid_descriptor_storage_get_descriptor_data(s->classic_cid),
+            s->dev.kinds = hid_report::scan_kinds(hid_descriptor_storage_get_descriptor_data(s->classic_cid),
                                       hid_descriptor_storage_get_descriptor_len(s->classic_cid));
             if (s->dev.kinds & bt_hid_kind::Gamepad) assign_pad_index(*s);
             s->descriptor_ready = true;
@@ -885,7 +807,7 @@ struct BluetoothHid::Impl {
                     cfg().raw_report_callback(report + 1, static_cast<uint16_t>(len - 1), d, cfg().user);
                 }
                 if (len > 1 && report[1] == 0x03) // gamepad report of kRawPadDescriptor
-                    parse_report(*s, kRawPadDescriptor, sizeof(kRawPadDescriptor), report + 1, len - 1);
+                    parse_report(*s, hid_report::kRawPadDescriptor, hid_report::kRawPadDescriptorSize, report + 1, len - 1);
                 break;
             }
             parse_report(*s, hid_descriptor_storage_get_descriptor_data(s->classic_cid),
@@ -931,7 +853,7 @@ struct BluetoothHid::Impl {
             const uint8_t n = gattservice_subevent_hid_service_connected_get_num_instances(packet);
             uint8_t kinds = 0;
             for (uint8_t i = 0; i < n; ++i)
-                kinds |= scan_kinds(hids_host_descriptor_storage_get_descriptor_data(s->hids_cid, i),
+                kinds |= hid_report::scan_kinds(hids_host_descriptor_storage_get_descriptor_data(s->hids_cid, i),
                                     hids_host_descriptor_storage_get_descriptor_len(s->hids_cid, i));
             s->dev.kinds = kinds;
             if (kinds & bt_hid_kind::Gamepad) assign_pad_index(*s);
@@ -964,92 +886,34 @@ struct BluetoothHid::Impl {
     // descriptor of the device (LE or Classic).
     void parse_report(Slot& s, const uint8_t* descriptor, uint16_t descriptor_len, const uint8_t* report,
                       uint16_t len) {
-        btstack_hid_parser_t parser;
-        btstack_hid_parser_init(&parser, descriptor, descriptor_len, HID_REPORT_TYPE_INPUT, report, len);
-
-        bool has_keyboard = false;
-        uint32_t key_bits[8] = {};
-        uint8_t mods = 0;
-        uint32_t raw_buttons = 0;
-        int hat = -1;
-        bool have[6] = {};     // lx ly rx ry lt rt
-        uint8_t axis[6] = {};
-        int dx = 0, dy = 0, wheel = 0;
         const bool pad_dev = (s.dev.kinds & bt_hid_kind::Gamepad) && s.pad_index >= 0;
         const bool mouse_dev = (s.dev.kinds & bt_hid_kind::Mouse) && !pad_dev;
-
-        while (btstack_hid_parser_has_more(&parser)) {
-            uint16_t page, usage;
-            int32_t value;
-            btstack_hid_parser_get_field(&parser, &page, &usage, &value);
-            const uint8_t size = parser.descriptor_usage_item.size;
-            const int32_t lmin = parser.descriptor_usage_item.global_logical_minimum;
-
-            if (page == kPageKeyboard) {
-                has_keyboard = true;
-                if (usage >= 0xE0 && usage <= 0xE7) {
-                    if (value) mods |= static_cast<uint8_t>(1u << (usage - 0xE0));
-                } else if (usage != 0 && usage < 256 && value) {
-                    key_bits[usage >> 5] |= 1u << (usage & 31);
-                }
-            } else if (page == kPageButton) {
-                if (value && usage >= 1 && usage <= 32) raw_buttons |= 1u << (usage - 1);
-            } else if (page == kPageDesktop) {
-                switch (usage) {
-                case 0x30:
-                    if (mouse_dev) dx = value; else { axis[0] = norm_axis(value, size, lmin); have[0] = true; }
-                    break;
-                case 0x31:
-                    if (mouse_dev) dy = value; else { axis[1] = norm_axis(value, size, lmin); have[1] = true; }
-                    break;
-                case 0x32: axis[2] = norm_axis(value, size, lmin); have[2] = true; break; // Z: right stick X
-                case 0x35: axis[3] = norm_axis(value, size, lmin); have[3] = true; break; // Rz: right stick Y
-                case 0x38: wheel = value; break;
-                case 0x39: {
-                    const int h = value - lmin;
-                    hat = (h >= 0 && h <= 7) ? h : -1;
-                    break;
-                }
-                default: break;
-                }
-            } else if (page == kPageSim) {
-                if (usage == 0xC5) { axis[4] = norm_axis(value, size, lmin); have[4] = true; } // brake: left trigger
-                else if (usage == 0xC4) { axis[5] = norm_axis(value, size, lmin); have[5] = true; } // accelerator
-            }
-        }
-
-        if (has_keyboard) {
+        const hid_report::ParsedReport r = hid_report::parse_input_report(descriptor, descriptor_len, report, len,
+                                                                          mouse_dev);
+        if (r.has_keyboard) {
             for (int i = 0; i < 8; ++i) {
-                key_edges[i] = key_edges[i] | (key_bits[i] & ~keys[i]);
-                keys[i] = key_bits[i];
+                key_edges[i] = key_edges[i] | (r.key_bits[i] & ~keys[i]);
+                keys[i] = r.key_bits[i];
             }
-            modifiers = mods;
+            modifiers = r.modifiers;
         } else if (pad_dev) {
             GamepadState& g = pads[s.pad_index];
             g.present = true;
-            uint16_t b = 0;
-            for (const auto& m : kButtonMap) if (raw_buttons & (1u << (m.usage - 1))) b |= m.mask;
-            if (hat >= 0) {
-                if (hat == 7 || hat == 0 || hat == 1) b |= kBtUp;
-                if (hat >= 1 && hat <= 3) b |= kBtRight;
-                if (hat >= 3 && hat <= 5) b |= kBtDown;
-                if (hat >= 5 && hat <= 7) b |= kBtLeft;
-            }
-            g.buttons = b;
-            if (have[0]) g.lx = axis[0];
-            if (have[1]) g.ly = axis[1];
-            if (have[2]) g.rx = axis[2];
-            if (have[3]) g.ry = axis[3];
-            if (have[4]) g.lt = axis[4];
-            if (have[5]) g.rt = axis[5];
-            pad_raw[s.pad_index] = raw_buttons;
+            g.buttons = static_cast<uint16_t>(hid_report::map_buttons(r.raw_buttons) | hid_report::hat_to_dpad(r.hat));
+            if (r.have[0]) g.lx = r.axis[0];
+            if (r.have[1]) g.ly = r.axis[1];
+            if (r.have[2]) g.rx = r.axis[2];
+            if (r.have[3]) g.ry = r.axis[3];
+            if (r.have[4]) g.lt = r.axis[4];
+            if (r.have[5]) g.rt = r.axis[5];
+            pad_raw[s.pad_index] = r.raw_buttons;
         } else if (mouse_dev) {
-            mouse_dx = mouse_dx + dx;
-            mouse_dy = mouse_dy + dy;
-            mouse_wheel = mouse_wheel + wheel;
-            mouse_buttons[0] = raw_buttons & 1;
-            mouse_buttons[1] = raw_buttons & 2;
-            mouse_buttons[2] = raw_buttons & 4;
+            mouse_dx = mouse_dx + r.dx;
+            mouse_dy = mouse_dy + r.dy;
+            mouse_wheel = mouse_wheel + r.wheel;
+            mouse_buttons[0] = r.raw_buttons & 1;
+            mouse_buttons[1] = r.raw_buttons & 2;
+            mouse_buttons[2] = r.raw_buttons & 4;
         }
     }
 };

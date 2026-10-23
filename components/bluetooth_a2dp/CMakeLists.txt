@@ -11,6 +11,7 @@ endif()
 add_library(pico_toolset_bluetooth_a2dp INTERFACE)
 target_sources(pico_toolset_bluetooth_a2dp INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/src/bluetooth_a2dp.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/a2dp_quality.cpp
 )
 target_include_directories(pico_toolset_bluetooth_a2dp INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/include

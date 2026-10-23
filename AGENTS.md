@@ -155,9 +155,18 @@ cmake -B build -DPICO_BOARD=pico2      # or pico
 cmake --build build
 ```
 
-USB HID additionally needs Pico-PIO-USB (see README). There is no CI or unit
-test runner wired up yet; verification is "configure + build cleanly" plus
-manual smoke tests of the examples on hardware.
+USB HID additionally needs Pico-PIO-USB (see README). There is no CI yet;
+verification is "configure + build cleanly" plus manual smoke tests of the
+examples on hardware. The hardware-independent Bluetooth pieces (audio_synth,
+A2DP SBC quality arithmetic, HID report parsing) have PC unit tests:
+
+```sh
+cmake -S tests/host -B tests-build && cmake --build tests-build && ctest --test-dir tests-build
+```
+
+Keep new logic that needs no radio (parsers, arithmetic, state machines) in
+files without BTstack dependencies, like `hid_report.cpp` and `a2dp_quality.cpp`,
+so it can be tested there.
 
 ## Conventions
 

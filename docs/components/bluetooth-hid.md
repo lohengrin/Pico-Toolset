@@ -30,6 +30,11 @@ kind of state accessors as [`usb_hid`](usb-hid.md).
 | Boards | [Pimoroni Presto](../boards/pimoroni-presto.md) (also Pico W / Pico 2 W) |
 | Shared types | `GamepadState` / `kBt*` live in `components/hid_input` (`usb_hid_gamepad.h` forwards to it) |
 
+Code layout: `src/bluetooth_hid.cpp` holds the LE and Classic connection logic; descriptor
+classification and report parsing live in `src/hid_report.{h,cpp}` (no BTstack stack state; covered by
+the PC tests in `tests/host/`, which build BTstack's own HID parser). A further split of the LE,
+Classic and raw-link parts into separate files is possible but not done.
+
 ## Using it
 
 ```cpp

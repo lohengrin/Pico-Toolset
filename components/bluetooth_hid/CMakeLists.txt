@@ -11,9 +11,11 @@ endif()
 add_library(pico_toolset_bluetooth_hid INTERFACE)
 target_sources(pico_toolset_bluetooth_hid INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/src/bluetooth_hid.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/hid_report.cpp
 )
 target_include_directories(pico_toolset_bluetooth_hid INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/include
+    ${CMAKE_CURRENT_LIST_DIR}/src   # hid_report.h (internal)
 )
 target_link_libraries(pico_toolset_bluetooth_hid INTERFACE
     pico_toolset_bluetooth
