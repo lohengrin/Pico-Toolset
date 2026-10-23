@@ -76,8 +76,8 @@ The component is also an AVRCP target, so the headset can control it. Each butto
 as `A2dpEventType::RemoteKey` with `remote_key` (`Play`, `Pause`, `Stop`, `Next`, `Previous`,
 `VolumeUp`, `VolumeDown`). With `A2dpConfig::remote_key_actions` (default on) play, pause/stop and the
 volume keys also act by themselves (volume in steps of 8 of 127); `Next`/`Previous` are left to the
-application. Playback status (playing/paused) is reported back to the headset. Not yet tested on a
-headset: the Sony's behaviour with these buttons is unconfirmed.
+application. Playback status (playing/paused) is reported back to the headset. Validated with the
+Sony MDR-ZX770BN.
 
 After a firmware change that alters the services the Pico offers (for example when the AVRCP target
 was added) a headset that was paired before may not connect any more; forget it on both sides (`F`
