@@ -78,6 +78,22 @@ the headset is connecting or streaming, `bluetooth_hid` does not page bonded Cla
 background (that would cause audio dropouts); a pad can still connect to the Pico by itself, and
 the background paging resumes when the headset is gone.
 
+## Audio cuts: sharing the radio
+
+An SBC stream at 173 kbps nearly saturates what the CYW43 sustains next to other activity (measured on
+the Presto: ~27 packets/s of ~11 frames, the rate the stream needs), so anything that takes radio
+time shows up as a dropped chunk. What helped or is in place:
+
+- `A2dpConfig::max_backlog_ms` (default 250 ms): audio not yet sent is kept this long before the
+  oldest is dropped, so short stalls delay instead of cutting.
+- While the stream is up `bluetooth_hid` stops paging bonded Classic pads and throttles its LE
+  reconnect scan from 50 % to ~1 % duty (a returning keyboard is still found within about a second).
+- Anything printed from a Bluetooth callback blocks the radio when the serial reader is slow (the
+  Presto example's raw gamepad log is off by default for that reason).
+- Wi-Fi and Bluetooth share the antenna and radio of the CYW43: a connected Wi-Fi station (the Presto
+  example runs it without power save) costs audio. The example's console key `W` turns the station
+  off to compare. Lower presets (`q`: Mono 154 kbps, MonoLow 110 kbps) give more headroom.
+
 ## Pairing flow and lessons learned (Sony MDR-ZX770BN)
 
 `start_pairing()` runs an inquiry for audio devices and connects to the first one whose class is a

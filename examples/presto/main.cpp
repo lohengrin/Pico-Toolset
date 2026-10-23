@@ -645,7 +645,7 @@ int main() {
         ac.callback = on_a2dp_event;
         a2dp_ok = a2dp.init(ac);
         std::printf("Bluetooth A2DP %s (quality %s). Console: a pair, c connect last, x disconnect, F forget, "
-                    "p play/pause, +/- volume, q quality, w sound, s stats, r raw pad log, b backlight\n",
+                    "p play/pause, +/- volume, q quality, w sound, s stats, r raw pad log, b backlight, W Wi-Fi off\n",
                     a2dp_ok ? "ok" : "FAILED", a2dp_quality_name(a2dp.quality()));
         a2dp_status = a2dp_ok ? Status::Absent : Status::Failed;
     }
@@ -769,6 +769,11 @@ int main() {
                         : a2dp.state() == A2dpState::Idle ? Status::Absent : Status::Busy;
             for (int c = getchar_timeout_us(0); c != PICO_ERROR_TIMEOUT && a2dp_ok; c = getchar_timeout_us(0)) {
                 switch (c) {
+                case 'W': // Wi-Fi shares the radio with Bluetooth: compare the audio with it off
+                    cyw43_arch_disable_sta_mode();
+                    radio_wifi = Status::Absent;
+                    std::printf("Wi-Fi station mode off\n");
+                    break;
                 case 'r': g_log_raw = !g_log_raw; std::printf("raw report log %s\n", g_log_raw ? "on" : "off"); break;
                 case 'b': // backlight to full, manual
                     auto_backlight = false;

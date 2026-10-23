@@ -100,6 +100,10 @@ struct A2dpConfig {
     uint32_t       pairing_timeout_ms = 30000;
     A2dpVolumeMode volume_mode = A2dpVolumeMode::Auto;
     uint8_t        initial_volume = 64;   // 0..127
+    // Audio that could not be sent yet is kept up to this long (it is generated on demand, so this
+    // costs no memory); beyond it the oldest is dropped. A packet holds ~32 ms of audio and the
+    // radio stalls now and then, so a small value turns every stall into an audible cut.
+    uint16_t       max_backlog_ms = 250;  // 40..1000
     const char*    pin = "0000";          // legacy PIN answer for old headsets
 };
 

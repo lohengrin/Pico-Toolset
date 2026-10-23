@@ -701,8 +701,22 @@ struct BluetoothHid::Impl {
     }
     // A2DP (or anything else) needs the radio: a background page can hold it for ~15 s when the
     // pad is off, which makes a headset connection attempt time out. Cancel the page in flight.
-    static void abort_background_page(void*) {
-        if (g_impl_ptr()) g_impl_ptr()->cancel_background_page();
+    static void radio_busy_changed(bool busy, void*) {
+        if (g_impl_ptr()) g_impl_ptr()->on_radio_busy(busy);
+    }
+    // While an audio stream is up, reconnecting bonded LE devices must not eat its radio time: the
+    // default LE connection scan runs at 50 % duty cycle (30 ms of every 60 ms) and every extra
+    // connection adds connection events. Use a ~1 % scan (a returning keyboard is still found
+    // within about a second) and slower connection intervals for new connections.
+    void on_radio_busy(bool busy) {
+        if (busy) cancel_background_page();
+        gap_set_connection_parameters(busy ? 0x0640 : 0x0060, busy ? 0x0010 : 0x0030,
+                                      busy ? 0x0018 : 0x0008, busy ? 0x0030 : 0x0018, 4, 0x0048, 0, 0);
+        if (wl_connecting) { // restart the pending whitelist connect with the new scan parameters
+            gap_connect_cancel();
+            wl_connecting = false;
+            schedule_reconnect();
+        }
     }
     void cancel_background_page() {
         if (!rawlink.active || !rawlink.quiet || rawlink.ctrl_open || !hci_can_send_command_packet_now()) return;
@@ -1125,7 +1139,7 @@ bool BluetoothHid::init(const BluetoothHidConfig& config) {
         BluetoothClassic::add_passkey_listener(&Impl::passkey_trampoline, m_impl);
         BluetoothClassic::add_pairing_gate(
             [](void*) { Impl* im = Impl::g_impl_ptr(); return im && (im->owner->m_pairing || im->pending); }, nullptr);
-        BluetoothClassic::set_paging_inhibit_listener(&Impl::abort_background_page, nullptr);
+        BluetoothClassic::set_paging_inhibit_listener(&Impl::radio_busy_changed, nullptr);
     }
 #endif
 

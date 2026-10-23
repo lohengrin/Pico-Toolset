@@ -23,7 +23,7 @@ struct State {
     bool inquiry_running = false; // the radio inquiry
     uint8_t duration = 8;
     bool paging_inhibited = false;
-    void (*inhibit_cb)(void*) = nullptr;
+    void (*inhibit_cb)(bool, void*) = nullptr;
     void* inhibit_user = nullptr;
 };
 State g;
@@ -174,11 +174,11 @@ void BluetoothClassic::stop_inquiry(ClassicInquiryCallback callback) {
 bool BluetoothClassic::inquiry_active() { return any_client(); }
 
 void BluetoothClassic::inhibit_background_paging(bool inhibit) {
-    const bool started = inhibit && !g.paging_inhibited;
+    const bool changed = inhibit != g.paging_inhibited;
     g.paging_inhibited = inhibit;
-    if (started && g.inhibit_cb) g.inhibit_cb(g.inhibit_user);
+    if (changed && g.inhibit_cb) g.inhibit_cb(inhibit, g.inhibit_user);
 }
-void BluetoothClassic::set_paging_inhibit_listener(void (*callback)(void*), void* user) {
+void BluetoothClassic::set_paging_inhibit_listener(void (*callback)(bool, void*), void* user) {
     g.inhibit_cb = callback;
     g.inhibit_user = user;
 }

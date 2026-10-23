@@ -30,7 +30,6 @@ constexpr uint32_t kRetryMs = 2500;
 #define PICO_TOOLSET_A2DP_SBC_STORAGE_SIZE 700
 #endif
 constexpr size_t kSbcStorage = PICO_TOOLSET_A2DP_SBC_STORAGE_SIZE;
-constexpr uint32_t kMaxBacklogMs = 60; // beyond this much unsent audio, drop instead of bursting
 
 struct Stored {
     uint8_t addr[6];
@@ -261,7 +260,8 @@ void audio_timeout(btstack_timer_source_t*) {
     g.samples_ready += samples;
 
     // Radio too slow: drop the oldest audio rather than sending a burst later.
-    const uint32_t max_backlog = g.active.rate * kMaxBacklogMs / 1000;
+    const uint32_t backlog_ms = g.cfg.max_backlog_ms < 40 ? 40 : g.cfg.max_backlog_ms > 1000 ? 1000 : g.cfg.max_backlog_ms;
+    const uint32_t max_backlog = g.active.rate * backlog_ms / 1000;
     if (g.samples_ready > max_backlog) {
         const unsigned per_frame = g.enc->num_audio_frames(&g.enc_state);
         const uint32_t drop = (g.samples_ready - max_backlog) / per_frame * per_frame;
