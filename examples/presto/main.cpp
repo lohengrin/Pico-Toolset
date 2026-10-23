@@ -265,9 +265,11 @@ AudioAction audio_hit(int x, int y) {
 
 volatile bool g_a2dp_dirty = false;
 char g_a2dp_message[40] = "";
+volatile uint32_t g_a2dp_event_ms = 0; // time of the last event, to show its message only briefly
 
 void on_a2dp_event(const A2dpEvent& e, void*) {
     g_a2dp_dirty = true;
+    g_a2dp_event_ms = to_ms_since_boot(get_absolute_time());
     const auto& d = e.device;
 #ifdef WANT_HCI_DUMP
     if (e.type == A2dpEventType::Connecting) hci_dump_enable_packet_log(true);
@@ -382,7 +384,16 @@ char g_hid_message[40] = "";
 
 // Raw reports of Classic pads without a usable SDP record: print when they change, so the
 // layout of an unknown pad can be worked out from the bytes (press one control at a time).
+// Off by default (PRESTO_BT_LOG_RAW=ON or the console key `r`): this callback runs in the Bluetooth
+// context, and a printf that waits for a slow serial reader there stalls the radio -- it cut the
+// A2DP audio whenever a stick moved.
+#ifdef PRESTO_BT_LOG_RAW
+volatile bool g_log_raw = true;
+#else
+volatile bool g_log_raw = false;
+#endif
 void on_raw_report(const uint8_t* data, uint16_t len, const BtHidDevice&, void*) {
+    if (!g_log_raw) return;
     static uint8_t last[32];
     static uint16_t last_len = 0;
     const uint16_t n = len < sizeof(last) ? len : sizeof(last);
@@ -634,7 +645,7 @@ int main() {
         ac.callback = on_a2dp_event;
         a2dp_ok = a2dp.init(ac);
         std::printf("Bluetooth A2DP %s (quality %s). Console: a pair, c connect last, x disconnect, F forget, "
-                    "p play/pause, +/- volume, q quality, w sound, s stats\n",
+                    "p play/pause, +/- volume, q quality, w sound, s stats, r raw pad log, b backlight\n",
                     a2dp_ok ? "ok" : "FAILED", a2dp_quality_name(a2dp.quality()));
         a2dp_status = a2dp_ok ? Status::Absent : Status::Failed;
     }
@@ -758,6 +769,7 @@ int main() {
                         : a2dp.state() == A2dpState::Idle ? Status::Absent : Status::Busy;
             for (int c = getchar_timeout_us(0); c != PICO_ERROR_TIMEOUT && a2dp_ok; c = getchar_timeout_us(0)) {
                 switch (c) {
+                case 'r': g_log_raw = !g_log_raw; std::printf("raw report log %s\n", g_log_raw ? "on" : "off"); break;
                 case 'b': // backlight to full, manual
                     auto_backlight = false;
                     backlight = 255.0f;
@@ -878,7 +890,9 @@ int main() {
             if (menu.open) draw_menu(display, menu);
 #ifdef PRESTO_BT_A2DP
             if (audio_open) draw_audio_page(display, a2dp, source_index);
-            else if (a2dp_ok && g_a2dp_message[0] && a2dp.state() != A2dpState::Idle && !menu.open)
+            else if (a2dp_ok && g_a2dp_message[0] && !menu.open &&
+                     (a2dp.state() == A2dpState::Pairing || a2dp.state() == A2dpState::Connecting ||
+                      to_ms_since_boot(get_absolute_time()) - g_a2dp_event_ms < 3000))
                 draw_text_fit(display, 4, kStatusH + 6, g_a2dp_message, kColorWhite, kSize / 120 + 1);
 #endif
             if (g_hid_busy || g_passkey >= 0) {

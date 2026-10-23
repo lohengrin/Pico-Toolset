@@ -155,6 +155,7 @@ Example build options (all `cmake -S examples/presto -B build -D...`):
 | `PRESTO_PALETTE` | OFF | 8-bit palette framebuffer (half the SRAM); with `PRESTO_FULL_RES` it keeps Wi-Fi/BLE |
 | `PRESTO_BT_CLASSIC` | ON | also support Bluetooth Classic HID devices (older pads/keyboards) |
 | `PRESTO_BT_A2DP` | OFF | Bluetooth audio to a headset ([bluetooth_a2dp](../components/bluetooth-a2dp.md)); implies `PRESTO_BT_CLASSIC`; touch page under the device manager's `AUDIO (HEADSET)` button plus console keys |
+| `PRESTO_BT_LOG_RAW` | OFF | print every raw report of a Classic gamepad without SDP (also toggled by console key `r`); off by default because the print runs in the Bluetooth context and can stall the radio / cut the A2DP audio |
 | `PRESTO_BT_HCI_DUMP` | OFF | log every HCI/L2CAP/SMP/SDP packet from the start of each connection ([diagnostics guide](../guides/bluetooth-pairing-diagnostics.md)) |
 | `PRESTO_WIFI_CONFIG_DIR` | env var | directory with a git-ignored `config.local.h` (`WIFI_SSID`/`WIFI_PASSWORD`); a copy next to `main.cpp` also works |
 

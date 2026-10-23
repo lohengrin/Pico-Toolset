@@ -97,6 +97,10 @@ endif()
 # Debug aid for Bluetooth pairing problems: dump every HCI/L2CAP/SMP packet to the
 # USB serial port. The log is paused while scanning and runs from the moment a
 # connection is started, so it holds just the pairing exchange.
+option(PRESTO_BT_LOG_RAW "Print every raw report of Classic gamepads without SDP (can stall the radio)" OFF)
+if(PRESTO_BT_LOG_RAW)
+    target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE PRESTO_BT_LOG_RAW=1)
+endif()
 option(PRESTO_BT_HCI_DUMP "Log all Bluetooth HCI packets to the serial console" OFF)
 if(PRESTO_BT_HCI_DUMP)
     target_compile_definitions(${EXAMPLE_OUTPUT_NAME} PRIVATE WANT_HCI_DUMP=1)
