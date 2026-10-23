@@ -102,6 +102,9 @@ struct A2dpConfig {
     bool           auto_play = true;      // start streaming as soon as the stream is open
     bool           auto_connect = true;   // pairing mode connects to the first audio device found
     bool           auto_reconnect = true; // one attempt to the last headset after init()
+    // Delay of that attempt. Paging an absent headset occupies the radio for seconds, during which a
+    // gamepad that is searching for the Pico cannot reach it, so it comes after a reset's first moments.
+    uint32_t       reconnect_delay_ms = 15000;
     bool           remote_key_actions = true; // headset buttons play/pause/stop and change the volume by themselves
     uint32_t       pairing_timeout_ms = 30000;
     A2dpVolumeMode volume_mode = A2dpVolumeMode::Auto;

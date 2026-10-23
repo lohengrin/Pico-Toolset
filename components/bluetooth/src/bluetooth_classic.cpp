@@ -127,8 +127,8 @@ void BluetoothClassic::init(const char* pin) {
     gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
     // BTstack's default page timeout is ~15 s: a bonded device that is switched off then keeps the
     // radio busy that long on every reconnect attempt, starving other links (a gamepad's reports
-    // stopped while the headset was being paged). 5.12 s is the Bluetooth default.
-    gap_set_page_timeout(0x2000);
+    // stopped while the headset was being paged). 3.84 s still covers a device scanning every 1.28 s.
+    gap_set_page_timeout(0x1800);
     gap_connectable_control(1); // bonded devices reconnect on their own
     hci_set_inquiry_mode(INQUIRY_MODE_RSSI_AND_EIR); // names and device ids in inquiry results
     g.hci_reg.callback = &hci_handler;

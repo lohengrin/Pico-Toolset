@@ -35,6 +35,16 @@ classification and report parsing live in `src/hid_report.{h,cpp}` (no BTstack s
 the PC tests in `tests/host/`, which build BTstack's own HID parser). A further split of the LE,
 Classic and raw-link parts into separate files is possible but not done.
 
+## After a reset: who pages whom
+
+A pad that is switched on (or still on, when the Pico resets) pages the Pico: its "searching" light. While
+the Pico itself pages something it cannot answer, so right after init it stays page-scannable: the first
+background page of a bonded Classic pad comes after `classic_page_delay_ms` (20 s), later ones every
+`classic_page_interval_ms` (10 s, +-25 % jitter so two devices on fixed periods cannot miss each other for
+ever), each lasting at most the 3.84 s page timeout. `bluetooth_a2dp` likewise delays its reconnect to the
+last headset (`reconnect_delay_ms`, 15 s). A pad that waits to be paged instead of paging gets its
+connection within `classic_page_delay_ms` + one interval.
+
 ## Using it
 
 ```cpp

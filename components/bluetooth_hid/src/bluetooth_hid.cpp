@@ -16,6 +16,7 @@
 #include "pico_toolset/bluetooth_classic.h"
 #endif
 #include "pico/async_context.h"
+#include "pico/rand.h"
 #include "pico/cyw43_arch.h"
 
 namespace pico_toolset {
@@ -586,6 +587,11 @@ struct BluetoothHid::Impl {
     static void classic_retry(btstack_timer_source_t*) {
         if (g_impl_ptr()) g_impl_ptr()->classic_reconnect_tick();
     }
+    // interval +-25 %: two devices paging each other on fixed periods can miss each other for ever.
+    static uint32_t jittered(uint32_t ms) {
+        const uint32_t spread = ms / 2;
+        return spread ? ms - spread / 2 + get_rand_32() % spread : ms;
+    }
     void schedule_classic_retry(uint32_t ms) {
         btstack_run_loop_remove_timer(&classic_retry_timer);
         btstack_run_loop_set_timer(&classic_retry_timer, ms);
@@ -619,7 +625,7 @@ struct BluetoothHid::Impl {
     }
     void classic_reconnect_tick() {
         if (!cfg().enable_classic || !cfg().auto_reconnect) return;
-        schedule_classic_retry(8000);
+        schedule_classic_retry(jittered(cfg().classic_page_interval_ms));
         if (owner->m_pairing || pending || rawlink.active || BluetoothClassic::background_paging_inhibited()) return;
         for (size_t i = 0; i < stored_count; ++i) {
             if (stored[i].addr_type != kClassicAddrType || slot_by_addr(stored[i].addr)) continue;
@@ -986,7 +992,7 @@ bool BluetoothHid::init(const BluetoothHidConfig& config) {
     m_initialised = true;
     m_impl->arm_reconnect();
 #ifdef ENABLE_CLASSIC
-    if (m_cfg.enable_classic && m_cfg.auto_reconnect) m_impl->schedule_classic_retry(3000);
+    if (m_cfg.enable_classic && m_cfg.auto_reconnect) m_impl->schedule_classic_retry(m_cfg.classic_page_delay_ms);
 #endif
     return true;
 }

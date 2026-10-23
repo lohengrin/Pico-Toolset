@@ -764,7 +764,7 @@ bool BluetoothA2dp::init(const A2dpConfig& config) {
     load_last();
     apply_volume();
     g.inited = true;
-    if (config.auto_reconnect && g.have_last) schedule_reconnect(2500);
+    if (config.auto_reconnect && g.have_last) schedule_reconnect(config.reconnect_delay_ms);
     return true;
 }
 

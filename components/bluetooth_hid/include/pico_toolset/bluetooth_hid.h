@@ -65,6 +65,11 @@ struct BluetoothHidConfig {
     // classic support (CMake option PICO_TOOLSET_BLUETOOTH_CLASSIC).
     bool     enable_classic = true;
     const char* pin = "0000";            // answer to legacy PIN pairing requests (older pads)
+    // Bonded Classic pads are also paged in the background. While we page we cannot answer a page,
+    // and a pad that was switched on is paging us at that very time (its "searching" state), so the
+    // first attempt waits to leave that window free and later ones are spread out with some jitter.
+    uint32_t classic_page_delay_ms = 20000;
+    uint32_t classic_page_interval_ms = 10000; // +-25 %
     // Some old pads have a broken SDP server, so BTstack's HID host cannot find their HID
     // channels. For those (after pairing) the board connects to the standard HID control and
     // interrupt channels itself and passes every input report here, unparsed.
