@@ -88,12 +88,13 @@ default). `BluetoothHidConfig::enable_classic` (true) then turns it on at run ti
   such pads appear in `gamepad_state()` like any other. A pad with a different layout needs its
   own descriptor (or parsing of the raw reports in the callback).
   Such a pad is flagged in the stored device record. When it later connects *to us* (the pad
-  starts the L2CAP connection after a button press), the HID host is told to decline and the
-  channels are opened by `bluetooth_hid` instead: otherwise BTstack's SDP query for the stub
-  record makes it refuse the pad's interrupt channel, and this pad sends its reports on the
-  channel it was refused (HCI dump: reports arrive on a CID we never opened, nothing reaches the
-  app). The first connection of a not-yet-flagged pad still goes through the failing SDP once,
-  which sets the flag.
+  starts the L2CAP connection after a button press) the HID host is told to accept it in
+  boot-protocol mode, which makes BTstack skip the SDP query and take both of the pad's channels
+  as they come; the reports are then parsed with the same built-in descriptor. With the normal
+  accept, BTstack queries the stub record first, refuses the pad's interrupt channel meanwhile, and
+  this pad sends its reports on the channel it was refused (HCI dump: reports arrive on a CID we
+  never opened, nothing reaches the app). The first connection of a not-yet-flagged pad still goes
+  through the failing SDP once, which sets the flag.
 - The HID report descriptor is read over SDP, so keyboard / mouse / gamepad are detected the
   same way as for LE, and the same accessors apply.
 - **Link keys and device records** are stored in flash like the LE bonds (same flash-safety rules).

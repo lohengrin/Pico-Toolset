@@ -186,8 +186,6 @@ struct BluetoothHid::Impl {
     btstack_timer_source_t connect_timer{};
     btstack_timer_source_t reconnect_timer{};
     btstack_timer_source_t bond_timer{};
-    btstack_timer_source_t raw_timer{};
-    Stored raw_target{};
     btstack_packet_callback_registration_t hci_reg{};
     btstack_packet_callback_registration_t sm_reg{};
 
@@ -777,13 +775,6 @@ struct BluetoothHid::Impl {
         }
     }
 
-    static void raw_after_decline(btstack_timer_source_t*) {
-        if (g_impl_ptr()) g_impl_ptr()->start_raw_target();
-    }
-    void start_raw_target() {
-        if (!rawlink.active && slot_by_addr(raw_target.addr) == nullptr) start_raw(raw_target, true);
-    }
-
     void on_classic_hid(uint8_t* packet) {
         if (hci_event_packet_get_type(packet) != HCI_EVENT_HID_META) return;
         switch (hci_event_hid_meta_get_subevent_code(packet)) {
@@ -799,16 +790,14 @@ struct BluetoothHid::Impl {
                 if (k >= 0) in = stored[k];
                 emit(BtHidEventType::Connecting, in); // the device is calling us
             }
-            // A known raw-link pad calling us: hid_host would query its stub SDP record, decline the
-            // pad's interrupt channel meanwhile, and this pad sends its reports on the channel it was
-            // refused. Decline here and open the channels ourselves over the same ACL link.
-            if (const int k = find_stored(addr); k >= 0 && (stored[k].kinds & kRawLinkFlag) && !rawlink.active) {
-                hid_host_decline_connection(cid);
-                raw_target = stored[k];
-                btstack_run_loop_remove_timer(&raw_timer);
-                btstack_run_loop_set_timer(&raw_timer, 300);
-                btstack_run_loop_set_timer_handler(&raw_timer, &Impl::raw_after_decline);
-                btstack_run_loop_add_timer(&raw_timer);
+            // A known raw-link pad (stub SDP record) calling us: a normal accept makes hid_host query
+            // that record, decline the pad's interrupt channel meanwhile, and this pad then sends its
+            // reports on the channel it was refused. Boot protocol mode makes hid_host skip the SDP
+            // query and take both of the pad's channels as they come; the reports are parsed with the
+            // built-in descriptor (see HID_SUBEVENT_CONNECTION_OPENED / HID_SUBEVENT_REPORT).
+            if (const int k = find_stored(addr); k >= 0 && (stored[k].kinds & kRawLinkFlag) &&
+                hid_subevent_incoming_connection_get_status(packet) == ERROR_CODE_SUCCESS) {
+                hid_host_accept_connection(cid, HID_PROTOCOL_MODE_BOOT);
                 break;
             }
             // A known pad reconnecting, or any HID device while pairing mode is on.
@@ -861,11 +850,18 @@ struct BluetoothHid::Impl {
             if (si < 0 && !pending_paired) emit(BtHidEventType::Paired, s->dev); // device-initiated pairing
             pending_paired = false;
             pending = false;
+            if (s->dev.kinds & kRawLinkFlag) { // accepted in boot mode: no descriptor will be read
+                s->raw = true;
+                s->descriptor_ready = true;
+                s->dev.kinds = bt_hid_kind::Gamepad | kRawLinkFlag;
+                assign_pad_index(*s);
+                emit(BtHidEventType::Connected, s->dev, true);
+            }
             break;
         }
         case HID_SUBEVENT_DESCRIPTOR_AVAILABLE: {
             Slot* s = slot_by_classic_cid(hid_subevent_descriptor_available_get_hid_cid(packet));
-            if (!s) break;
+            if (!s || s->raw) break;
             if (hid_subevent_descriptor_available_get_status(packet) != ERROR_CODE_SUCCESS) {
                 emit(BtHidEventType::PairingFailed, s->dev, false, 0, 0,
                      hid_subevent_descriptor_available_get_status(packet));
@@ -886,6 +882,15 @@ struct BluetoothHid::Impl {
             const uint8_t* report = hid_subevent_report_get_report(packet);
             uint16_t len = hid_subevent_report_get_report_len(packet);
             if (len < 1 || report[0] != 0xA1) break; // HID DATA header, input report
+            if (s->raw) {
+                if (cfg().raw_report_callback) {
+                    const BtHidDevice d = to_public(s->dev, true);
+                    cfg().raw_report_callback(report + 1, static_cast<uint16_t>(len - 1), d, cfg().user);
+                }
+                if (len > 1 && report[1] == 0x03) // gamepad report of kRawPadDescriptor
+                    parse_report(*s, kRawPadDescriptor, sizeof(kRawPadDescriptor), report + 1, len - 1);
+                break;
+            }
             parse_report(*s, hid_descriptor_storage_get_descriptor_data(s->classic_cid),
                          hid_descriptor_storage_get_descriptor_len(s->classic_cid), report + 1, len - 1);
             break;
