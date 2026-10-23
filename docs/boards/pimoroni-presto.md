@@ -223,7 +223,7 @@ Not yet done or not yet verified on hardware:
 
 - **Gamepad button table** (`kButtonMap`) is a guess (Xbox/Linux order); the Classic pad's 15 buttons
   need mapping from `gamepad_raw_buttons()`.
-- **Untested Bluetooth devices:** LE gamepads (e.g. Xbox wireless), mice, Classic keyboards, and
+- **Untested Bluetooth devices:** LE gamepads (e.g. Xbox wireless), Classic keyboards, and
   BTstack's own Classic HID path for pads with a normal SDP record.
 - **Coexistence:** a BLE keyboard, the Classic "SFR Gamepad" (including reconnect after a reset) and
   an A2DP headset were validated working together on `PRESTO_BT_A2DP=ON`. The gamepad sometimes needs

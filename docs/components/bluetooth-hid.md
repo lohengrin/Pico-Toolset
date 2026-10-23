@@ -10,7 +10,9 @@ kind of state accessors as [`usb_hid`](usb-hid.md).
 > - Classic: pairing (legacy PIN), bonding, input and reconnect after a reset with an "SFR
 >   Gamepad" (vendor 0x2E2C, class 0x2508), through the raw L2CAP fallback below.
 >
-> **Not yet tested:** LE gamepads (e.g. Xbox wireless controllers), mice, Classic keyboards,
+> - Mouse: a Logitech MX Anywhere 2 (pairing, motion, buttons, wheel).
+>
+> **Not yet tested:** LE gamepads (e.g. Xbox wireless controllers), other mice, Classic keyboards,
 > and BTstack's own Classic HID host path (no tested device had a usable SDP record). The
 > gamepad button map (`kButtonMap`) is a guess from the Linux/Xbox order; check it with
 > `gamepad_raw_buttons()` for your pad.
