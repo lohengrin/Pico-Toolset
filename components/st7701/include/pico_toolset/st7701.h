@@ -129,6 +129,13 @@ public:
     [[nodiscard]] uint32_t missed_frames() const { return m_missed_frames; }
     [[nodiscard]] uint32_t late_lines() const { return m_late_lines; }
 
+    // Panel row the beam is on (0..479; stays at 479+ through the vertical porches until the
+    // next frame starts and it drops back to 0). With `visible_height` below the panel height,
+    // rows >= visible_height read nothing from the application's buffer, so that is the window
+    // in which the buffer can be rewritten without a visible seam: a top-to-bottom copy that
+    // starts there stays ahead of the beam of the next frame. Updated by the scanout interrupt.
+    [[nodiscard]] int display_row() const { return *reinterpret_cast<const volatile int*>(&m_display_row); }
+
     // Blocks (WFE) until the next vertical blank.
     void wait_for_vsync();
 
