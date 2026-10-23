@@ -120,7 +120,11 @@ public:
     bool consume_key_press(uint8_t hid_usage_id);
 
     // --- Mouse ---
-    struct MouseState { bool present = false; bool left = false, right = false, middle = false; };
+    struct MouseState {
+        bool present = false;
+        bool left = false, right = false, middle = false;
+        bool back = false, forward = false; // the thumb buttons (HID button usages 4 and 5)
+    };
     [[nodiscard]] MouseState mouse_state() const;
     void consume_mouse_delta(int& dx, int& dy);
     int consume_mouse_wheel();

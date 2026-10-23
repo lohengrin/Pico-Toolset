@@ -216,7 +216,10 @@ void draw_menu(DisplayDriver& d, const DeviceMenu& m) {
         const BtHidDevice& dev = m.list[i];
         const int ry = kMenuY0 + kMenuRowH * static_cast<int>(i + 1);
         d.fill_rect(4, ry + 4, 4 + 8, ry + kMenuRowH - 5, dev.connected ? kColorGreen : Color(0x7BEF));
-        const char* kind = (dev.kinds & bt_hid_kind::Gamepad) ? "PAD" : (dev.kinds & bt_hid_kind::Keyboard) ? "KBD"
+        // Mice with media/hotkey keyboard collections (Logitech) report both kinds: say so.
+        const char* kind = (dev.kinds & bt_hid_kind::Gamepad) ? "PAD"
+                         : ((dev.kinds & bt_hid_kind::Keyboard) && (dev.kinds & bt_hid_kind::Mouse)) ? "K+M"
+                         : (dev.kinds & bt_hid_kind::Keyboard) ? "KBD"
                          : (dev.kinds & bt_hid_kind::Mouse) ? "MOUSE" : "DEV";
         if (dev.name[0]) std::snprintf(line, sizeof(line), "%s %.10s", kind, dev.name);
         else std::snprintf(line, sizeof(line), "%s %02X%02X%02X", kind, dev.addr[3], dev.addr[4], dev.addr[5]);
@@ -665,6 +668,11 @@ int main() {
     uint32_t frame = 0;
     absolute_time_t next_sensors = get_absolute_time();
     int pad_x = kSize / 2, pad_y = kSize / 2;
+    // Mouse test: a cursor moved by the relative motion, coloured by the buttons; the wheel resizes it.
+    int mouse_x = kSize / 2, mouse_y = kSize / 2, mouse_size = kSize / 30 + 2;
+    bool mouse_present = false;
+    uint8_t mouse_buttons_prev = 0;
+    BluetoothHid::MouseState mouse{};
     uint16_t pad_prev = 0;
     Bme280Reading env;
     Ltr559Reading light;
@@ -861,6 +869,36 @@ int main() {
             }
             pad_x = std::clamp(pad_x, 0, kSize - 1);
             pad_y = std::clamp(pad_y, 0, kSize - 1);
+
+            mouse = hid.mouse_state();
+            mouse_present = mouse.present;
+            int mdx = 0, mdy = 0;
+            hid.consume_mouse_delta(mdx, mdy);
+            const int wheel = hid.consume_mouse_wheel();
+            if (mouse_present) {
+                mouse_x = std::clamp(mouse_x + mdx, 0, kSize - 1);
+                mouse_y = std::clamp(mouse_y + mdy, 0, kSize - 1);
+                if (wheel) {
+                    mouse_size = std::clamp(mouse_size + wheel, 2, kSize / 6);
+                    std::printf("[mouse] wheel %+d -> cursor size %d\n", wheel, mouse_size);
+                }
+                const uint8_t bits = static_cast<uint8_t>(mouse.left | mouse.right << 1 | mouse.middle << 2 |
+                                                          mouse.back << 3 | mouse.forward << 4);
+                if (bits != mouse_buttons_prev) { // button changes are logged, motion is not (too chatty)
+                    std::printf("[mouse] buttons%s%s%s%s%s at (%d,%d)\n", mouse.left ? " LEFT" : "",
+                                mouse.right ? " RIGHT" : "", mouse.middle ? " MIDDLE" : "", mouse.back ? " BACK" : "",
+                                mouse.forward ? " FORWARD" : "", mouse_x, mouse_y);
+                    mouse_buttons_prev = bits;
+                }
+                if (mdx || mdy) {
+                    static uint32_t last_motion_log = 0;
+                    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+                    if (now_ms - last_motion_log > 500) { // at most twice a second
+                        std::printf("[mouse] motion %+d,%+d -> (%d,%d)\n", mdx, mdy, mouse_x, mouse_y);
+                        last_motion_log = now_ms;
+                    }
+                }
+            }
         }
 #endif
 
@@ -922,6 +960,16 @@ int main() {
                 const int gauge_h = (kSize / 30 + 2) * 3;
                 draw_text_fit(display, 4, kSize - gauge_h - 8 * (kSize / 120 + 1) - 4, typed, kColorWhite,
                               kSize / 120 + 1);
+            }
+#endif
+#ifndef PRESTO_NO_RADIO
+            if (mouse_present && !menu_open) { // crosshair: green left, red right, blue middle, yellow thumb button
+                const Color c = mouse.left ? kColorGreen : mouse.right ? kColorRed : mouse.middle ? kColorBlue
+                              : (mouse.back || mouse.forward) ? Color(0xFFE0) : kColorWhite;
+                const int s = mouse_size;
+                display.fill_rect(mouse_x - s, mouse_y - 1, mouse_x + s, mouse_y + 1, c);
+                display.fill_rect(mouse_x - 1, mouse_y - s, mouse_x + 1, mouse_y + s, c);
+                display.fill_rect(mouse_x - 2, mouse_y - 2, mouse_x + 2, mouse_y + 2, kColorBlack);
             }
 #endif
             if (pad_ok && !menu_open) {

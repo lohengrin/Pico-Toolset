@@ -147,7 +147,7 @@ default). `BluetoothHidConfig::enable_classic` (true) then turns it on at run ti
 | | |
 |---|---|
 | Keyboard | `is_key_down(usage)`, `is_modifier_down(mask)`, `consume_key_press(usage)` -- HID usage IDs (see `usb_hid_keymap.h` for ASCII conversion) |
-| Mouse | `mouse_state()`, `consume_mouse_delta(dx, dy)`, `consume_mouse_wheel()` |
+| Mouse | `mouse_state()` (left / right / middle / back / forward), `consume_mouse_delta(dx, dy)` (relative motion since the last call), `consume_mouse_wheel()` |
 | Gamepad | `gamepad_state(i)` (`GamepadState`: buttons `kBt*`, `lx/ly/rx/ry/lt/rt` 0-255, centred at 128), `gamepad_raw_buttons(i)` |
 | Counts | `connected_keyboard_count()`, `connected_mouse_count()`, `connected_gamepad_count()` |
 

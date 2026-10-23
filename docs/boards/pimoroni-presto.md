@@ -174,7 +174,10 @@ and bond through [`bluetooth_hid`](../components/bluetooth-hid.md). Touch the st
 the **device manager**: bonded devices are listed (green dot = connected), `X` forgets one,
 `PAIR NEW` starts pairing mode and `CLOSE` (or the band again) leaves it. Pairing starts by
 itself on a first boot with nothing bonded. Type the shown passkey on a keyboard; bonded devices
-reconnect after a reboot and move the on-screen square.
+reconnect after a reboot and move the on-screen square. A paired mouse moves a crosshair (relative motion):
+green while the left button is down, red right, blue middle, yellow for the thumb buttons; the wheel resizes it.
+Button changes, the wheel and (twice a second at most) motion are logged as `[mouse] ...`. Mice that also
+expose a keyboard collection for hotkeys (Logitech) show as `K+M` in the device manager.
 `-DPRESTO_BT_CLASSIC=ON` (default) also accepts older Bluetooth Classic pads and keyboards
 (legacy PIN `0000` or Secure Simple Pairing); `OFF` builds BLE only and saves RAM and flash.
 Bonding writes flash, so the example's core 1 idles from RAM and defines

@@ -113,7 +113,7 @@ struct BluetoothHid::Impl {
     volatile uint32_t key_edges[8]{};
     volatile uint8_t modifiers = 0;
     volatile int mouse_dx = 0, mouse_dy = 0, mouse_wheel = 0;
-    volatile bool mouse_buttons[3]{};
+    volatile bool mouse_buttons[5]{};
     GamepadState pads[kMaxConnected];
     volatile uint32_t pad_raw[kMaxConnected]{};
 
@@ -926,6 +926,8 @@ struct BluetoothHid::Impl {
             mouse_buttons[0] = r.raw_buttons & 1;
             mouse_buttons[1] = r.raw_buttons & 2;
             mouse_buttons[2] = r.raw_buttons & 4;
+            mouse_buttons[3] = r.raw_buttons & 8;
+            mouse_buttons[4] = r.raw_buttons & 16;
         }
     }
 };
@@ -1110,6 +1112,8 @@ BluetoothHid::MouseState BluetoothHid::mouse_state() const {
     m.left = m_impl->mouse_buttons[0];
     m.right = m_impl->mouse_buttons[1];
     m.middle = m_impl->mouse_buttons[2];
+    m.back = m_impl->mouse_buttons[3];
+    m.forward = m_impl->mouse_buttons[4];
     return m;
 }
 void BluetoothHid::consume_mouse_delta(int& dx, int& dy) {
