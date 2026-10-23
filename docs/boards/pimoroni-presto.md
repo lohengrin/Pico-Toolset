@@ -221,6 +221,9 @@ Not yet done or not yet verified on hardware:
   need mapping from `gamepad_raw_buttons()`.
 - **Untested Bluetooth devices:** LE gamepads (e.g. Xbox wireless), mice, Classic keyboards, and
   BTstack's own Classic HID path for pads with a normal SDP record.
+- **Coexistence:** a BLE keyboard, the Classic "SFR Gamepad" (including reconnect after a reset) and
+  an A2DP headset were validated working together on `PRESTO_BT_A2DP=ON`. The gamepad sometimes needs
+  a second try to connect after a reset (not diagnosed).
 - **Bluetooth audio (A2DP):** validated with a Sony MDR-ZX770BN; the HUAWEI FreeBuds 6i, headset
   volume buttons and reconnect-after-reset are untested (see the component page).
 - **Device manager:** written and builds in every variant, not yet exercised on hardware (touch
