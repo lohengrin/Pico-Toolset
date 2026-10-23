@@ -57,7 +57,8 @@ public:
 
     // Paging a bonded device in the background interrupts an established link (audible as
     // dropouts in an A2DP stream): while any component holds this, the others should not page.
-    static void inhibit_background_paging(bool inhibit);
+    // `owner` identifies the caller (any unique address): the flag stays up while any owner holds it.
+    static void set_radio_busy(const void* owner, bool busy);
     // Called whenever the flag changes (`busy` = true when a stream needs the radio), so a component
     // can cancel a page already in flight and throttle its own scanning while it lasts.
     static void set_paging_inhibit_listener(void (*callback)(bool busy, void* user), void* user);

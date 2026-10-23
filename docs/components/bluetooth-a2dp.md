@@ -109,7 +109,7 @@ reported but skipped). Then:
 3. BTstack drops the bonding link, and many headsets then call back by themselves. We wait 6 s for
    that (an incoming connection is adopted and the stream opened), then page the headset ourselves,
    retrying 3 times 2.5 s apart. Paging at once made this Sony answer `0x1F` every time.
-4. While pairing/connecting/streaming, `BluetoothClassic::inhibit_background_paging()` is held: the
+4. While pairing/connecting/streaming, `BluetoothClassic::set_radio_busy()` is held (per owner): the
    background page of a bonded Classic gamepad (see below) otherwise blocks the radio for up to 15 s
    and the headset leaves pairing mode before our attempt gets through. A page already in flight is
    cancelled.

@@ -1,4 +1,5 @@
 #include "pico_toolset/bluetooth.h"
+#include "pico_toolset/bluetooth_detail.h"
 
 #include <cstring>
 
@@ -14,34 +15,10 @@ namespace {
 Bluetooth* g_instance = nullptr;
 btstack_packet_callback_registration_t g_hci_cb;
 
-// Holds the async context lock around BTstack calls made from application
-// code (BTstack is not thread-safe; its callbacks already run under it).
-struct ContextLock {
-    ContextLock() { async_context_acquire_lock_blocking(cyw43_arch_async_context()); }
-    ~ContextLock() { async_context_release_lock(cyw43_arch_async_context()); }
-};
+using bt_detail::ContextLock;
 
 void packet_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
     if (g_instance) g_instance->on_event(packet_type, packet);
-}
-
-constexpr uint8_t kAdLocalNameShort = 0x08;
-constexpr uint8_t kAdLocalNameComplete = 0x09;
-
-void extract_name(const uint8_t* data, uint8_t len, char (&name)[32]) {
-    name[0] = '\0';
-    for (unsigned i = 0; i + 1 < len;) {
-        const unsigned field_len = data[i];
-        if (field_len == 0 || i + 1 + field_len > len) break;
-        const uint8_t type = data[i + 1];
-        if (type == kAdLocalNameShort || type == kAdLocalNameComplete) {
-            const size_t n = field_len - 1 < sizeof(name) - 1 ? field_len - 1 : sizeof(name) - 1;
-            std::memcpy(name, &data[i + 2], n);
-            name[n] = '\0';
-            if (type == kAdLocalNameComplete) return;
-        }
-        i += field_len + 1;
-    }
 }
 
 uint16_t ms_to_units(uint16_t ms) { return static_cast<uint16_t>(ms * 1000u / 625u); } // 0.625 ms units
@@ -52,7 +29,7 @@ void Bluetooth::on_event(uint8_t packet_type, const uint8_t* packet) {
     if (packet_type != HCI_EVENT_PACKET) return;
     switch (hci_event_packet_get_type(const_cast<uint8_t*>(packet))) {
     case BTSTACK_EVENT_STATE:
-        if (btstack_event_state_get_state(const_cast<uint8_t*>(packet)) == HCI_STATE_WORKING) m_ready = true;
+        m_ready = btstack_event_state_get_state(const_cast<uint8_t*>(packet)) == HCI_STATE_WORKING;
         break;
     case GAP_EVENT_ADVERTISING_REPORT: {
         if (!m_scan_cb) break;
@@ -63,8 +40,8 @@ void Bluetooth::on_event(uint8_t packet_type, const uint8_t* packet) {
         std::memcpy(adv.addr, addr, 6);
         adv.addr_type = gap_event_advertising_report_get_address_type(p);
         adv.rssi = static_cast<int8_t>(gap_event_advertising_report_get_rssi(p));
-        extract_name(gap_event_advertising_report_get_data(p),
-                     gap_event_advertising_report_get_data_length(p), adv.name);
+        bt_detail::extract_local_name(gap_event_advertising_report_get_data(p),
+                                      gap_event_advertising_report_get_data_length(p), adv.name, sizeof(adv.name));
         m_scan_cb(adv, m_scan_user);
         break;
     }
@@ -119,9 +96,9 @@ void Bluetooth::stop_advertising() {
 }
 
 void Bluetooth::start_scan(BleScanCallback callback, void* user) {
+    ContextLock lock;
     m_scan_cb = callback;
     m_scan_user = user;
-    ContextLock lock;
     const uint16_t interval = ms_to_units(m_cfg.scan_interval_ms);
     gap_set_scan_params(m_cfg.active_scan ? 1 : 0, interval, interval, 0);
     gap_start_scan();

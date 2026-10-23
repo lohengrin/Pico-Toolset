@@ -6,6 +6,7 @@
 #ifdef ENABLE_CLASSIC
 
 #include "pico_toolset/bluetooth_a2dp.h"
+#include "pico_toolset/bluetooth_detail.h"
 
 #include <cstdio>
 #include <cstring>
@@ -20,8 +21,8 @@ namespace pico_toolset {
 
 namespace {
 
-constexpr uint32_t kTlvTag = (static_cast<uint32_t>('A') << 24) | (static_cast<uint32_t>('2') << 16) |
-                             (static_cast<uint32_t>('D') << 8) | 'P';
+using bt_detail::ContextLock;
+constexpr uint32_t kTlvTag = bt_detail::tlv_tag('A', '2', 'D', 'P');
 constexpr uint32_t kAudioTimerMs = 10;
 constexpr uint32_t kCallbackWaitMs = 6000; // after bonding: time the headset gets to connect to us first
 constexpr uint32_t kRetryMs = 2500;
@@ -119,10 +120,12 @@ struct State {
 };
 State g;
 
-struct ContextLock {
-    ContextLock() { async_context_acquire_lock_blocking(cyw43_arch_async_context()); }
-    ~ContextLock() { async_context_release_lock(cyw43_arch_async_context()); }
-};
+// The single place the state changes: the radio-busy flag (other components stop their background
+// paging and scanning while a headset is being set up or streamed to) follows it.
+void set_state(A2dpState next) {
+    g.state = next;
+    BluetoothClassic::set_radio_busy(&g, next != A2dpState::Idle);
+}
 
 uint8_t mode_bit(A2dpChannelMode m) {
     switch (m) {
@@ -141,7 +144,6 @@ A2dpDevice device_info() {
 }
 
 void emit(A2dpEventType type, uint8_t status = 0) {
-    BluetoothClassic::inhibit_background_paging(g.state != A2dpState::Idle);
     if (!g.cfg.callback) return;
     A2dpEvent e{};
     e.type = type;
@@ -160,27 +162,16 @@ void emit(A2dpEventType type, uint8_t status = 0) {
 
 // ---- persistence ----
 void save_last() {
-    const btstack_tlv_t* tlv = nullptr;
-    void* ctx = nullptr;
-    btstack_tlv_get_instance(&tlv, &ctx);
-    if (!tlv) return;
     std::memcpy(g.last.addr, g.peer, 6);
     std::memcpy(g.last.name, g.peer_name, sizeof(g.last.name));
     g.have_last = true;
-    tlv->store_tag(ctx, kTlvTag, reinterpret_cast<const uint8_t*>(&g.last), sizeof(g.last));
+    bt_detail::tlv_store(kTlvTag, &g.last, sizeof(g.last));
 }
 void load_last() {
-    const btstack_tlv_t* tlv = nullptr;
-    void* ctx = nullptr;
-    btstack_tlv_get_instance(&tlv, &ctx);
-    g.have_last = tlv && tlv->get_tag(ctx, kTlvTag, reinterpret_cast<uint8_t*>(&g.last), sizeof(g.last)) ==
-                             static_cast<int>(sizeof(g.last));
+    g.have_last = bt_detail::tlv_load(kTlvTag, &g.last, sizeof(g.last)) == static_cast<int>(sizeof(g.last));
 }
 void erase_last() {
-    const btstack_tlv_t* tlv = nullptr;
-    void* ctx = nullptr;
-    btstack_tlv_get_instance(&tlv, &ctx);
-    if (tlv) tlv->delete_tag(ctx, kTlvTag);
+    bt_detail::tlv_erase(kTlvTag);
     g.have_last = false;
 }
 
@@ -342,7 +333,7 @@ bool open_stream() {
     g.stream_requested = true;
     const uint8_t rc = a2dp_source_establish_stream(g.peer, &g.a2dp_cid);
     if (rc != ERROR_CODE_SUCCESS) {
-        g.state = A2dpState::Idle;
+        set_state(A2dpState::Idle);
         emit(A2dpEventType::Failed, rc);
         return false;
     }
@@ -370,7 +361,7 @@ bool start_connection(const uint8_t addr[6], bool fresh_pairing = false) {
     g.stream_requested = false;
     g.retries = 0;
     g.bonded_this_attempt = false;
-    g.state = A2dpState::Connecting;
+    set_state(A2dpState::Connecting);
     emit(A2dpEventType::Connecting);
     // A headset in pairing mode has forgotten any earlier bond, and answers a stale link key with
     // "PIN or key missing" (0x63): a user-initiated pairing always starts from a clean slate.
@@ -382,7 +373,7 @@ bool start_connection(const uint8_t addr[6], bool fresh_pairing = false) {
         const uint8_t rc = gap_dedicated_bonding(g.peer, 0);
         if (rc != ERROR_CODE_SUCCESS) {
             g.bonding = false;
-            g.state = A2dpState::Idle;
+            set_state(A2dpState::Idle);
             emit(A2dpEventType::Failed, rc);
             return false;
         }
@@ -404,7 +395,7 @@ void hci_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
     g.bonding = false;
     const uint8_t status = gap_event_dedicated_bonding_completed_get_status(packet);
     if (status != ERROR_CODE_SUCCESS) {
-        g.state = A2dpState::Idle;
+        set_state(A2dpState::Idle);
         emit(A2dpEventType::Failed, status);
         return;
     }
@@ -417,12 +408,22 @@ void hci_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
 
 void inquiry_result(const ClassicInquiryResult& r, void*);
 
+// Audio/Video minor device classes that play sound: uncategorised, wearable headset, hands-free,
+// loudspeaker, headphones, portable audio, car audio, Hi-Fi. (Set-top boxes, TVs, cameras... share
+// the major class and are not worth connecting to.)
+bool is_audio_sink_class(uint32_t class_of_device) {
+    switch ((class_of_device >> 2) & 0x3F) {
+    case 0x00: case 0x01: case 0x02: case 0x05: case 0x06: case 0x07: case 0x08: case 0x0A: return true;
+    default: return false;
+    }
+}
+
 void stop_pairing_internal() {
     if (!g.pairing) return;
     g.pairing = false;
     btstack_run_loop_remove_timer(&g.pair_timer);
     BluetoothClassic::stop_inquiry(&inquiry_result);
-    if (g.state == A2dpState::Pairing) g.state = A2dpState::Idle;
+    if (g.state == A2dpState::Pairing) set_state(A2dpState::Idle);
     emit(A2dpEventType::PairingStopped);
 }
 void pair_timeout(btstack_timer_source_t*) { stop_pairing_internal(); }
@@ -454,9 +455,7 @@ void inquiry_result(const ClassicInquiryResult& r, void*) {
     }
     // Audio/Video major class also covers set-top boxes, TVs, cameras... : only headsets,
     // speakers and the like are worth connecting to. The others are still reported above.
-    const uint8_t minor = (r.class_of_device >> 2) & 0x3F;
-    const bool sink_like = minor == 0x00 || minor == 0x01 || minor == 0x02 || minor == 0x05 || minor == 0x06 ||
-                           minor == 0x07 || minor == 0x08 || minor == 0x0A;
+    const bool sink_like = is_audio_sink_class(r.class_of_device);
     if (g.cfg.auto_connect && sink_like) {
         stop_pairing_internal();
         start_connection(r.addr, true);
@@ -482,7 +481,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
                 arm_connect_timer(kRetryMs);
                 return;
             }
-            g.state = A2dpState::Idle;
+            set_state(A2dpState::Idle);
             emit(A2dpEventType::Failed, status);
             return;
         }
@@ -494,7 +493,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
             g.stream_requested = true;
             a2dp_source_establish_stream(g.peer, &g.a2dp_cid);
         }
-        g.state = A2dpState::Connected;
+        set_state(A2dpState::Connected);
         save_last();
         emit(A2dpEventType::Connected);
         break;
@@ -572,7 +571,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
             a2dp_source_start_stream(g.a2dp_cid, g.local_seid);
         break;
     case A2DP_SUBEVENT_STREAM_STARTED:
-        g.state = A2dpState::Streaming;
+        set_state(A2dpState::Streaming);
         apply_volume();
         media_start();
         emit(A2dpEventType::StreamStarted);
@@ -582,7 +581,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         break;
     case A2DP_SUBEVENT_STREAM_SUSPENDED:
         media_stop();
-        if (g.state == A2dpState::Streaming) g.state = A2dpState::Connected;
+        if (g.state == A2dpState::Streaming) set_state(A2dpState::Connected);
         emit(A2dpEventType::StreamSuspended);
         break;
     case A2DP_SUBEVENT_STREAM_RELEASED:
@@ -598,7 +597,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         g.remote_abs = false;
         g.initiated = false;
         g.stream_requested = false;
-        g.state = g.pairing ? A2dpState::Pairing : A2dpState::Idle;
+        set_state(g.pairing ? A2dpState::Pairing : A2dpState::Idle);
         emit(A2dpEventType::Disconnected, g.last_disc_reason);
         g.disc_cause = A2dpEvent::CauseStack;
         if (g.restart_pending && g.have_last) { // quality change: reconnect with the new preferences
@@ -745,7 +744,7 @@ void BluetoothA2dp::start_pairing() {
     ContextLock lock;
     if (g.pairing || g.state != A2dpState::Idle) return;
     g.pairing = true;
-    g.state = A2dpState::Pairing;
+    set_state(A2dpState::Pairing);
     const uint32_t units = g.cfg.pairing_timeout_ms / 1280;
     BluetoothClassic::start_inquiry(static_cast<uint8_t>(units < 1 ? 1 : units > 48 ? 48 : units), 0x04, &inquiry_result,
                                     nullptr);

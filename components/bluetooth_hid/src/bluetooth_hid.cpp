@@ -4,6 +4,7 @@
 // bonded devices, persistent device records, and generic report parsing into
 // keyboard / mouse / GamepadState.
 #include "pico_toolset/bluetooth_hid.h"
+#include "pico_toolset/bluetooth_detail.h"
 
 #include <cstring>
 
@@ -20,8 +21,8 @@ namespace pico_toolset {
 
 namespace {
 
-constexpr uint32_t kTlvTag = (static_cast<uint32_t>('P') << 24) | (static_cast<uint32_t>('H') << 16) |
-                             (static_cast<uint32_t>('I') << 8) | 'D';
+using bt_detail::ContextLock;
+constexpr uint32_t kTlvTag = bt_detail::tlv_tag('P', 'H', 'I', 'D');
 constexpr size_t kMaxConnected = BluetoothHid::kMaxConnected;
 constexpr size_t kMaxBonded = BluetoothHid::kMaxBonded;
 constexpr uint32_t kConnectTimeoutMs = 10'000;
@@ -90,11 +91,6 @@ uint8_t g_descriptor_storage[1200];
 #ifdef ENABLE_CLASSIC
 uint8_t g_classic_descriptor_storage[1200];
 #endif
-
-struct ContextLock {
-    ContextLock() { async_context_acquire_lock_blocking(cyw43_arch_async_context()); }
-    ~ContextLock() { async_context_release_lock(cyw43_arch_async_context()); }
-};
 
 BtHidDevice to_public(const Stored& s, bool connected, int8_t rssi = 0) {
     BtHidDevice d{};
@@ -245,22 +241,12 @@ struct BluetoothHid::Impl {
 
     // ---- persistence ----
     void save_stored() {
-        const btstack_tlv_t* tlv = nullptr;
-        void* ctx = nullptr;
-        btstack_tlv_get_instance(&tlv, &ctx);
-        if (!tlv) return;
-        if (stored_count == 0) tlv->delete_tag(ctx, kTlvTag);
-        else tlv->store_tag(ctx, kTlvTag, reinterpret_cast<const uint8_t*>(stored),
-                            static_cast<uint32_t>(stored_count * sizeof(Stored)));
+        if (stored_count == 0) bt_detail::tlv_erase(kTlvTag);
+        else bt_detail::tlv_store(kTlvTag, stored, static_cast<uint32_t>(stored_count * sizeof(Stored)));
     }
     void load_stored() {
-        const btstack_tlv_t* tlv = nullptr;
-        void* ctx = nullptr;
-        btstack_tlv_get_instance(&tlv, &ctx);
-        stored_count = 0;
-        if (!tlv) return;
-        const int len = tlv->get_tag(ctx, kTlvTag, reinterpret_cast<uint8_t*>(stored), sizeof(stored));
-        if (len > 0) stored_count = static_cast<size_t>(len) / sizeof(Stored);
+        const int len = bt_detail::tlv_load(kTlvTag, stored, sizeof(stored));
+        stored_count = len > 0 ? static_cast<size_t>(len) / sizeof(Stored) : 0;
         if (stored_count > kMaxBonded) stored_count = kMaxBonded;
     }
     // Removes the keys BTstack holds for a device (link key / LE bonding, whitelist entry).
@@ -374,21 +360,6 @@ struct BluetoothHid::Impl {
         }
         return false;
     }
-    static void extract_name(const uint8_t* ad, uint8_t len, char (&name)[24]) {
-        for (unsigned i = 0; i + 1 < len;) {
-            const unsigned fl = ad[i];
-            if (fl == 0 || i + 1 + fl > len) break;
-            const uint8_t type = ad[i + 1];
-            if (type == 0x08 || type == 0x09) {
-                const size_t n = fl - 1 < sizeof(name) - 1 ? fl - 1 : sizeof(name) - 1;
-                std::memcpy(name, &ad[i + 2], n);
-                name[n] = '\0';
-                if (type == 0x09) return;
-            }
-            i += fl + 1;
-        }
-    }
-
     void on_advertisement(uint8_t* packet) {
         if (!owner->m_pairing || pending) return;
         const uint8_t* ad = gap_event_advertising_report_get_data(packet);
@@ -400,7 +371,7 @@ struct BluetoothHid::Impl {
         gap_event_advertising_report_get_address(packet, addr);
         std::memcpy(dev.addr, addr, 6);
         dev.addr_type = gap_event_advertising_report_get_address_type(packet);
-        extract_name(ad, len, dev.name);
+        bt_detail::extract_local_name(ad, len, dev.name, sizeof(dev.name));
         if (slot_by_addr(dev.addr)) return; // already connected
         if (seen_before(dev.addr)) return;
 
@@ -996,7 +967,7 @@ struct BluetoothHid::Impl {
         btstack_hid_parser_t parser;
         btstack_hid_parser_init(&parser, descriptor, descriptor_len, HID_REPORT_TYPE_INPUT, report, len);
 
-        bool has_keyboard = false, has_buttons = false;
+        bool has_keyboard = false;
         uint32_t key_bits[8] = {};
         uint8_t mods = 0;
         uint32_t raw_buttons = 0;
@@ -1022,7 +993,6 @@ struct BluetoothHid::Impl {
                     key_bits[usage >> 5] |= 1u << (usage & 31);
                 }
             } else if (page == kPageButton) {
-                has_buttons = true;
                 if (value && usage >= 1 && usage <= 32) raw_buttons |= 1u << (usage - 1);
             } else if (page == kPageDesktop) {
                 switch (usage) {
@@ -1081,7 +1051,6 @@ struct BluetoothHid::Impl {
             mouse_buttons[1] = raw_buttons & 2;
             mouse_buttons[2] = raw_buttons & 4;
         }
-        (void)has_buttons;
     }
 };
 

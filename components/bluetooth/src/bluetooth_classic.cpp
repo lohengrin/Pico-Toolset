@@ -22,6 +22,7 @@ struct State {
     struct InquiryClient { ClassicInquiryCallback cb; void* user; uint8_t major_class; } clients[kMaxInquiryClients]{};
     bool inquiry_running = false; // the radio inquiry
     uint8_t duration = 8;
+    const void* busy_owner[4]{}; // components holding the radio for an audio stream
     bool paging_inhibited = false;
     void (*inhibit_cb)(bool, void*) = nullptr;
     void* inhibit_user = nullptr;
@@ -173,10 +174,19 @@ void BluetoothClassic::stop_inquiry(ClassicInquiryCallback callback) {
 
 bool BluetoothClassic::inquiry_active() { return any_client(); }
 
-void BluetoothClassic::inhibit_background_paging(bool inhibit) {
-    const bool changed = inhibit != g.paging_inhibited;
-    g.paging_inhibited = inhibit;
-    if (changed && g.inhibit_cb) g.inhibit_cb(inhibit, g.inhibit_user);
+void BluetoothClassic::set_radio_busy(const void* owner, bool busy) {
+    const void** free_slot = nullptr;
+    bool held = false;
+    for (auto& o : g.busy_owner) {
+        if (o == owner) { held = true; if (!busy) o = nullptr; }
+        else if (!o && !free_slot) free_slot = &o;
+    }
+    if (busy && !held && free_slot) *free_slot = owner;
+    bool any = false;
+    for (const auto* o : g.busy_owner) any = any || o;
+    const bool changed = any != g.paging_inhibited;
+    g.paging_inhibited = any;
+    if (changed && g.inhibit_cb) g.inhibit_cb(any, g.inhibit_user);
 }
 void BluetoothClassic::set_paging_inhibit_listener(void (*callback)(bool, void*), void* user) {
     g.inhibit_cb = callback;
