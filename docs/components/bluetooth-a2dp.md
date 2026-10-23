@@ -79,6 +79,10 @@ volume keys also act by themselves (volume in steps of 8 of 127); `Next`/`Previo
 application. Playback status (playing/paused) is reported back to the headset. Not yet tested on a
 headset: the Sony's behaviour with these buttons is unconfirmed.
 
+After a firmware change that alters the services the Pico offers (for example when the AVRCP target
+was added) a headset that was paired before may not connect any more; forget it on both sides (`F`
+on the console, or remove it from the headset's paired list) and pair again.
+
 ## Using it next to `bluetooth_hid`
 
 Both components pair Classic devices and can be active together: the device inquiry is shared

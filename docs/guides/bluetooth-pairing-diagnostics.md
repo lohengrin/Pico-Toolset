@@ -68,6 +68,10 @@ Failure codes seen on a Sony MDR-ZX770BN, in the order they appeared:
 | long `connecting`, then failure | radio busy | a bonded Classic gamepad is being paged in the background; paging is suspended while A2DP connects |
 | `HCI reason 0x16` | closed by this device | look at the "closed by" text: an API call (e.g. serial input `x`/`F`) or the stack |
 
+A headset that stops connecting right after a firmware update (new or changed Bluetooth services)
+usually holds a stale record of the Pico: forget the headset (console `F`), clear the Pico from the
+headset's list (pairing mode / reset), and pair again.
+
 A set-top box in the room (class `0x28....`) can show up first in the inquiry; only
 headset / headphone / speaker classes (`0x24....`) are connected automatically.
 
