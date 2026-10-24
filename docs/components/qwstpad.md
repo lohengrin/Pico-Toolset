@@ -18,3 +18,10 @@ Pimoroni QwSTPad (ten buttons, four LEDs behind a TCA9555 I2C expander).
 - `set_leds(mask)`, `set_led(1..4, on)`, `leds()`, `address_code()`.
 
 Lineage: Pimoroni's qwstpad-micropython (MIT).
+
+## As a gamepad
+
+`qwstpad_gamepad.h`: `qwstpad_gamepad_state(read_buttons())` converts the button bits to the toolset's
+`GamepadState` (A/B/X/Y and D-pad one to one, `+` = Start, `-` = Back). `merge(a, b)` in `hid_gamepad.h` combines
+it with a USB/Bluetooth pad (buttons OR-ed, sticks from the analogue pad). Used by PicoDoom's Presto input.
+

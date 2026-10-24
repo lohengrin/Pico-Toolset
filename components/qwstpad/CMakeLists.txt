@@ -7,6 +7,7 @@ target_include_directories(pico_toolset_qwstpad PUBLIC
 target_link_libraries(pico_toolset_qwstpad PUBLIC
     pico_stdlib
     hardware_i2c
+    pico_toolset_hid_input   # qwstpad_gamepad.h
 )
 target_compile_features(pico_toolset_qwstpad PUBLIC cxx_std_20)
 

@@ -47,4 +47,15 @@ struct GamepadState {
     bool pressed(uint16_t mask) const { return (buttons & mask) != 0; }
 };
 
+// Two physical inputs acting as one pad: buttons are OR-ed; the sticks and triggers come from `a`
+// if it is present, else from `b` (digital-only sources leave them centred, so the analogue pad
+// wins when both are there).
+inline GamepadState merge(const GamepadState& a, const GamepadState& b) {
+    if (!a.present) return b;
+    if (!b.present) return a;
+    GamepadState m = a;
+    m.buttons = static_cast<uint16_t>(a.buttons | b.buttons);
+    return m;
+}
+
 } // namespace pico_toolset
