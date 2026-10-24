@@ -5,6 +5,7 @@
 
 #include "hid_report.h"
 #include "pico_toolset/audio_synth.h"
+#include "pico_toolset/sample_mixer.h"
 #include "pico_toolset/bluetooth_a2dp.h"
 #include "pico_toolset/bluetooth_hid.h"
 
@@ -150,8 +151,59 @@ static void test_hid_report() {
     CHECK(norm_axis(0x3FF, 10, 0) == 255); // 10-bit trigger
 }
 
+static void test_sample_mixer() {
+    // A rising ramp 128..227 at the output rate, full volume: output follows (s-128)*127.
+    uint8_t ramp[100];
+    for (int i = 0; i < 100; ++i) ramp[i] = static_cast<uint8_t>(128 + i);
+    SampleMixer<2> mixer;
+    mixer.set_rate(8000);
+    CHECK(!mixer.active());
+    CHECK(!mixer.start(1, ramp, 1, 8000, 127)); // too short
+    CHECK(mixer.start(1, ramp, 100, 8000, 127));
+    CHECK(mixer.active() && mixer.playing(1) && !mixer.playing(2));
+    int32_t acc[10] = {};
+    mixer.mix(acc, 10);
+    for (int i = 0; i < 10; ++i) CHECK(acc[i] == i * 127);
+
+    // Double speed skips every other sample; half volume halves the level.
+    mixer.stop_all();
+    CHECK(!mixer.active());
+    CHECK(mixer.start(2, ramp, 100, 8000, 127, 2.0f));
+    mixer.set_volume(2, 64);
+    int32_t acc2[5] = {};
+    mixer.mix(acc2, 5);
+    for (int i = 0; i < 5; ++i) CHECK(acc2[i] == 2 * i * 64);
+
+    // Half rate source (4 kHz into 8 kHz) interpolates: ramp climbs 0.5 per output sample.
+    mixer.stop_all();
+    CHECK(mixer.start(3, ramp, 100, 4000, 127));
+    int32_t acc3[4] = {};
+    mixer.mix(acc3, 4);
+    CHECK(acc3[0] == 0 && acc3[2] == 1 * 127 && std::abs(acc3[1] - 63) <= 1);
+
+    // Two voices sum; a third start steals the lowest handle; a short sample frees itself.
+    mixer.stop_all();
+    CHECK(mixer.start(10, ramp, 100, 8000, 127));
+    CHECK(mixer.start(11, ramp, 100, 8000, 127));
+    CHECK(mixer.start(12, ramp, 100, 8000, 127));
+    CHECK(!mixer.playing(10) && mixer.playing(11) && mixer.playing(12));
+    mixer.stop(11);
+    mixer.stop(12);
+    uint8_t blip[4] = {200, 200, 200, 200};
+    CHECK(mixer.start(20, blip, 4, 8000, 127));
+    int32_t acc4[8] = {};
+    mixer.mix(acc4, 8);
+    CHECK(acc4[0] == 72 * 127 && !mixer.active());
+
+    // Changing the rate stops everything.
+    CHECK(mixer.start(30, ramp, 100, 8000, 127));
+    mixer.set_rate(16000);
+    CHECK(!mixer.active());
+}
+
 int main() {
     test_audio_synth();
+    test_sample_mixer();
     test_a2dp_quality();
     test_hid_report();
     if (g_failures) {

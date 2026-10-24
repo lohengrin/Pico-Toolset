@@ -19,3 +19,15 @@ Header-only generated-audio sources for the audio sinks (today
 - `SilenceSource`.
 
 Implement `AudioSource` yourself to stream any other generated signal.
+
+## `SampleMixer<N>` (`sample_mixer.h`)
+
+N-voice (default 8) player for **8-bit unsigned PCM** (DOOM DMX lumps, Sound Blaster bodies, retro sample
+banks): per-voice source rate, volume (0..127) and playback `speed`, linear interpolation, mixed into a
+caller-supplied `int32_t` accumulator (`mix(acc, count)` adds; full scale per voice is +-127 x 127). Voices are
+identified by caller-chosen handles; a new `start()` steals the voice with the lowest handle when all are busy.
+`set_rate()`, `start()`, `stop()`, `stop_all()`, `set_volume()`, `playing()`, `active()`. No hardware, no
+allocation, not thread-safe by itself (guard `start/stop` against a concurrent `mix` with an interrupt-off
+section or by calling from one context); the samples must stay readable from the mixing context.
+Used by PicoDoom to play sound effects on the Presto piezo (`PiezoPcm`) and to a Bluetooth headset (A2DP).
+
