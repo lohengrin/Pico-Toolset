@@ -4,8 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 #include "hardware/clocks.h"
+#include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
 #include "pico/stdlib.h"
