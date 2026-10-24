@@ -201,3 +201,11 @@ execute from flash:
 - Classic HID needs `PICO_TOOLSET_BLUETOOTH_CLASSIC` (see above); the BTstack limits for it are
   in `components/bluetooth/config/btstack_config.h` (`#ifdef ENABLE_CLASSIC` block).
 - No HID output yet (keyboard LEDs, rumble).
+
+## As a `HidSource`
+
+`bluetooth_hid_source.h`: `BluetoothHidSource(host, max_x = 639, max_y = 479)` implements the
+transport-neutral [`HidSource`](hid-source.md). Bluetooth mice report relative motion only, so it keeps a
+virtual cursor (clamped to the given size) for `mouse_state()` and a separate raw accumulator for
+`consume_mouse_delta()`/`consume_mouse_wheel()`; call `poll()` regularly from one thread to fold the
+host's motion into both. Keyboard and gamepad calls pass straight through.

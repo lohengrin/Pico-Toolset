@@ -1,11 +1,12 @@
 #include "pico_toolset/lvgl_hid.h"
+#include "pico_toolset/usb_hid_source.h"
 
 namespace pico_toolset {
 
 namespace {
 
 void keypad_read_cb(lv_indev_t* indev, lv_indev_data_t* data) {
-    auto* usb = static_cast<UsbHidHost*>(lv_indev_get_user_data(indev));
+    auto* usb = static_cast<HidSource*>(lv_indev_get_user_data(indev));
     uint32_t key = 0;
 
     // Arrows navigate via PREV/NEXT: LVGL only moves group focus on those;
@@ -33,21 +34,26 @@ void keypad_read_cb(lv_indev_t* indev, lv_indev_data_t* data) {
 }
 
 void mouse_read_cb(lv_indev_t* indev, lv_indev_data_t* data) {
-    auto* usb = static_cast<UsbHidHost*>(lv_indev_get_user_data(indev));
-    const UsbHidHost::MouseState mouse = usb->mouse_state();
+    auto* usb = static_cast<HidSource*>(lv_indev_get_user_data(indev));
+    const HidMouse mouse = usb->mouse_state();
     if (!mouse.present) {
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
     data->point.x = mouse.x;
     data->point.y = mouse.y;
-    data->state = (mouse.left_button || mouse.right_button || mouse.middle_button) ? LV_INDEV_STATE_PRESSED
+    data->state = (mouse.left || mouse.right || mouse.middle) ? LV_INDEV_STATE_PRESSED
                                                                                     : LV_INDEV_STATE_RELEASED;
 }
 
 } // namespace
 
 void lvgl_hid_init(UsbHidHost& hid) {
+    static UsbHidSource source(hid); // one host per firmware, lives as long as the indevs
+    lvgl_hid_init(static_cast<HidSource&>(source));
+}
+
+void lvgl_hid_init(HidSource& hid) {
     lv_group_t* group = lv_group_create();
     lv_group_set_default(group);
 

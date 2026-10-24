@@ -63,3 +63,9 @@ Required: `pin_dp`, `pio_num`, `run_on_core1`. Optional: `core1_stack_size` 4096
 
 Lineage: HID report-descriptor parsing from the upstream consumer's parsers;
 DualSense parsing and the DMA-channel-claim fix added after hardware testing.
+
+## As a `HidSource`
+
+`usb_hid_source.h` wraps a `UsbHidHost` in the transport-neutral [`HidSource`](hid-source.md)
+(`UsbHidSource source(host);`), so UI/game code written against `HidSource` (including
+`lvgl_hid_init(HidSource&)`) does not care whether input arrives over USB or Bluetooth.

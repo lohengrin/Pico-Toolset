@@ -39,3 +39,9 @@ keyboard/mouse. The component's own
   skipping the swap gives wrong colours.
 - Touch samples are mapped with `LvglTouchCalibration`; see
   [xpt2046](xpt2046.md) for panel values.
+
+## `lvgl_hid_init(HidSource&)`
+
+Besides `lvgl_hid_init(UsbHidHost&)`, an overload takes any [`HidSource`](hid-source.md) (a Bluetooth
+host through `BluetoothHidSource`, or an application merge of several devices). The pointer cursor
+follows `HidMouse::x/y`, so the source decides the coordinate space.

@@ -26,7 +26,7 @@ targets are `pico_toolset_<name>`; each component has a
 | [i2s_audio](i2s-audio.md) | `pico_toolset_i2s_audio` | audio | **OFF** | I2S DAC output (needs pico-extras) |
 | [reset_buttons](reset-buttons.md) | `pico_toolset_reset_buttons` | input | ON | Debounced buttons + tagged watchdog reboot |
 | [rp_util](rp-util.md) | `pico_toolset_rp_util` | util | always | `IrqLock`, `bootsel_pressed()`, SRAM heap headroom queries |
-| (`hid_input`) | `pico_toolset_hid_input` | types | always | Header-only `GamepadState` and `kBt*` button bits shared by `usb_hid` and `bluetooth_hid` (no page of its own) |
+| [hid_source](hid-source.md) | `pico_toolset_hid_input` | types | always | Header-only `GamepadState`/`kBt*` and the transport-neutral `HidSource` interface (USB and Bluetooth adapters) |
 | [qwstpad](qwstpad.md) | `pico_toolset_qwstpad` | input | ON | QwSTPad (TCA9555) gamepad: 10 buttons, 4 LEDs |
 | [bme280](bme280.md) | `pico_toolset_bme280` | sensor | ON | BME280 temperature/pressure/humidity (vendored Bosch driver) |
 | [ltr559](ltr559.md) | `pico_toolset_ltr559` | sensor | ON | LTR-559 ambient light + proximity |

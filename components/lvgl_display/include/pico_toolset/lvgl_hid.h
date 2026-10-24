@@ -1,5 +1,6 @@
 #pragma once
 
+#include "pico_toolset/hid_source.h"
 #include "pico_toolset/usb_hid_host.h"
 
 #include "lvgl.h"
@@ -14,5 +15,9 @@ namespace pico_toolset {
 // Creates a new lv_group and makes it the default: call BEFORE building the
 // widgets that should be keyboard-navigable.
 void lvgl_hid_init(UsbHidHost& hid);
+
+// Same, for any HidSource (Bluetooth host, a merge of several devices, ...). The cursor follows
+// `HidMouse::x/y`, so the source decides the coordinate space; `hid` must outlive the indevs.
+void lvgl_hid_init(HidSource& hid);
 
 } // namespace pico_toolset
