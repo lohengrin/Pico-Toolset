@@ -97,6 +97,7 @@ option(PICO_TOOLSET_SCREEN_PIMORONI "Use Pimoroni PicoGraphics backend"   OFF)
 # available; ili9486/st7789/st7796/xpt2046 depend on it unconditionally).
 add_subdirectory(components/driver_interfaces)
 add_subdirectory(components/hid_input)  # shared GamepadState (usb_hid, bluetooth_hid)
+add_subdirectory(components/rp_util)    # IrqLock, bootsel_pressed(), SRAM headroom helpers
 add_subdirectory(components/audio_synth)  # header-only generated audio sources (bluetooth_a2dp)
 
 if(PICO_TOOLSET_BUILD_SSD1306)
