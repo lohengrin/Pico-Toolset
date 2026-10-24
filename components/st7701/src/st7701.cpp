@@ -70,6 +70,25 @@ constexpr char kBank0[5] = {0x77, 0x01, 0x00, 0x00, 0x10};
 constexpr char kBank1[5] = {0x77, 0x01, 0x00, 0x00, 0x11};
 constexpr char kBank3[5] = {0x77, 0x01, 0x00, 0x00, 0x13};
 
+// The scanout interrupts run on core 1 while core 0 may be programming flash (Bluetooth bonding,
+// an application image): nothing they execute or read may live in flash. The SDK's pio_sm_*()
+// helpers are plain `static inline`, which -Os (MinSizeRel) does not always inline: the build then
+// has an out-of-line copy in flash and the RAM function reaches it through a veneer, so core 1
+// stalls on the next frame start during a flash write and the picture is gone for good. These
+// are the same register accesses, forced inline.
+__force_inline bool sm_tx_full(PIO pio, uint sm) { return (pio->fstat & (1u << (PIO_FSTAT_TXFULL_LSB + sm))) != 0; }
+__force_inline void sm_put(PIO pio, uint sm, uint32_t data) { *reinterpret_cast<io_wo_32*>(&pio->txf[sm]) = data; }
+__force_inline void sm_set_enabled(PIO pio, uint sm, bool enabled) {
+    pio->ctrl = (pio->ctrl & ~(1u << sm)) | (static_cast<uint32_t>(enabled) << sm);
+}
+__force_inline void sm_clear_fifos(PIO pio, uint sm) {
+    // Toggling FJOIN_RX twice empties both FIFOs.
+    hw_xor_bits(&pio->sm[sm].shiftctrl, PIO_SM0_SHIFTCTRL_FJOIN_RX_BITS);
+    hw_xor_bits(&pio->sm[sm].shiftctrl, PIO_SM0_SHIFTCTRL_FJOIN_RX_BITS);
+}
+__force_inline void sm_restart(PIO pio, uint sm) { hw_set_bits(&pio->ctrl, 1u << (PIO_CTRL_SM_RESTART_LSB + sm)); }
+__force_inline void sm_exec(PIO pio, uint sm, uint instr) { pio->sm[sm].instr = instr; }
+
 void __isr __no_inline_not_in_flash_func(timing_isr)() { g_inst->drive_timing(); }
 void __isr __no_inline_not_in_flash_func(end_of_line_isr)() { g_inst->handle_end_of_line(); }
 
@@ -79,7 +98,7 @@ void __isr __no_inline_not_in_flash_func(end_of_line_isr)() { g_inst->handle_end
 // word encodes VSYNC/HSYNC levels, a delay and one PIO instruction to run
 // after it (a NOP, or an IRQ that wakes the pixel SM / the line-DMA ISR).
 void __not_in_flash_func(St7701::drive_timing)() {
-    while (!pio_sm_is_tx_fifo_full(m_cfg.pio, m_timing_sm)) {
+    while (!sm_tx_full(m_cfg.pio, m_timing_sm)) {
         uint32_t instr;
         switch (m_timing_phase) {
         case 0: // front porch
@@ -109,7 +128,7 @@ void __not_in_flash_func(St7701::drive_timing)() {
             if (++m_timing_row >= kVFront) m_timing_row = 0;
             break;
         }
-        pio_sm_put(m_cfg.pio, m_timing_sm, instr);
+        sm_put(m_cfg.pio, m_timing_sm, instr);
         m_timing_phase = (m_timing_phase + 1) & 3;
     }
 }
@@ -170,15 +189,15 @@ void __not_in_flash_func(St7701::start_frame_xfer)() {
 
     m_next_line_addr = nullptr;
     abort_chained_dma(m_dma, m_dma2);
-    pio_sm_set_enabled(m_cfg.pio, m_parallel_sm, false);
-    pio_sm_clear_fifos(m_cfg.pio, m_parallel_sm);
-    // pio_sm_restart() empties OSR/ISR without a stallable exec: the original
+    sm_set_enabled(m_cfg.pio, m_parallel_sm, false);
+    sm_clear_fifos(m_cfg.pio, m_parallel_sm);
+    // sm_restart() empties OSR/ISR without a stallable exec: the original
     // exec'd `out null,32`, which latches EXEC_STALLED forever if the TX FIFO
     // is empty (first frame, DMA not armed yet) and freezes this ISR.
     // X/Y survive the restart, so the width loop counter in Y is preserved.
-    pio_sm_restart(m_cfg.pio, m_parallel_sm);
-    pio_sm_exec(m_cfg.pio, m_parallel_sm, pio_encode_jmp(m_parallel_offset));
-    pio_sm_set_enabled(m_cfg.pio, m_parallel_sm, true);
+    sm_restart(m_cfg.pio, m_parallel_sm);
+    sm_exec(m_cfg.pio, m_parallel_sm, pio_encode_jmp(m_parallel_offset));
+    sm_set_enabled(m_cfg.pio, m_parallel_sm, true);
     m_display_row = 0;
 
     if (m_cfg.format == St7701Format::Scanline565) {
@@ -197,7 +216,7 @@ void __not_in_flash_func(St7701::start_frame_xfer)() {
         // (m_top_blank is 0 for Scanline565, handled above).
         void* first = m_top_blank > 0 ? static_cast<void*>(g_blank_line) : m_cfg.framebuffer;
         m_next_line_addr = static_cast<uint16_t*>(first);
-        dma_channel_set_read_addr(m_dma, first, true);
+        dma_hw->ch[m_dma].al3_read_addr_trig = reinterpret_cast<uintptr_t>(first); // dma_channel_set_read_addr(.., true), forced inline
     }
 
     m_waiting_for_vsync = false;
