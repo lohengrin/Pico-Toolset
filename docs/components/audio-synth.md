@@ -31,3 +31,22 @@ allocation, not thread-safe by itself (guard `start/stop` against a concurrent `
 section or by calling from one context); the samples must stay readable from the mixing context.
 Used by PicoDoom to play sound effects on the Presto piezo (`PiezoPcm`) and to a Bluetooth headset (A2DP).
 
+## `MusPlayer` / `MusSource` (`mus_player.h`)
+
+Player for id Software's **MUS** score format (DOOM, Heretic, Hexen): parses the score and plays it on a
+10-voice chip-tune synth (square / pulse / triangle / saw / noise, shaped by General-MIDI program groups; GM
+percussion approximated by noise and a pitched kick/tom). A character-rich stand-in for the original OPL/GM
+sound, not an emulation. Hardware-free (`<cmath>` only); `mus_player.cpp` is compiled into the consumer like
+the other INTERFACE sources.
+
+- `MusPlayer(sample_rate_hz = 44100)`; `start(lump, looping)` (false if the lump does not start with `MUS\x1a`),
+  `stop()`, `pause()`, `resume()`, `set_volume(0..127)`, `playing()`.
+- `render(mix_l, mix_r, n)` **adds** `n` samples (a mono signal, identical in both buffers) and advances the
+  score: the score runs at 140 ticks/s of `rate/140` samples, so drive it at the real output rate.
+- Tone-only outputs: `step(ticks)` advances the score without synthesising (envelopes age in tick units) and
+  `lead(&hz, &level)` returns the loudest, highest melodic voice -- enough to play a melody on a single-voice
+  buzzer.
+- `MusSource(player)` is an `AudioSource` (mono copied to every channel) for `bluetooth_a2dp`.
+- Not thread-safe; the score data must stay readable from the rendering context. Used by PicoDoom's HDMI
+  build (mixed into the HDMI audio ring), and on the Presto (piezo PCM and A2DP via the shared mixer).
+

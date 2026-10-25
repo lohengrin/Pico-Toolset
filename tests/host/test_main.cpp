@@ -2,9 +2,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include "hid_report.h"
 #include "pico_toolset/audio_synth.h"
+#include "pico_toolset/mus_player.h"
 #include "pico_toolset/sample_mixer.h"
 #include "pico_toolset/bluetooth_a2dp.h"
 #include "pico_toolset/bluetooth_hid.h"
@@ -201,8 +203,79 @@ static void test_sample_mixer() {
     CHECK(!mixer.active());
 }
 
+static void test_mus_player() {
+    // One note (channel 0, middle C = MUS note 60, velocity 100) held for 140 ticks (1 s), then score end.
+    const uint8_t mus[] = {
+        'M', 'U', 'S', 0x1A,
+        6, 0,        // score length
+        16, 0,       // score start
+        1, 0, 0, 0, 0, 0, 0, 0, // channels, secondary channels, instruments, reserved (pads to 16)
+        0x90, 0xBC, 100, 0x81, 0x0C, 0x60,
+    };
+    MusPlayer player(44100);
+    player.set_volume(127);
+    const uint8_t bad[16] = {'X'};
+    CHECK(!player.start(bad, false));
+    CHECK(!player.playing());
+    CHECK(player.start(mus, false));
+    CHECK(player.playing());
+
+    float hz = 0, level = 0;
+    CHECK(player.lead(&hz, &level));
+    CHECK(std::fabs(hz - 261.63f) < 0.5f && level > 0.5f);
+
+    // Half a second of audio: non-silent, identical channels.
+    std::vector<float> l(22050, 0.0f), r(22050, 0.0f);
+    player.render(l.data(), r.data(), 22050);
+    float peak = 0;
+    for (int i = 0; i < 22050; ++i) {
+        CHECK(l[i] == r[i]);
+        peak = std::max(peak, std::fabs(l[i]));
+    }
+    CHECK(peak > 0.01f && peak < 1.0f);
+    CHECK(player.playing());
+
+    // The score ends after 1 s (140 ticks of 315 samples), the note rings out, then silence.
+    std::vector<float> l2(30000, 0.0f), r2(30000, 0.0f);
+    player.render(l2.data(), r2.data(), 30000);
+    CHECK(!player.playing());
+    float tail = 0;
+    for (int i = 20000; i < 30000; ++i) tail = std::max(tail, std::fabs(l2[i]));
+    CHECK(tail == 0.0f);
+
+    // step(): sequencer only, no synthesis -- the note is audible to lead() then ends with the score.
+    CHECK(player.start(mus, false));
+    CHECK(player.lead(&hz, &level));
+    player.step(10); // the piano-like envelope has decayed to ~60 %, still a clear lead note
+    CHECK(player.playing() && player.lead(&hz, &level) && level < 0.62f && level > 0.2f);
+    player.step(60); // ...and by 70 ticks (0.5 s) it has faded below the lead threshold
+    CHECK(player.playing() && !player.lead(&hz, &level));
+    player.step(200);
+    CHECK(!player.playing());
+
+    // MusSource: mono PCM copied to every channel.
+    CHECK(player.start(mus, true));
+    MusSource source(player);
+    source.prepare(44100, 2);
+    std::vector<int16_t> pcm(2 * 1000);
+    source.fill(pcm.data(), 1000);
+    int nonzero = 0;
+    for (int i = 0; i < 1000; ++i) {
+        CHECK(pcm[2 * i] == pcm[2 * i + 1]);
+        nonzero += pcm[2 * i] != 0;
+    }
+    CHECK(nonzero > 500);
+
+    // Pause silences new notes; resume continues.
+    player.pause();
+    CHECK(!player.playing());
+    player.resume();
+    CHECK(player.playing());
+}
+
 int main() {
     test_audio_synth();
+    test_mus_player();
     test_sample_mixer();
     test_a2dp_quality();
     test_hid_report();

@@ -17,6 +17,7 @@ endif()
 
 add_executable(bluetooth_host_tests
     test_main.cpp
+    ${TOOLSET_ROOT}/components/audio_synth/src/mus_player.cpp
     ${TOOLSET_ROOT}/components/bluetooth_a2dp/src/a2dp_quality.cpp
     ${TOOLSET_ROOT}/components/bluetooth_hid/src/hid_report.cpp
     ${BTSTACK_DIR}/src/btstack_hid_parser.c
