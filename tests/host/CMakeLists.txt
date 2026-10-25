@@ -30,6 +30,7 @@ target_include_directories(bluetooth_host_tests PRIVATE
     ${TOOLSET_ROOT}/components/bluetooth_hid/include
     ${TOOLSET_ROOT}/components/bluetooth_hid/src
     ${TOOLSET_ROOT}/components/hid_input/include
+    ${TOOLSET_ROOT}/components/st7701/include
     ${BTSTACK_DIR}/src
     ${BTSTACK_DIR}/platform/embedded
 )

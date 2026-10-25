@@ -1,6 +1,7 @@
 if(PICO_RP2350)
     add_library(pico_toolset_st7701 STATIC
         src/st7701.cpp
+        src/st7701_indexed.cpp
     )
     target_include_directories(pico_toolset_st7701 PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}/include

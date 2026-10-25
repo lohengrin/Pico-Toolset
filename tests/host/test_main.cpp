@@ -8,6 +8,7 @@
 #include "pico_toolset/audio_synth.h"
 #include "pico_toolset/mus_player.h"
 #include "pico_toolset/sample_mixer.h"
+#include "pico_toolset/st7701_indexed_rows.h"
 #include "pico_toolset/bluetooth_a2dp.h"
 #include "pico_toolset/bluetooth_hid.h"
 
@@ -273,8 +274,39 @@ static void test_mus_player() {
     CHECK(player.playing());
 }
 
+static void test_st7701_indexed_rows() {
+    // Source rows: 2k -> panel rows 3k and 3k+1, 2k+1 -> 3k+2; the last panel row maps to row 199.
+    CHECK(indexed_source_row_1p5(0) == 0 && indexed_source_row_1p5(1) == 0 && indexed_source_row_1p5(2) == 1);
+    CHECK(indexed_source_row_1p5(3) == 2 && indexed_source_row_1p5(4) == 2 && indexed_source_row_1p5(5) == 3);
+    CHECK(indexed_source_row_1p5(299) == 199);
+
+    // (a b) -> (a a b) over a whole row, checked against the definition.
+    alignas(4) uint8_t src[320];
+    alignas(4) uint8_t dst[480];
+    for (int i = 0; i < 320; ++i) src[i] = static_cast<uint8_t>(i * 7 + 3);
+    expand_indexed_row_1p5(dst, src);
+    for (int x = 0; x < 480; ++x) CHECK(dst[x] == src[x * 2 / 3]);
+
+    // 1:1 conversion: every index goes through the LUT, in order.
+    uint16_t lut[256];
+    for (int i = 0; i < 256; ++i) lut[i] = static_cast<uint16_t>(0x1000 + i * 3);
+    alignas(4) uint8_t row480[480];
+    for (int i = 0; i < 480; ++i) row480[i] = static_cast<uint8_t>(i * 5);
+    std::vector<uint32_t> out(240);
+    indexed_row_to_pixels(out.data(), row480, lut);
+    const uint16_t* px = reinterpret_cast<const uint16_t*>(out.data());
+    for (int x = 0; x < 480; ++x) CHECK(px[x] == lut[row480[x]]);
+
+    // 1.5x conversion equals expand followed by the 1:1 conversion.
+    std::vector<uint32_t> out15(240);
+    indexed_row_to_pixels_1p5(out15.data(), src, lut);
+    const uint16_t* px15 = reinterpret_cast<const uint16_t*>(out15.data());
+    for (int x = 0; x < 480; ++x) CHECK(px15[x] == lut[src[x * 2 / 3]]);
+}
+
 int main() {
     test_audio_synth();
+    test_st7701_indexed_rows();
     test_mus_player();
     test_sample_mixer();
     test_a2dp_quality();
