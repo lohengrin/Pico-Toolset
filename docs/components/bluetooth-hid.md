@@ -83,7 +83,13 @@ context, not an interrupt and not your thread: only record state in it.
 
 Events: `PairingStarted`, `PairingStopped`, `DeviceFound`, `Connecting`, `PasskeyDisplay`,
 `Paired`, `Connected`, `Disconnected`, `PairingFailed` (`status` = BTstack/HCI error, `reason` = SM reason code when `status` is 0x05),
-`Forgotten`.
+`Forgotten`, `Renamed`.
+
+Names: the advertisement that identifies a HID device often has no name (it is in the scan response,
+which is not used). A connected LE device without a stored name therefore has its GAP Device Name
+(0x2A00) read once the HID service is up; it is stored with the bond and reported as `Renamed`
+(`device.name`). Classic devices take the name from the inquiry's EIR data; there is no remote name
+request yet, so a Classic device that sends none stays unnamed.
 
 ## Bluetooth Classic (older pads and keyboards)
 

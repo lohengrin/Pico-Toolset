@@ -414,7 +414,8 @@ void on_raw_report(const uint8_t* data, uint16_t len, const BtHidDevice&, void*)
 
 void on_hid_event(const BtHidEvent& e, void*) {
     if (e.type == BtHidEventType::Paired || e.type == BtHidEventType::Connected ||
-        e.type == BtHidEventType::Disconnected || e.type == BtHidEventType::Forgotten)
+        e.type == BtHidEventType::Disconnected || e.type == BtHidEventType::Forgotten ||
+        e.type == BtHidEventType::Renamed)
         g_hid_dirty = true;
 #ifdef WANT_HCI_DUMP
     // The packet log is switched on only while a link is being set up or is up:
@@ -455,7 +456,7 @@ void on_hid_event(const BtHidEvent& e, void*) {
     }
     static const char* const kNames[] = {"pairing-started", "pairing-stopped", "found", "connecting",
                                          "passkey", "paired", "connected", "disconnected", "FAILED",
-                                         "forgotten"};
+                                         "forgotten", "renamed"};
     const auto& d = e.device;
     std::printf("[%lu ms] [hid] %s %02X:%02X:%02X:%02X:%02X:%02X '%s'", static_cast<unsigned long>(to_ms_since_boot(get_absolute_time())),
                 kNames[static_cast<int>(e.type)], d.addr[0],

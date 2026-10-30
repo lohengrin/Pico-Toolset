@@ -31,6 +31,7 @@ enum class BtHidEventType : uint8_t {
     Disconnected,
     PairingFailed,    // `status` holds the BTstack/HCI error
     Forgotten,
+    Renamed,          // the name of a connected LE device was read from its GAP Device Name (device.name)
 };
 
 struct BtHidEvent {

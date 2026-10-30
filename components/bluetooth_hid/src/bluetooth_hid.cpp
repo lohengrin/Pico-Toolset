@@ -473,6 +473,32 @@ struct BluetoothHid::Impl {
     // hids_host delivers connect/disconnect events with packet_type HCI_EVENT_PACKET but
     // HID report notifications with packet_type HCI_EVENT_GATTSERVICE_META, so the packet
     // type must not be filtered here (filtering it dropped every key press).
+    // Advertisements often carry the HID service in one report and the name in the scan response
+    // (a separate report that the HID filter drops), so a device can be bonded without a name. The
+    // GAP Device Name characteristic (0x2A00) is always there: read it once connected. Done after the
+    // HID service is up, so the GATT client is no longer busy with its discovery.
+    void read_device_name(Slot& s) {
+        if (s.dev.name[0]) return;
+        gatt_client_read_value_of_characteristics_by_uuid16(&Impl::name_trampoline, s.handle, 0x0001, 0xFFFF,
+                                                            ORG_BLUETOOTH_CHARACTERISTIC_GAP_DEVICE_NAME);
+    }
+    static void name_trampoline(uint8_t, uint16_t, uint8_t* packet, uint16_t) {
+        if (g_impl_ptr() && hci_event_packet_get_type(packet) == GATT_EVENT_CHARACTERISTIC_VALUE_QUERY_RESULT)
+            g_impl_ptr()->on_device_name(packet);
+    }
+    void on_device_name(uint8_t* packet) {
+        Slot* s = slot_by_handle(gatt_event_characteristic_value_query_result_get_handle(packet));
+        if (!s || s->dev.name[0]) return;
+        const uint16_t len = gatt_event_characteristic_value_query_result_get_value_length(packet);
+        const uint8_t* value = gatt_event_characteristic_value_query_result_get_value(packet);
+        const size_t n = len < sizeof(s->dev.name) - 1 ? len : sizeof(s->dev.name) - 1;
+        if (n == 0) return;
+        std::memcpy(s->dev.name, value, n);
+        s->dev.name[n] = '\0';
+        remember(s->dev);
+        emit(BtHidEventType::Renamed, s->dev, true);
+    }
+
     static void hids_trampoline_fn(uint8_t, uint16_t, uint8_t* packet, uint16_t) {
         if (g_impl_ptr()) g_impl_ptr()->on_hids(packet);
     }
@@ -862,6 +888,7 @@ struct BluetoothHid::Impl {
             if (kinds & bt_hid_kind::Gamepad) assign_pad_index(*s);
             remember(s->dev);
             emit(BtHidEventType::Connected, s->dev, true);
+            read_device_name(*s);
             break;
         }
         case GATTSERVICE_SUBEVENT_HID_REPORT: {
