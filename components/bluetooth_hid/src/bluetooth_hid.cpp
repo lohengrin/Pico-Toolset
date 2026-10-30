@@ -552,8 +552,31 @@ struct BluetoothHid::Impl {
         }
     }
 
+    // Classic devices that sent no name in their inquiry response (EIR) are asked for it once
+    // connected; the answer arrives as HCI_EVENT_REMOTE_NAME_REQUEST_COMPLETE.
+    void request_classic_name(const Slot& s) {
+        if (s.dev.name[0]) return;
+        bd_addr_t a;
+        std::memcpy(a, s.dev.addr, 6);
+        gap_remote_name_request(a, 0, 0);
+    }
+
     void on_classic_hci(uint8_t* packet) {
         switch (hci_event_packet_get_type(packet)) {
+        case HCI_EVENT_REMOTE_NAME_REQUEST_COMPLETE: {
+            if (hci_event_remote_name_request_complete_get_status(packet) != ERROR_CODE_SUCCESS) break;
+            bd_addr_t a;
+            hci_event_remote_name_request_complete_get_bd_addr(packet, a);
+            Slot* s = slot_by_addr(a);
+            if (!s || s->dev.name[0]) break;
+            const char* name = hci_event_remote_name_request_complete_get_remote_name(packet);
+            std::strncpy(s->dev.name, name, sizeof(s->dev.name) - 1);
+            s->dev.name[sizeof(s->dev.name) - 1] = '\0';
+            if (!s->dev.name[0]) break;
+            remember(s->dev);
+            emit(BtHidEventType::Renamed, s->dev, true);
+            break;
+        }
         case GAP_EVENT_DEDICATED_BONDING_COMPLETED: {
             if (!pending || pending_dev.addr_type != kClassicAddrType) break;
             bd_addr_t bonded;
@@ -702,6 +725,7 @@ struct BluetoothHid::Impl {
                 remember(s->dev);
                 pending = false;
                 emit(BtHidEventType::Connected, s->dev, true);
+                request_classic_name(*s);
             }
             break;
         }
@@ -805,6 +829,7 @@ struct BluetoothHid::Impl {
                 s->dev.kinds = bt_hid_kind::Gamepad | kRawLinkFlag;
                 assign_pad_index(*s);
                 emit(BtHidEventType::Connected, s->dev, true);
+                request_classic_name(*s);
             }
             break;
         }
@@ -823,6 +848,7 @@ struct BluetoothHid::Impl {
             s->descriptor_ready = true;
             remember(s->dev);
             emit(BtHidEventType::Connected, s->dev, true);
+            request_classic_name(*s);
             break;
         }
         case HID_SUBEVENT_REPORT: {

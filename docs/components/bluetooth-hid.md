@@ -88,8 +88,8 @@ Events: `PairingStarted`, `PairingStopped`, `DeviceFound`, `Connecting`, `Passke
 Names: the advertisement that identifies a HID device often has no name (it is in the scan response,
 which is not used). A connected LE device without a stored name therefore has its GAP Device Name
 (0x2A00) read once the HID service is up; it is stored with the bond and reported as `Renamed`
-(`device.name`; validated on the Presto with a BLE keyboard). Classic devices take the name from the inquiry's EIR data; there is no remote name
-request yet, so a Classic device that sends none stays unnamed.
+(`device.name`; validated on the Presto with a BLE keyboard). Classic devices take the name from the inquiry's EIR data; one that sent none is asked for
+it (HCI remote name request) once connected, and the answer is stored and reported as `Renamed` too.
 
 ## Bluetooth Classic (older pads and keyboards)
 
