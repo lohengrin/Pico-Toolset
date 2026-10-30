@@ -20,6 +20,7 @@ BLE broadcaster and observer (non-connectable advertising plus scanning) over BT
 
 - The build has **one** `btstack_config.h` (`components/bluetooth/config/`): LE central + peripheral roles, pools sized for three HID devices; an `#ifdef ENABLE_CLASSIC` block adds the Classic limits. Classic support is opt-in with the CMake option `PICO_TOOLSET_BLUETOOTH_CLASSIC` (see [bluetooth_hid](bluetooth-hid.md#bluetooth-classic-older-pads-and-keyboards)).
 - `BluetoothClassic` (`bluetooth_classic.h`, only with `PICO_TOOLSET_BLUETOOTH_CLASSIC`) is the shared Classic helper used by `bluetooth_hid` and `bluetooth_a2dp`: GAP defaults, PIN/SSP answers and device inquiry. The inquiry is shared by up to two clients, each filtered by its own device class and stopped by its own callback (an earlier single-client version made "pair a gamepad" silently do nothing while an A2DP headset search was running). It also carries the "inhibit background paging" flag that A2DP sets while it connects/streams.
+- Bonds persist in a store shared by all toolset applications on the board: [Bluetooth bond store](bluetooth-store.md).
 - Pairing security: `BluetoothClassic` answers legacy PIN and SSP confirmation requests only while a
   component has a pairing window open (`add_pairing_gate()`: `bluetooth_hid` while pairing or connecting a
   new device, `bluetooth_a2dp` while it is not idle). Outside such a window a device that tries to bond with

@@ -4,6 +4,12 @@
 #ifndef PICO_TOOLSET_BTSTACK_CONFIG_H
 #define PICO_TOOLSET_BTSTACK_CONFIG_H
 
+// Bond-store contract (docs/components/bluetooth-store.md): every toolset application must use the
+// same slot counts, or the one with the smaller numbers cannot see -- and may overwrite -- bonds
+// made by another. Checked at build time in bluetooth_store.cpp.
+#define PICO_TOOLSET_BT_NVM_LINK_KEYS 8
+#define PICO_TOOLSET_BT_NVM_DEVICE_DB 8
+
 #define ENABLE_LOG_ERROR
 #define ENABLE_PRINTF_HEXDUMP // required by the SDK's stdout HCI dump
 #define ENABLE_LE_CENTRAL
@@ -32,8 +38,8 @@
 #define MAX_NR_CONTROLLER_ACL_BUFFERS 3
 #define MAX_NR_CONTROLLER_SCO_PACKETS 3
 #define MAX_ATT_DB_SIZE 512
-#define NVM_NUM_DEVICE_DB_ENTRIES 8
-#define NVM_NUM_LINK_KEYS 4
+#define NVM_NUM_DEVICE_DB_ENTRIES PICO_TOOLSET_BT_NVM_DEVICE_DB
+#define NVM_NUM_LINK_KEYS PICO_TOOLSET_BT_NVM_LINK_KEYS
 
 #define ENABLE_HCI_CONTROLLER_TO_HOST_FLOW_CONTROL
 #define HCI_HOST_ACL_PACKET_LEN 255
@@ -51,8 +57,6 @@
 #define MAX_NR_L2CAP_CHANNELS 8
 #undef MAX_NR_L2CAP_SERVICES
 #define MAX_NR_L2CAP_SERVICES 4
-#undef NVM_NUM_LINK_KEYS
-#define NVM_NUM_LINK_KEYS 8
 #endif
 
 #ifdef PICO_TOOLSET_BLUETOOTH_A2DP

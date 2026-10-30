@@ -28,6 +28,8 @@ target_compile_features(pico_toolset_bluetooth_a2dp INTERFACE cxx_std_20)
 if(PICO_CYW43_SUPPORTED AND (TARGET pico_toolset_https_client OR PICO_TOOLSET_BLUETOOTH_NO_WIFI))
     add_executable(bluetooth_a2dp_example example/bluetooth_a2dp_example.cpp)
     target_link_libraries(bluetooth_a2dp_example PRIVATE pico_toolset_bluetooth_a2dp)
+    # Bonding writes the shared store from core 0; this example runs nothing on core 1.
+    target_compile_definitions(bluetooth_a2dp_example PRIVATE PICO_FLASH_ASSUME_CORE1_SAFE=1)
     if(TARGET pico_toolset_https_client AND NOT PICO_TOOLSET_BLUETOOTH_NO_WIFI)
         target_link_libraries(bluetooth_a2dp_example PRIVATE pico_toolset_https_client)
     endif()

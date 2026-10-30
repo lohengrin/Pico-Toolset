@@ -32,6 +32,7 @@ targets are `pico_toolset_<name>`; each component has a
 | [ltr559](ltr559.md) | `pico_toolset_ltr559` | sensor | ON | LTR-559 ambient light + proximity |
 | [lsm6ds3](lsm6ds3.md) | `pico_toolset_lsm6ds3` | sensor | ON | LSM6DS3 accelerometer/gyro, steps, taps |
 | [bluetooth](bluetooth.md) | `pico_toolset_bluetooth` | network | **OFF** | BLE advertise + scan over BTstack/CYW43 |
+| [bluetooth store](bluetooth-store.md) | (part of `pico_toolset_bluetooth`) | network | with `bluetooth` | Where bonded devices are kept and the contract that shares them between applications |
 | [bluetooth_a2dp](bluetooth-a2dp.md) | `pico_toolset_bluetooth_a2dp` | network | **OFF** | A2DP source: stream generated audio to a headset (SBC presets, volume) |
 | [audio_synth](audio-synth.md) | `pico_toolset_audio_synth` | audio | ON | Header-only tone / sweep / melody `AudioSource`s |
 | [bluetooth_hid](bluetooth-hid.md) | `pico_toolset_bluetooth_hid` | network | **OFF** | BLE + optional Classic HID host: pair/bond/reconnect keyboards, mice, gamepads |

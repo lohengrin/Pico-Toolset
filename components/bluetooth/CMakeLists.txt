@@ -12,6 +12,7 @@ option(PICO_TOOLSET_BLUETOOTH_CLASSIC "Link BTstack Classic support next to BLE"
 add_library(pico_toolset_bluetooth INTERFACE)
 target_sources(pico_toolset_bluetooth INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/src/bluetooth.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/bluetooth_store.cpp
 )
 target_include_directories(pico_toolset_bluetooth INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/include
@@ -21,6 +22,7 @@ target_link_libraries(pico_toolset_bluetooth INTERFACE
     pico_stdlib
     pico_btstack_ble
     pico_btstack_cyw43
+    pico_btstack_flash_bank   # bonds persist in the shared store (docs/components/bluetooth-store.md)
 )
 if(PICO_TOOLSET_BLUETOOTH_NO_WIFI)
     # No lwIP, no mbedtls: BTstack runs on the plain threadsafe-background async context.

@@ -111,6 +111,13 @@ component ships an `example/` program that doubles as a smoke test.
   mark it `__no_inline_not_in_flash_func` (plain `__not_in_flash_func` got inlined into a
   flash-resident caller and core 1 died during bonding, blanking the Presto LCD). BTstack's flash bank also collides with
   `flash_store`'s default region -- move one (see docs/components/bluetooth-hid.md).
+- **The Bluetooth bond store is shared between applications**: bonded devices live in BTstack's flash
+  store (default location, 2 sectors) and every toolset application on a board must use the same layout
+  and the same `NVM_NUM_*` counts so a device paired in one works in another. Never override
+  `PICO_FLASH_BANK_*` or give an application its own `btstack_config.h` without the toolset's
+  `PICO_TOOLSET_BT_NVM_*` values; `components/bluetooth/src/bluetooth_store.cpp` checks this at build time.
+  Changing the format of the toolset's own records (`PHID`, `A2DP`) needs a version bump and a
+  migration -- see docs/components/bluetooth-store.md.
 - **Flash store region is reserved by the consumer**: `pico_toolset_flash_store`
   uses the last N sectors of flash (default 2); the consuming app must keep its
   own image out of them (shorten the linker script's FLASH region by that

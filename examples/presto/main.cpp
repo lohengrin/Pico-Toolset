@@ -35,6 +35,7 @@
 #ifndef PRESTO_NO_RADIO
 #include "pico_toolset/bluetooth.h"
 #include "pico_toolset/bluetooth_hid.h"
+#include "pico_toolset/bluetooth_store.h"
 #ifdef PRESTO_BT_A2DP
 #include "pico_toolset/audio_synth.h"
 #include "pico_toolset/bluetooth_a2dp.h"
@@ -624,6 +625,10 @@ int main() {
         hid_status = hid_ok ? Status::Absent : Status::Failed;
         BtHidDevice bonded[BluetoothHid::kMaxBonded];
         const size_t nb = hid_ok ? hid.bonded_devices(bonded, BluetoothHid::kMaxBonded) : 0;
+        const BluetoothStoreInfo store = bluetooth_store_info();
+        std::printf("Bluetooth bond store at flash 0x%06lX (CPU 0x%08lX, %lu bytes), %u link-key / %u LE slots\n",
+                    static_cast<unsigned long>(store.flash_offset), static_cast<unsigned long>(store.xip_address),
+                    static_cast<unsigned long>(store.size_bytes), store.link_key_slots, store.device_db_slots);
         std::printf("Bluetooth HID %s, %u bonded device(s), connectable %lu ms after boot\n", hid_ok ? "ok" : "FAILED",
                     static_cast<unsigned>(nb), static_cast<unsigned long>(to_ms_since_boot(get_absolute_time())));
         if (hid_ok && nb == 0) hid.start_pairing();
