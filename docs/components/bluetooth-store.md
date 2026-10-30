@@ -9,6 +9,9 @@ application is usable in another one built for the same board, with no re-pairin
 | Provided by | `pico_toolset_bluetooth` (it links the SDK's `pico_btstack_flash_bank`), checked in `components/bluetooth/src/bluetooth_store.cpp` |
 | Used by | `bluetooth_hid`, `bluetooth_a2dp` |
 
+> Validated on the Presto: bonds made before the contract checks and the slot-count change (keyboard, mouse,
+> gamepad, headset) are still found after it.
+
 ## Layout
 
 Everything lives in BTstack's flash store: a log-structured TLV (tag / length / value) in **two flash
