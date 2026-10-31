@@ -57,3 +57,8 @@ panel.write_pixels(pixels); panel.end_write();
 Client usage: PicoDoom (`g_panel` in `i_video_ili9486.cpp`), TOM6809
 (`LcdRenderer` takes `DisplayPanel&`), PiCoMonitor (`BufferedDisplay`).
 
+
+## `pwm_gamma.h`
+
+`pwm_gamma_level16(brightness)` maps 0-255 through gamma 2.8 onto a 16-bit PWM level. `St7789` and `St7796` share it
+for their backlight (it lives here because every display consumer already adds this component).

@@ -1,11 +1,11 @@
 #include "pico_toolset/st7796.h"
+#include "pico_toolset/pwm_gamma.h"
 
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
 #include "pico/stdlib.h"
 
-#include <cmath>
 
 namespace pico_toolset {
 
@@ -313,11 +313,7 @@ void St7796::fill_solid(uint16_t rgb565) {
 
 void St7796::set_backlight(uint8_t brightness) {
     if (m_pin_backlight == 255) return;
-    // Gamma-correct the 0-255 input onto the PWM counter's 0-65535 range --
-    // matches St7789::set_backlight()'s perceptual brightness curve.
-    float gamma = 2.8f;
-    uint16_t value = static_cast<uint16_t>(std::pow(static_cast<float>(brightness) / 255.0f, gamma) * 65535.0f + 0.5f);
-    pwm_set_gpio_level(m_pin_backlight, value);
+    pwm_set_gpio_level(m_pin_backlight, pwm_gamma_level16(brightness));
 }
 
 } // namespace pico_toolset
