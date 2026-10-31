@@ -304,6 +304,8 @@ static void test_st7701_indexed_rows() {
     for (int x = 0; x < 480; ++x) CHECK(px15[x] == lut[src[x * 2 / 3]]);
 }
 
+int run_bluetooth_ui_tests();
+
 int main() {
     test_audio_synth();
     test_st7701_indexed_rows();
@@ -311,6 +313,7 @@ int main() {
     test_sample_mixer();
     test_a2dp_quality();
     test_hid_report();
+    g_failures += run_bluetooth_ui_tests();
     if (g_failures) {
         std::printf("%d check(s) failed\n", g_failures);
         return 1;

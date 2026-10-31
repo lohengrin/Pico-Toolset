@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "pico_toolset/audio_source.h"
@@ -131,6 +132,8 @@ struct A2dpStats {
 // PICO_TOOLSET_BLUETOOTH_CLASSIC. Optional: not compiled unless this component is linked.
 class BluetoothA2dp {
 public:
+    static constexpr size_t kMaxFound = 6;
+
     bool init(const A2dpConfig& config);
 
     // --- Finding a headset ---
@@ -160,6 +163,15 @@ public:
 
     // --- Status ---
     [[nodiscard]] A2dpState state() const;
+    // For a pairing UI (no callback needed): increases whenever the state, the remembered headset or
+    // the found list may have changed.
+    [[nodiscard]] uint32_t change_counter() const;
+    [[nodiscard]] uint8_t last_error() const;          // BTstack/HCI status of the last Failed event, 0 = none
+    // Headsets/speakers seen by the current/last pairing scan (cleared when a scan starts). Use with
+    // A2dpConfig::auto_connect = false and connect() to let the user choose.
+    size_t found_devices(A2dpDevice* out, size_t max) const;
+    // The headset being connected to or connected (false while Idle or Pairing).
+    bool current_device(A2dpDevice* out) const;
     [[nodiscard]] bool has_last_device() const;
     [[nodiscard]] A2dpDevice last_device() const;
     [[nodiscard]] A2dpSbcConfig active_config() const; // negotiated, valid once Configured

@@ -107,6 +107,10 @@ struct State {
     int32_t gain_q15 = 32767;    // software gain
 
     bool pairing = false;
+    volatile uint32_t changes = 0;   // for BluetoothA2dp::change_counter()
+    A2dpDevice found[BluetoothA2dp::kMaxFound]{};
+    size_t found_count = 0;
+    uint8_t last_error = 0;
     bool inquiry_seen = false;
     btstack_timer_source_t pair_timer{};
     btstack_timer_source_t reconnect_timer{};
@@ -126,6 +130,7 @@ State g;
 // paging and scanning while a headset is being set up or streamed to) follows it.
 void set_state(A2dpState next) {
     g.state = next;
+    g.changes = g.changes + 1;
     BluetoothClassic::set_radio_busy(&g, next != A2dpState::Idle);
 }
 
@@ -146,6 +151,9 @@ A2dpDevice device_info() {
 }
 
 void emit(A2dpEventType type, uint8_t status = 0) {
+    g.changes = g.changes + 1;
+    if (type == A2dpEventType::Failed) g.last_error = status ? status : 1;
+    else if (type == A2dpEventType::Connecting || type == A2dpEventType::PairingStarted) g.last_error = 0;
     if (!g.cfg.callback) return;
     A2dpEvent e{};
     e.type = type;
@@ -168,6 +176,7 @@ void save_last() {
     std::memcpy(g.last.addr, g.peer, 6);
     std::memcpy(g.last.name, g.peer_name, sizeof(g.last.name));
     g.have_last = true;
+    g.changes = g.changes + 1;
     bt_detail::tlv_store(kTlvTag, &g.last, sizeof(g.last));
 }
 void load_last() {
@@ -176,6 +185,7 @@ void load_last() {
 void erase_last() {
     bt_detail::tlv_erase(kTlvTag);
     g.have_last = false;
+    g.changes = g.changes + 1;
 }
 
 // ---- volume ----
@@ -449,6 +459,11 @@ void inquiry_result(const ClassicInquiryResult& r, void*) {
     A2dpDevice d = device_info();
     d.rssi = r.rssi_valid ? r.rssi : 0;
     d.class_of_device = r.class_of_device;
+    if (is_audio_sink_class(r.class_of_device) && g.found_count < BluetoothA2dp::kMaxFound) {
+        bool known = false;
+        for (size_t i = 0; i < g.found_count; ++i) known |= std::memcmp(g.found[i].addr, d.addr, 6) == 0;
+        if (!known) { g.found[g.found_count++] = d; g.changes = g.changes + 1; }
+    }
     if (g.cfg.callback) {
         A2dpEvent e{};
         e.type = A2dpEventType::DeviceFound;
@@ -773,6 +788,7 @@ void BluetoothA2dp::start_pairing() {
     ContextLock lock;
     if (g.pairing || g.state != A2dpState::Idle) return;
     g.pairing = true;
+    g.found_count = 0;
     set_state(A2dpState::Pairing);
     const uint32_t units = g.cfg.pairing_timeout_ms / 1280;
     BluetoothClassic::start_inquiry(static_cast<uint8_t>(units < 1 ? 1 : units > 48 ? 48 : units), 0x04, &inquiry_result,
@@ -794,6 +810,10 @@ bool BluetoothA2dp::connect(const uint8_t addr[6]) {
     if (!g.inited) return false;
     ContextLock lock;
     if (g.pairing) stop_pairing_internal();
+    std::memset(g.peer_name, 0, sizeof(g.peer_name));
+    for (size_t i = 0; i < g.found_count; ++i) {
+        if (std::memcmp(g.found[i].addr, addr, 6) == 0) std::memcpy(g.peer_name, g.found[i].name, sizeof(g.peer_name));
+    }
     return start_connection(addr);
 }
 
@@ -879,6 +899,24 @@ void BluetoothA2dp::set_volume(uint8_t volume) {
 uint8_t BluetoothA2dp::volume() const { return g.volume; }
 bool BluetoothA2dp::remote_volume_active() const { return g.remote_abs && g.cfg.volume_mode != A2dpVolumeMode::Software; }
 A2dpState BluetoothA2dp::state() const { return g.state; }
+uint32_t BluetoothA2dp::change_counter() const { return g.changes; }
+uint8_t BluetoothA2dp::last_error() const { return g.last_error; }
+
+size_t BluetoothA2dp::found_devices(A2dpDevice* out, size_t max) const {
+    if (!g.inited) return 0;
+    ContextLock lock;
+    size_t n = 0;
+    for (; n < g.found_count && n < max; ++n) out[n] = g.found[n];
+    return n;
+}
+
+bool BluetoothA2dp::current_device(A2dpDevice* out) const {
+    if (!g.inited || g.state == A2dpState::Idle || g.state == A2dpState::Pairing) return false;
+    ContextLock lock;
+    if (out) *out = device_info();
+    return true;
+}
+
 bool BluetoothA2dp::has_last_device() const { return g.have_last; }
 
 A2dpDevice BluetoothA2dp::last_device() const {

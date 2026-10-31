@@ -41,6 +41,7 @@ targets are `pico_toolset_<name>`; each component has a
 | [piezo](piezo.md) | `pico_toolset_piezo` | audio | ON | PWM piezo/buzzer tones and melodies |
 | [lvgl_display](lvgl-display.md) | `pico_toolset_lvgl_display` | UI glue | **OFF** | LVGL adapter over `DisplayPanel`/`TouchPanel` |
 | [screen](screen.md) (lib) | `pico_toolset_screen` | UI | ON | `DisplayDriver`, widgets, `BufferedDisplay` |
+| [bluetooth-ui](bluetooth-ui.md) (lib) | `pico_toolset_bluetooth_ui` | UI | ON | Common Bluetooth page: device merge + state machine (view pending) |
 | [json](json.md) (lib) | `pico_toolset_json` | parsing | ON | Pull-style JSON reader, no DOM |
 | [fault_handler](fault-handler.md) (lib) | `pico_toolset_fault_handler` | diagnostics | ON | Hard-fault reporting across a watchdog reset |
 

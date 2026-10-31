@@ -51,6 +51,7 @@ drivers (`screen` is header-only; `fault_handler` has a source file).
 |---------|--------|-------------|
 | Screen   | `pico_toolset_screen`  | Pluggable `DisplayDriver` abstraction + slot-based widget composition (`RectWidget`/`TextWidget`/`BitmapWidget`/`BarWidget`/`HBarWidget`/`LineGraphWidget`). `BufferedDisplay` adapts any `DisplayPanel` (ILI9486/ST7789/ST7796) + a caller-owned framebuffer; `Ssd1306Driver`/`PimoroniDriver` adapt those directly. |
 | Fault handler | `pico_toolset_fault_handler` | Cortex-M33 hard-fault handler that survives a watchdog reset to report PC/LR/CFSR on the *next* boot, instead of the SDK's default silent halt. No board wiring involved (core MCU + watchdog only), hence a library rather than a `components/` driver. |
+| Bluetooth page (logic) | `pico_toolset_bluetooth_ui` | Common Bluetooth device page, in progress: merges bonded/found devices from `bluetooth_hid` and `bluetooth_a2dp` (adaptors `bluetooth_ui_hid.h`/`bluetooth_ui_a2dp.h`) and holds the page's state machine (list, pair new, detail, forget). The on-screen view and input adaptors are not written yet. See [docs/components/bluetooth-ui.md](docs/components/bluetooth-ui.md). |
 | JSON reader | `pico_toolset_json` | Pull-style JSON reader (no DOM) for small API responses; tolerates `null` in nullable string/number fields. Extracted from PicoADSB. |
 
 All code lives in namespace `pico_toolset` and targets C++20.
@@ -159,6 +160,7 @@ compiled only for RP2350. USB HID needs Pico-PIO-USB (see below).
 | `PICO_TOOLSET_BUILD_WIFI`    | OFF | Build the Pico W Wi-Fi helper |
 | `PICO_TOOLSET_BUILD_HTTPS_CLIENT` | OFF | Build the HTTPS client (sets `PICO_MBEDTLS_CONFIG_FILE` before `pico_sdk_init()`) |
 | `PICO_TOOLSET_BUILD_SCREEN`  | ON | Build screen abstraction + example |
+| `PICO_TOOLSET_BUILD_BLUETOOTH_UI` | ON | Build the Bluetooth page logic (device list + state machine; header/sources only) |
 | `PICO_TOOLSET_BUILD_JSON`    | ON | Build the pull JSON reader + example |
 | `PICO_TOOLSET_SCREEN_PIMORONI` | OFF | Compile the Pimoroni PicoGraphics backend adaptor |
 

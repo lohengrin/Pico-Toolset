@@ -100,6 +100,7 @@ class BluetoothHid {
 public:
     static constexpr size_t kMaxConnected = 3;
     static constexpr size_t kMaxBonded = 4;
+    static constexpr size_t kMaxFound = 8;
 
     bool init(const BluetoothHidConfig& config);
 
@@ -109,6 +110,15 @@ public:
     [[nodiscard]] bool pairing() const { return m_pairing; }
     // For auto_pair == false: pair with a device reported by DeviceFound.
     bool pair(const uint8_t addr[6], uint8_t addr_type);
+
+    // --- State for a pairing UI (no callback needed) ---
+    // Devices seen by the current/last scan (cleared when a scan starts), also when auto_pair is on.
+    size_t found_devices(BtHidDevice* out, size_t max) const;
+    // Increases whenever any of the state below or the bonded/connected list may have changed.
+    [[nodiscard]] uint32_t change_counter() const;
+    [[nodiscard]] bool connecting() const;                 // a link is being set up
+    bool pairing_passkey(uint32_t* passkey) const;         // a keyboard is waiting for this code to be typed
+    [[nodiscard]] uint8_t last_pairing_error() const;      // BTstack/HCI status of the last failure, 0 = none
 
     // --- Bonded devices ---
     size_t bonded_devices(BtHidDevice* out, size_t max) const;

@@ -119,8 +119,35 @@ struct BluetoothHid::Impl {
 
     const BluetoothHidConfig& cfg() const { return owner->m_cfg; }
 
+    // What a pairing page needs without installing its own callback: bumped on every event.
+    volatile uint32_t changes = 0;
+    BtHidDevice found[kMaxFound]{};
+    size_t found_count = 0;
+    bool passkey_active = false;
+    uint32_t passkey_value = 0;
+    uint8_t last_error = 0;
+
+    void record_found(const Stored& dev, int8_t rssi) {
+        if (found_count >= kMaxFound) return;
+        found[found_count++] = to_public(dev, false, rssi);
+    }
+    void track(BtHidEventType type, uint32_t passkey, uint8_t status) {
+        switch (type) {
+        case BtHidEventType::PasskeyDisplay: passkey_active = true; passkey_value = passkey; break;
+        case BtHidEventType::PairingFailed: passkey_active = false; last_error = status ? status : 1; break;
+        case BtHidEventType::Paired:
+        case BtHidEventType::Connected:
+        case BtHidEventType::PairingStopped: passkey_active = false; break;
+        case BtHidEventType::PairingStarted:
+        case BtHidEventType::Connecting: last_error = 0; break;
+        default: break;
+        }
+        changes = changes + 1;
+    }
+
     void emit(BtHidEventType type, const Stored& dev, bool connected = false, int8_t rssi = 0,
               uint32_t passkey = 0, uint8_t status = 0, uint8_t reason = 0) {
+        track(type, passkey, status);
         if (!cfg().callback) return;
         BtHidEvent e{};
         e.type = type;
@@ -231,6 +258,7 @@ struct BluetoothHid::Impl {
     void begin_scan() {
         owner->m_pairing = true;
         seen_count = 0;
+        found_count = 0;
         if (wl_connecting) { gap_connect_cancel(); wl_connecting = false; }
         gap_set_scan_parameters(1, 48, 48); // active: names often sit in the scan response
         gap_start_scan();
@@ -299,6 +327,7 @@ struct BluetoothHid::Impl {
         if (seen_before(dev.addr)) return;
 
         const int8_t rssi = static_cast<int8_t>(gap_event_advertising_report_get_rssi(packet));
+        record_found(dev, rssi);
         emit(BtHidEventType::DeviceFound, dev, false, rssi);
         if (cfg().auto_pair) start_connect(dev);
     }
@@ -520,6 +549,9 @@ struct BluetoothHid::Impl {
         std::memcpy(dev.name, r.name, sizeof(dev.name) < sizeof(r.name) ? sizeof(dev.name) : sizeof(r.name));
         dev.name[sizeof(dev.name) - 1] = '\0';
         if (slot_by_addr(dev.addr) || seen_before(dev.addr)) return;
+        const int8_t found_rssi = r.rssi_valid ? r.rssi : 0;
+        record_found(dev, found_rssi);
+        track(BtHidEventType::DeviceFound, 0, 0);
         if (cfg().callback) {
             BtHidEvent e{};
             e.type = BtHidEventType::DeviceFound;
@@ -1099,6 +1131,28 @@ bool BluetoothHid::pair(const uint8_t addr[6], uint8_t addr_type) {
     m_impl->start_connect(dev);
     return true;
 }
+
+size_t BluetoothHid::found_devices(BtHidDevice* out, size_t max) const {
+    if (!m_initialised) return 0;
+    ContextLock lock;
+    size_t n = 0;
+    for (; n < m_impl->found_count && n < max; ++n) out[n] = m_impl->found[n];
+    return n;
+}
+
+uint32_t BluetoothHid::change_counter() const { return m_impl ? m_impl->changes : 0; }
+
+bool BluetoothHid::connecting() const { return m_impl && m_impl->pending; }
+
+bool BluetoothHid::pairing_passkey(uint32_t* passkey) const {
+    if (!m_initialised) return false;
+    ContextLock lock;
+    if (!m_impl->passkey_active) return false;
+    if (passkey) *passkey = m_impl->passkey_value;
+    return true;
+}
+
+uint8_t BluetoothHid::last_pairing_error() const { return m_impl ? m_impl->last_error : 0; }
 
 size_t BluetoothHid::bonded_devices(BtHidDevice* out, size_t max) const {
     if (!m_initialised) return 0;
