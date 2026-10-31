@@ -105,10 +105,12 @@ void BluetoothPageView::draw(DisplayDriver& d) {
     recompute();
     const BtUiLayout& L = layout_;
     const Palette p = make_palette(cfg_.theme, d.is_monochrome());
-    const int s = L.scale;
+    const int ts = L.scale;       // the title; everything else is half that size
+    const int s = L.text_scale;
     const int cell_h = 8 * s;
     const int pad = std::max(2, s * 2);
     const int char_w = 6 * s;
+    const int title_pad = std::max(2, ts * 2);
     fill(d, cfg_.area, p.bg);
 
     // ---- header ----
@@ -120,8 +122,8 @@ void BluetoothPageView::draw(DisplayDriver& d) {
     else if (screen == BtUiScreen::Detail) { display_name(page_.selected(), name, sizeof(name)); title = name; }
     else if (screen == BtUiScreen::ConfirmForget) title = "Forget?";
     else if (page_.bonded_count() > 0) { std::snprintf(buf, sizeof(buf), "%s (%u)", cfg_.title, static_cast<unsigned>(page_.bonded_count())); title = buf; }
-    const int header_y = L.header.y + (L.header.h - cell_h) / 2;
-    draw_text(d, L.header.x + pad, header_y, title, p.text, p.header, s, (L.header.w - 2 * pad) / char_w);
+    const int header_y = L.header.y + (L.header.h - 8 * ts) / 2;
+    draw_text(d, L.header.x + title_pad, header_y, title, p.text, p.header, ts, (L.header.w - 2 * title_pad) / (6 * ts));
     if (p.mono) d.fill_rect(L.header.x, L.header.y + L.header.h - 1, L.header.x + L.header.w - 1, L.header.y + L.header.h - 1, p.text);
 
     // ---- status (a separate line, or the header's right part on small displays) ----
@@ -139,9 +141,10 @@ void BluetoothPageView::draw(DisplayDriver& d) {
     if (status[0]) {
         if (L.status_in_header) {
             const int w = static_cast<int>(std::strlen(status)) * char_w;
-            const int title_w = static_cast<int>(std::strlen(title)) * char_w + 2 * pad;
+            const int title_w = static_cast<int>(std::strlen(title)) * 6 * ts + 2 * title_pad;
             if (L.header.w - title_w >= w) // otherwise the title keeps the line
-                draw_text(d, L.header.x + L.header.w - pad - text_px(static_cast<int>(std::strlen(status)), s), header_y, status, status_color, p.header, s, 47);
+                draw_text(d, L.header.x + L.header.w - pad - text_px(static_cast<int>(std::strlen(status)), s),
+                          L.header.y + (L.header.h - cell_h) / 2, status, status_color, p.header, s, 47);
         } else {
             draw_text(d, L.status.x + pad, L.status.y + (L.status.h - cell_h) / 2, status, status_color, p.bg, s, (L.status.w - 2 * pad) / char_w);
         }

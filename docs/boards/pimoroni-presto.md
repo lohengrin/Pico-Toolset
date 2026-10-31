@@ -154,7 +154,7 @@ Example build options (all `cmake -S examples/presto -B build -D...`):
 | `PRESTO_FULL_RES` | OFF | drive 480x480 instead of 240x240 (RGB565 at this size leaves no RAM for the radio) |
 | `PRESTO_PALETTE` | OFF | 8-bit palette framebuffer (half the SRAM); with `PRESTO_FULL_RES` it keeps Wi-Fi/BLE |
 | `PRESTO_BT_CLASSIC` | ON | also support Bluetooth Classic HID devices (older pads/keyboards) |
-| `PRESTO_BT_A2DP` | OFF | Bluetooth audio to a headset ([bluetooth_a2dp](../components/bluetooth-a2dp.md)); implies `PRESTO_BT_CLASSIC`; touch page under the device manager's `AUDIO (HEADSET)` button plus console keys |
+| `PRESTO_BT_A2DP` | OFF | Bluetooth audio to a headset ([bluetooth_a2dp](../components/bluetooth-a2dp.md)); implies `PRESTO_BT_CLASSIC`; the headset is paired from the Bluetooth page, a tap on the right half of the status band opens the audio page (console keys too) |
 | `PRESTO_BT_LOG_RAW` | OFF | print every raw report of a Classic gamepad without SDP (also toggled by console key `r`); off by default because the print runs in the Bluetooth context and can stall the radio / cut the A2DP audio |
 | `PRESTO_BT_HCI_DUMP` | OFF | log every HCI/L2CAP/SMP/SDP packet from the start of each connection ([diagnostics guide](../guides/bluetooth-pairing-diagnostics.md)) |
 | `PRESTO_WIFI_CONFIG_DIR` | env var | directory with a git-ignored `config.local.h` (`WIFI_SSID`/`WIFI_PASSWORD`); a copy next to `main.cpp` also works |
@@ -170,14 +170,16 @@ square (A beeps), automatic backlight from the LTR-559 (log-scaled lux to 10..25
 smoothed; the user button toggles auto/manual, QwSTPad +/- adjusts manual
 brightness), and three gauges along the bottom of the screen (temperature,
 humidity, light; sensor values are not printed continuously). Bluetooth LE keyboards and gamepads (Xbox controllers) pair
-and bond through [`bluetooth_hid`](../components/bluetooth-hid.md). Touch the status band to open
-the **device manager**: bonded devices are listed (green dot = connected), `X` forgets one,
-`PAIR NEW` starts pairing mode and `CLOSE` (or the band again) leaves it. Pairing starts by
+and bond through [`bluetooth_hid`](../components/bluetooth-hid.md). Touch the left half of the status band to open
+the full-screen common **Bluetooth page** ([bluetooth-ui](../components/bluetooth-ui.md)): bonded devices are listed with
+their state (green dot = connected); tap one for its detail screen (connect or disconnect, forget with a confirmation);
+`PAIR NEW` scans for keyboards, mice, gamepads and (A2DP builds) headsets and lists them to pick from.
+The page also works with a mouse, a keyboard (arrows, Enter, Esc) or a gamepad (d-pad, A, B), and opens by
 itself on a first boot with nothing bonded. Type the shown passkey on a keyboard; bonded devices
 reconnect after a reboot and move the on-screen square. A paired mouse moves a crosshair (relative motion):
 green while the left button is down, red right, blue middle, yellow for the thumb buttons; the wheel resizes it.
 Button changes, the wheel and (twice a second at most) motion are logged as `[mouse] ...`. Mice that also
-expose a keyboard collection for hotkeys (Logitech) show as `K+M` in the device manager.
+expose a keyboard collection for hotkeys (Logitech) show as `K+M` in the Bluetooth page.
 `-DPRESTO_BT_CLASSIC=ON` (default) also accepts older Bluetooth Classic pads and keyboards
 (legacy PIN `0000` or Secure Simple Pairing); `OFF` builds BLE only and saves RAM and flash.
 Bonding writes flash, so the example's core 1 idles from RAM and defines
@@ -230,8 +232,9 @@ Not yet done or not yet verified on hardware:
   a second try to connect after a reset (not diagnosed).
 - **Bluetooth audio (A2DP):** validated with a Sony MDR-ZX770BN and a HUAWEI FreeBuds 6i, with no audible
   cuts in real conditions (see the component page).
-- **Device manager:** PAIR NEW and the AUDIO page are used on hardware; forgetting a connected
-  device and the list refresh while connections change are not specifically tested.
+- **Bluetooth page:** the common page (`libs/bluetooth_ui`) replaced the example's own device manager;
+  it is built and unit-tested on a PC but **not yet run on the board** (touch, mouse, keyboard and pad
+  input, pairing by choice, forgetting). The audio page (play, volume, quality, sound) is unchanged.
 - **HID output** (keyboard LEDs, gamepad rumble) is not implemented.
 - **Memory:** lwIP buffers are not placed in PSRAM; 480x480 RGB565 cannot run with the radio.
 - **Unverified pins:** LCD reset (GPIO44) and touch reset (GPIO42) are not driven by Pimoroni's firmware

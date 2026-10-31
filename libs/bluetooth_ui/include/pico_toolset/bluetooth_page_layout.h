@@ -24,9 +24,10 @@ struct BtUiLayoutConfig {
 
 // Where everything goes for one frame. Pure arithmetic: no display needed, so it is tested on a PC.
 struct BtUiLayout {
-    int scale = 1;                 // text scale (a glyph cell is 6*scale x 8*scale)
+    int scale = 1;                 // title text scale (a glyph cell is 6*scale x 8*scale)
+    int text_scale = 1;            // everything else: half the title's, at least 1
     int row_h = 0;
-    int text_cols = 0;             // characters that fit in a list row after the marker
+    int text_cols = 0;             // body characters that fit in a list row after the marker
     BtUiRect header, status, list, footer;
     bool status_in_header = false; // too small for a separate status line
     bool show_focus = false;

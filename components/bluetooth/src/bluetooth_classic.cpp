@@ -12,6 +12,9 @@ namespace {
 
 constexpr int kMaxPasskeyListeners = 2;
 constexpr int kMaxInquiryClients = 2;
+constexpr int kMaxNameListeners = 3;
+constexpr int kNameCache = 8;
+constexpr int kNameQueue = 6;
 
 struct State {
     bool initialised = false;
@@ -26,6 +29,14 @@ struct State {
     bool paging_inhibited = false;
     void (*inhibit_cb)(bool, void*) = nullptr;
     void* inhibit_user = nullptr;
+
+    struct NameEntry { uint8_t addr[6]; char name[24]; } names[kNameCache]{}; // empty name = asked, no answer
+    uint8_t name_count = 0, name_next = 0;
+    uint8_t queue[kNameQueue][6]{};
+    uint8_t queued = 0;
+    bool name_active = false;
+    uint8_t name_addr[6]{};
+    struct { void (*cb)(const uint8_t*, const char*, void*); void* user; } name_listeners[kMaxNameListeners]{};
 };
 State g;
 
@@ -48,8 +59,46 @@ bool any_client() {
 }
 
 void start_radio_inquiry() {
-    if (g.inquiry_running || !any_client()) return;
+    if (g.inquiry_running || g.name_active || g.queued || !any_client()) return;
     if (gap_inquiry_start(g.duration) == 0) g.inquiry_running = true;
+}
+
+State::NameEntry* find_name(const uint8_t* addr) {
+    for (uint8_t i = 0; i < g.name_count; ++i)
+        if (std::memcmp(g.names[i].addr, addr, 6) == 0) return &g.names[i];
+    return nullptr;
+}
+
+void remember_name(const uint8_t* addr, const char* name) {
+    State::NameEntry* e = find_name(addr);
+    if (!e) {
+        e = &g.names[g.name_next];
+        g.name_next = static_cast<uint8_t>((g.name_next + 1) % kNameCache);
+        if (g.name_count < kNameCache) ++g.name_count;
+        std::memcpy(e->addr, addr, 6);
+    }
+    std::memset(e->name, 0, sizeof(e->name));
+    std::strncpy(e->name, name, sizeof(e->name) - 1);
+}
+
+bool queue_name(const uint8_t* addr) {
+    for (uint8_t i = 0; i < g.queued; ++i)
+        if (std::memcmp(g.queue[i], addr, 6) == 0) return true;
+    if (g.name_active && std::memcmp(g.name_addr, addr, 6) == 0) return true;
+    if (g.queued >= kNameQueue) return false;
+    std::memcpy(g.queue[g.queued++], addr, 6);
+    return true;
+}
+
+void start_next_name() {
+    if (g.name_active || g.inquiry_running || g.queued == 0) return;
+    std::memcpy(g.name_addr, g.queue[0], 6);
+    for (uint8_t i = 1; i < g.queued; ++i) std::memcpy(g.queue[i - 1], g.queue[i], 6);
+    --g.queued;
+    g.name_active = true;
+    bd_addr_t a;
+    std::memcpy(a, g.name_addr, 6);
+    gap_remote_name_request(a, 0, 0);
 }
 
 void handle_inquiry_result(const uint8_t* packet) {
@@ -71,6 +120,18 @@ void handle_inquiry_result(const uint8_t* packet) {
         r.vendor_id = gap_event_inquiry_result_get_device_id_vendor_id(packet);
         r.product_id = gap_event_inquiry_result_get_device_id_product_id(packet);
     }
+    bool wanted = false;
+    for (const auto& c : g.clients)
+        wanted = wanted || (c.cb && (!c.major_class || ((cod >> 8) & 0x1F) == c.major_class));
+    if (!wanted) return;
+    if (!r.name[0]) {
+        const State::NameEntry* known = find_name(r.addr);
+        if (known) {
+            std::memcpy(r.name, known->name, sizeof(r.name));
+        } else if (queue_name(r.addr)) {
+            gap_inquiry_stop(); // the name requests run once the inquiry has ended
+        }
+    }
     for (const auto& c : g.clients)
         if (c.cb && (!c.major_class || ((cod >> 8) & 0x1F) == c.major_class)) c.cb(r, c.user);
 }
@@ -84,8 +145,26 @@ void hci_handler(uint8_t type, uint16_t, uint8_t* packet, uint16_t) {
         break;
     case GAP_EVENT_INQUIRY_COMPLETE:
         g.inquiry_running = false;
-        start_radio_inquiry(); // another round while a client is still looking
+        if (g.queued) start_next_name();
+        else start_radio_inquiry(); // another round while a client is still looking
         break;
+    case HCI_EVENT_REMOTE_NAME_REQUEST_COMPLETE: {
+        hci_event_remote_name_request_complete_get_bd_addr(packet, addr);
+        const bool ours = g.name_active && std::memcmp(g.name_addr, addr, 6) == 0;
+        const bool ok = hci_event_remote_name_request_complete_get_status(packet) == ERROR_CODE_SUCCESS;
+        char name[24] = "";
+        if (ok) std::strncpy(name, hci_event_remote_name_request_complete_get_remote_name(packet), sizeof(name) - 1);
+        if (ours || (ok && name[0])) remember_name(addr, name);
+        if (ok && name[0])
+            for (const auto& l : g.name_listeners)
+                if (l.cb) l.cb(addr, name, l.user);
+        if (ours) {
+            g.name_active = false;
+            if (g.queued) start_next_name();
+            else start_radio_inquiry(); // resume: the device is reported again, now with its name
+        }
+        break;
+    }
     case HCI_EVENT_PIN_CODE_REQUEST: // legacy pairing (pre Bluetooth 2.1 devices): fixed PIN
         hci_event_pin_code_request_get_bd_addr(packet, addr);
         if (pairing_allowed()) gap_pin_code_response(addr, g.pin);
@@ -162,6 +241,13 @@ bool BluetoothClassic::start_inquiry(uint8_t duration_1280ms, uint8_t major_clas
     if (!slot) return false;
     *slot = {callback, user, major_class};
     g.duration = duration_1280ms;
+    if (!g.inquiry_running && !g.name_active) { // forget "no answer" marks: the device may be reachable now
+        uint8_t kept = 0;
+        for (uint8_t i = 0; i < g.name_count; ++i)
+            if (g.names[i].name[0]) g.names[kept++] = g.names[i];
+        g.name_count = kept;
+        g.name_next = static_cast<uint8_t>(kept % kNameCache);
+    }
     start_radio_inquiry(); // a no-op while one is running: the new client just listens in
     return true;
 }
@@ -173,6 +259,20 @@ void BluetoothClassic::stop_inquiry(ClassicInquiryCallback callback) {
 }
 
 bool BluetoothClassic::inquiry_active() { return any_client(); }
+
+void BluetoothClassic::request_name(const uint8_t addr[6]) {
+    if (!g.initialised) return;
+    if (!queue_name(addr)) return;
+    if (g.inquiry_running) gap_inquiry_stop(); // the request runs when the inquiry has ended
+    else start_next_name();
+}
+
+void BluetoothClassic::add_name_listener(void (*callback)(const uint8_t*, const char*, void*), void* user) {
+    for (auto& l : g.name_listeners) {
+        if (l.cb == callback && l.user == user) return;
+        if (!l.cb) { l.cb = callback; l.user = user; return; }
+    }
+}
 
 void BluetoothClassic::set_radio_busy(const void* owner, bool busy) {
     const void** free_slot = nullptr;

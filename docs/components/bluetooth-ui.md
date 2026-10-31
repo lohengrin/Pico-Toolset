@@ -4,9 +4,9 @@ A device page any application can drop in: pair new devices (HID or audio), list
 their name and connection state, connect, disconnect and forget them. It lives in `libs/` because the
 view uses `libs/screen`; it only depends on components.
 
-> **Status: phase 3 of 5.** The logic, the layout, the view and the input are written and unit-tested on
-> a PC (the view renders into a fake display, input comes from fakes). The Presto integration is not
-> written yet, and nothing here has run on real hardware.
+> **Status: phase 4 of 5.** The logic, the layout, the view and the input are written and unit-tested on
+> a PC (the view renders into a fake display, input comes from fakes), and the Presto example now uses
+> the page instead of its own device menu (it builds; **not yet run on the board**).
 
 ## Layers
 
@@ -51,8 +51,9 @@ controller.activate(view.hit_test(x, y));                    // a tap (ignore -1
 
 The area can be the whole display or a pane. Everything follows from it and from `input_caps`:
 
-- **Text scale** 1 / 2 / 3 / 4 for widths under 200 / 360 / 560 / more pixels (smaller if the height
-  would leave fewer than about six text lines). 128x64 gets about 19 columns, 240 px 17, 480 px 24.
+- **Text scale:** the title uses 1 / 2 / 3 / 4 for widths under 200 / 360 / 560 / more pixels (smaller if the
+  height would leave fewer than about six text lines); everything else is half that size, at least 1.
+  The body gets about 19 columns at 128 px wide, 37 at 240 and 60 at 480.
 - **Touch and pointer** (`Touch`, `Pointer`) make every row and button at least 28 px high; with only
   `Keyboard`, `Pad` or `Buttons` they keep the compact size and a focus highlight appears (and a
   "Up/Down Enter Esc" hint when nothing else is said). `set_input_caps()` can change this at run time,

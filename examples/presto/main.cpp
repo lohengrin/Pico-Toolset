@@ -13,15 +13,17 @@
 // along the bottom show temperature, humidity and light. The QW/ST bus is
 // scanned once at start-up, and pairing / Wi-Fi events go to USB serial.
 // Bluetooth LE keyboards and gamepads (e.g. an Xbox controller) pair and bond
-// by touching the status band at the top of the screen, which opens a device manager
-// (list of bonded devices with a green dot when connected; X forgets one; PAIR NEW
-// starts pairing mode; CLOSE or the band again leaves). Pairing also starts
-// automatically on the first boot with nothing bonded. Put the device in pairing
-// mode; a keyboard shows a passkey to type; bonded devices reconnect after a
-// reboot and steer the square with the arrow keys / left stick / D-pad.
+// by touching the status band at the top of the screen, which opens the common Bluetooth
+// page (libs/bluetooth_ui): bonded devices with their state, PAIR NEW (a scan that lists
+// keyboards, mice, gamepads and, in A2DP builds, headsets to pick from), connect and forget
+// per device. It is usable by touch, mouse, keyboard or gamepad. The page opens by itself
+// on the first boot with nothing bonded. Put the device in pairing mode; a keyboard shows a
+// passkey to type; bonded devices reconnect after a reboot and steer the square with the
+// arrow keys / left stick / D-pad.
 //
-// PRESTO_BT_A2DP builds add Bluetooth audio: device manager > AUDIO pairs a headset and
-// streams generated sounds (touch page, plus console keys; see the log at start-up).
+// PRESTO_BT_A2DP builds add Bluetooth audio: a headset is paired from the same page, and a
+// tap on the right half of the status band opens the audio page (play/pause, volume, quality, sounds;
+// console keys too, see the log at start-up).
 //
 // Wi-Fi is skipped unless a config.local.h defining WIFI_SSID/WIFI_PASSWORD
 // is on the include path (see CMakeLists.txt; never commit one).
@@ -35,10 +37,14 @@
 #ifndef PRESTO_NO_RADIO
 #include "pico_toolset/bluetooth.h"
 #include "pico_toolset/bluetooth_hid.h"
+#include "pico_toolset/bluetooth_hid_source.h"
+#include "pico_toolset/bluetooth_page_input.h"
+#include "pico_toolset/bluetooth_ui_hid.h"
 #include "pico_toolset/bluetooth_store.h"
 #ifdef PRESTO_BT_A2DP
 #include "pico_toolset/audio_synth.h"
 #include "pico_toolset/bluetooth_a2dp.h"
+#include "pico_toolset/bluetooth_ui_a2dp.h"
 #endif
 #endif
 #include "pico_toolset/bme280.h"
@@ -179,65 +185,10 @@ char usage_to_ascii(uint8_t usage, bool shift) {
 constexpr int kStatusH = kSize / 13;
 
 #ifndef PRESTO_NO_RADIO
-// ---- Bluetooth device manager (touch): list bonded devices, forget one, start pairing ----
-struct DeviceMenu {
-    bool open = false;
-    BtHidDevice list[BluetoothHid::kMaxBonded];
-    size_t count = 0;
-};
-enum class MenuAction { None, Forget, Pair, Close, Audio };
-
+// ---- Sizes shared by the audio page (the device manager is the common Bluetooth page) ----
 constexpr int kMenuScale = kSize / 120 > 0 ? kSize / 120 : 1;  // text scale (2 at 240, 4 at 480)
 constexpr int kMenuRowH = 8 * kMenuScale + 10;                  // also the touch target height
 constexpr int kMenuY0 = kStatusH + 6;
-constexpr int kMenuButtonsY = kMenuY0 + kMenuRowH * (static_cast<int>(BluetoothHid::kMaxBonded) + 1);
-
-MenuAction menu_hit(const DeviceMenu& m, int x, int y, size_t& index) {
-    for (size_t i = 0; i < m.count; ++i) {
-        const int ry = kMenuY0 + kMenuRowH * static_cast<int>(i + 1);
-        if (y >= ry && y < ry + kMenuRowH && x >= kSize - kMenuRowH) {
-            index = i;
-            return MenuAction::Forget;
-        }
-    }
-    if (y >= kMenuButtonsY && y < kMenuButtonsY + kMenuRowH) return x < kSize / 2 ? MenuAction::Pair : MenuAction::Close;
-#ifdef PRESTO_BT_A2DP
-    if (y >= kMenuButtonsY + kMenuRowH && y < kMenuButtonsY + 2 * kMenuRowH) return MenuAction::Audio;
-#endif
-    return MenuAction::None;
-}
-
-void draw_menu(DisplayDriver& d, const DeviceMenu& m) {
-    d.fill_rect(0, kStatusH + 2, kSize - 1, kSize - 1, kColorBlack);
-    char line[40];
-    std::snprintf(line, sizeof(line), "BT DEVICES (%u)", static_cast<unsigned>(m.count));
-    draw_text_fit(d, 4, kMenuY0, line, kColorWhite, kMenuScale);
-    if (m.count == 0) draw_text_fit(d, 4, kMenuY0 + kMenuRowH, "NONE BONDED", Color(0x7BEF), kMenuScale);
-    for (size_t i = 0; i < m.count; ++i) {
-        const BtHidDevice& dev = m.list[i];
-        const int ry = kMenuY0 + kMenuRowH * static_cast<int>(i + 1);
-        d.fill_rect(4, ry + 4, 4 + 8, ry + kMenuRowH - 5, dev.connected ? kColorGreen : Color(0x7BEF));
-        // Mice with media/hotkey keyboard collections (Logitech) report both kinds: say so.
-        const char* kind = (dev.kinds & bt_hid_kind::Gamepad) ? "PAD"
-                         : ((dev.kinds & bt_hid_kind::Keyboard) && (dev.kinds & bt_hid_kind::Mouse)) ? "K+M"
-                         : (dev.kinds & bt_hid_kind::Keyboard) ? "KBD"
-                         : (dev.kinds & bt_hid_kind::Mouse) ? "MOUSE" : "DEV";
-        if (dev.name[0]) std::snprintf(line, sizeof(line), "%s %.10s", kind, dev.name);
-        else std::snprintf(line, sizeof(line), "%s %02X%02X%02X", kind, dev.addr[3], dev.addr[4], dev.addr[5]);
-        draw_text_fit(d, 18, ry + 5, line, kColorWhite, kMenuScale);
-        d.fill_rect(kSize - kMenuRowH, ry + 1, kSize - 3, ry + kMenuRowH - 2, kColorRed);
-        draw_text_fit(d, kSize - kMenuRowH + (kMenuRowH - 6 * kMenuScale) / 2 - 1, ry + 5, "X", kColorWhite, kMenuScale, kColorRed);
-    }
-    const int by = kMenuButtonsY;
-    d.fill_rect(2, by, kSize / 2 - 3, by + kMenuRowH - 2, Color(0x03E0));
-    draw_text_fit(d, 8, by + 5, "PAIR NEW", kColorWhite, kMenuScale, Color(0x03E0));
-    d.fill_rect(kSize / 2 + 2, by, kSize - 3, by + kMenuRowH - 2, Color(0x4208));
-    draw_text_fit(d, kSize / 2 + 8, by + 5, "CLOSE", kColorWhite, kMenuScale, Color(0x4208));
-#ifdef PRESTO_BT_A2DP
-    d.fill_rect(2, by + kMenuRowH, kSize - 3, by + 2 * kMenuRowH - 2, Color(0x001F));
-    draw_text_fit(d, 8, by + kMenuRowH + 5, "AUDIO (HEADSET)", kColorWhite, kMenuScale, Color(0x001F));
-#endif
-}
 #endif
 
 #ifdef PRESTO_BT_A2DP
@@ -267,12 +218,10 @@ AudioAction audio_hit(int x, int y) {
     return kAudioActions[row * 2 + (x < kSize / 2 ? 0 : 1)];
 }
 
-volatile bool g_a2dp_dirty = false;
 char g_a2dp_message[40] = "";
 volatile uint32_t g_a2dp_event_ms = 0; // time of the last event, to show its message only briefly
 
 void on_a2dp_event(const A2dpEvent& e, void*) {
-    g_a2dp_dirty = true;
     g_a2dp_event_ms = to_ms_since_boot(get_absolute_time());
     const auto& d = e.device;
 #ifdef WANT_HCI_DUMP
@@ -387,7 +336,6 @@ void draw_gauge(DisplayDriver& d, int row, float frac, Color c) {
 // Bluetooth HID events arrive on the radio's context; the main loop reads these.
 volatile long g_passkey = -1;       // >= 0 while a keyboard is waiting for its passkey
 volatile bool g_hid_busy = false;   // pairing/connecting in progress
-volatile bool g_hid_dirty = false;  // bonded/connected devices changed: refresh the device list
 char g_hid_message[40] = "";
 
 // Raw reports of Classic pads without a usable SDP record: print when they change, so the
@@ -414,10 +362,6 @@ void on_raw_report(const uint8_t* data, uint16_t len, const BtHidDevice&, void*)
 }
 
 void on_hid_event(const BtHidEvent& e, void*) {
-    if (e.type == BtHidEventType::Paired || e.type == BtHidEventType::Connected ||
-        e.type == BtHidEventType::Disconnected || e.type == BtHidEventType::Forgotten ||
-        e.type == BtHidEventType::Renamed)
-        g_hid_dirty = true;
 #ifdef WANT_HCI_DUMP
     // The packet log is switched on only while a link is being set up or is up:
     // scanning produces hundreds of advertising reports per second.
@@ -546,7 +490,9 @@ int main() {
     Status pad_status = Status::Absent, stick_status = Status::Absent;
     Status hid_status = Status::Absent, a2dp_status = Status::Absent;
 
-    bool menu_open = false; // Bluetooth device manager covers the bars
+    bool menu_open = false; // the Bluetooth / audio page covers the bars
+    bool bt_page_open = false;
+    bool page_redraw = true; // the page draws only when it changed (it owns the whole screen)
     auto draw_ui = [&](const TouchSample& t) {
         if (!menu_open) draw_bars(display);
         draw_status(display, 0, status(psram.present && psram.test_ok));
@@ -618,6 +564,7 @@ int main() {
         BluetoothHidConfig hc;
         hc.callback = on_hid_event;
         hc.raw_report_callback = on_raw_report;
+        hc.auto_pair = false; // the Bluetooth page lists what it finds and the user picks
         hid_ok = hid.init(hc);
 #ifdef WANT_HCI_DUMP
         hci_dump_enable_packet_log(false); // see on_hid_event()
@@ -631,7 +578,6 @@ int main() {
                     static_cast<unsigned long>(store.size_bytes), store.link_key_slots, store.device_db_slots);
         std::printf("Bluetooth HID %s, %u bonded device(s), connectable %lu ms after boot\n", hid_ok ? "ok" : "FAILED",
                     static_cast<unsigned>(nb), static_cast<unsigned long>(to_ms_since_boot(get_absolute_time())));
-        if (hid_ok && nb == 0) hid.start_pairing();
     }
 #ifdef PRESTO_BT_A2DP
     BluetoothA2dp a2dp;
@@ -640,6 +586,7 @@ int main() {
         A2dpConfig ac;
         ac.source = kSources[0];
         ac.callback = on_a2dp_event;
+        ac.auto_connect = false;
         a2dp_ok = a2dp.init(ac);
         std::printf("Bluetooth A2DP %s (quality %s). Console: a pair, c connect last, x disconnect, F forget, "
                     "p play/pause, +/- volume, q quality, w sound, s stats, r raw pad log, b backlight, W Wi-Fi off\n",
@@ -650,6 +597,27 @@ int main() {
     size_t source_index = 0;
     uint8_t a2dp_volume = a2dp.volume();
 #endif
+
+    // The common Bluetooth page (libs/bluetooth_ui): bonded list, pair new, connect, forget.
+    // Static: together they take ~1.8 KB, which overflows core 0's default 2 KB stack.
+    static BluetoothHidSource hid_source(hid, kSize - 1, kSize - 1);
+    static BtUiHidBackend hid_backend(hid);
+    static BluetoothDevices bt_devices;
+    bt_devices.add_backend(hid_backend);
+#ifdef PRESTO_BT_A2DP
+    static BtUiA2dpBackend a2dp_backend(a2dp);
+    if (a2dp_ok) bt_devices.add_backend(a2dp_backend);
+#endif
+    static BluetoothPageController bt_page(bt_devices);
+    static BluetoothPageView bt_view(bt_page, {{0, 0, kSize, kSize}, bt_ui_input::Touch});
+    static BluetoothPageInput bt_input({.hid = &hid_source, .has_touch = true});
+    if (hid_ok) {
+        BtHidDevice at_boot[BluetoothHid::kMaxBonded];
+        if (hid.bonded_devices(at_boot, BluetoothHid::kMaxBonded) == 0) { // nothing paired yet: start there
+            bt_page.open();
+            bt_page_open = true;
+        }
+    }
 #endif
 
 #if !defined(PRESTO_NO_RADIO) && defined(WIFI_SSID)
@@ -675,7 +643,7 @@ int main() {
     absolute_time_t next_sensors = get_absolute_time();
     int pad_x = kSize / 2, pad_y = kSize / 2;
     // Mouse test: a cursor moved by the relative motion, coloured by the buttons; the wheel resizes it.
-    int mouse_x = kSize / 2, mouse_y = kSize / 2, mouse_size = kSize / 30 + 2;
+    int mouse_x = (kSize - 1) / 2, mouse_y = (kSize - 1) / 2, mouse_size = kSize / 30 + 2;
     bool mouse_present = false;
     uint8_t mouse_buttons_prev = 0;
     BluetoothHid::MouseState mouse{};
@@ -692,7 +660,16 @@ int main() {
 #ifndef PRESTO_NO_RADIO
     char typed[28] = "";
     size_t typed_len = 0;
-    DeviceMenu menu;
+#endif
+#ifndef PRESTO_NO_RADIO
+    auto draw_mouse_cursor = [&] { // crosshair: green left, red right, blue middle, yellow thumb button
+        const Color c = mouse.left ? kColorGreen : mouse.right ? kColorRed : mouse.middle ? kColorBlue
+                      : (mouse.back || mouse.forward) ? Color(0xFFE0) : kColorWhite;
+        const int s = mouse_size;
+        display.fill_rect(mouse_x - s, mouse_y - 1, mouse_x + s, mouse_y + 1, c);
+        display.fill_rect(mouse_x - 1, mouse_y - s, mouse_x + 1, mouse_y + s, c);
+        display.fill_rect(mouse_x - 2, mouse_y - 2, mouse_x + 2, mouse_y + 2, kColorBlack);
+    };
 #endif
     TouchSample prev{};
     while (true) {
@@ -712,77 +689,54 @@ int main() {
 
 #ifndef PRESTO_NO_RADIO
         if (hid_ok) {
-            // Touching the status band starts pairing mode.
-            // Tap the status band: open/close the device manager. Inside it: X forgets a device,
-            // PAIR NEW starts pairing mode, CLOSE (or the band again) leaves.
+            hid_source.poll();
+            // Tap the status band to open a page: the left half the Bluetooth page, the right half
+            // the audio page (A2DP builds). The Bluetooth page is full screen and has its own CLOSE.
             const bool tap = t.pressed && !prev.pressed;
-            auto refresh_menu = [&] { menu.count = hid.bonded_devices(menu.list, BluetoothHid::kMaxBonded); };
-            if (g_hid_dirty) {
-                g_hid_dirty = false;
-                if (menu.open) refresh_menu();
+            if (tap && t.raw_y < kStatusH + 2 && !bt_page_open) {
+#ifdef PRESTO_BT_A2DP
+                if (audio_open) audio_open = false;
+                else if (a2dp_ok && t.raw_x >= kSize / 2) audio_open = true;
+                else
+#endif
+                { bt_page.open(); bt_page_open = true; page_redraw = true; }
             }
-            if (tap) {
-                if (t.raw_y < kStatusH + 2) {
 #ifdef PRESTO_BT_A2DP
-                    if (audio_open) audio_open = false;
-                    else
-#endif
-                    if (menu.open) menu.open = false;
-                    else if (!hid.pairing() && !g_hid_busy) { refresh_menu(); menu.open = true; }
-#ifdef PRESTO_BT_A2DP
-                } else if (audio_open) {
-                    switch (audio_hit(t.raw_x, t.raw_y)) {
-                    case AudioAction::Pair: a2dp.start_pairing(); break;
-                    case AudioAction::PlayPause:
-                        a2dp.state() == A2dpState::Streaming ? a2dp.pause() : a2dp.play();
-                        break;
-                    case AudioAction::VolDown:
-                        a2dp_volume = a2dp_volume < 10 ? 0 : a2dp_volume - 10;
-                        a2dp.set_volume(a2dp_volume);
-                        break;
-                    case AudioAction::VolUp:
-                        a2dp_volume = a2dp_volume > 117 ? 127 : a2dp_volume + 10;
-                        a2dp.set_volume(a2dp_volume);
-                        break;
-                    case AudioAction::Quality:
-                        a2dp.set_quality(static_cast<A2dpQuality>((static_cast<int>(a2dp.quality()) + 1) %
-                                                                  (static_cast<int>(A2dpQuality::MonoLow) + 1)));
-                        break;
-                    case AudioAction::Sound:
-                        source_index = (source_index + 1) % kSourceCount;
-                        a2dp.set_source(kSources[source_index]);
-                        break;
-                    case AudioAction::Forget: a2dp.forget_last(); break;
-                    case AudioAction::Back: audio_open = false; break;
-                    default: break;
-                    }
-#endif
-                } else if (menu.open) {
-                    size_t idx = 0;
-                    switch (menu_hit(menu, t.raw_x, t.raw_y, idx)) {
-                    case MenuAction::Forget:
-                        hid.forget(menu.list[idx].addr);
-                        refresh_menu();
-                        break;
-                    case MenuAction::Pair:
-                        menu.open = false;
-                        hid.start_pairing();
-                        break;
-                    case MenuAction::Close:
-                        menu.open = false;
-                        break;
-#ifdef PRESTO_BT_A2DP
-                    case MenuAction::Audio:
-                        menu.open = false;
-                        audio_open = a2dp_ok;
-                        break;
-#endif
-                    default:
-                        break;
-                    }
+            else if (tap && audio_open) {
+                switch (audio_hit(t.raw_x, t.raw_y)) {
+                case AudioAction::Pair: audio_open = false; bt_page.open(); bt_page_open = true; page_redraw = true; break;
+                case AudioAction::PlayPause:
+                    a2dp.state() == A2dpState::Streaming ? a2dp.pause() : a2dp.play();
+                    break;
+                case AudioAction::VolDown:
+                    a2dp_volume = a2dp_volume < 10 ? 0 : a2dp_volume - 10;
+                    a2dp.set_volume(a2dp_volume);
+                    break;
+                case AudioAction::VolUp:
+                    a2dp_volume = a2dp_volume > 117 ? 127 : a2dp_volume + 10;
+                    a2dp.set_volume(a2dp_volume);
+                    break;
+                case AudioAction::Quality:
+                    a2dp.set_quality(static_cast<A2dpQuality>((static_cast<int>(a2dp.quality()) + 1) %
+                                                              (static_cast<int>(A2dpQuality::MonoLow) + 1)));
+                    break;
+                case AudioAction::Sound:
+                    source_index = (source_index + 1) % kSourceCount;
+                    a2dp.set_source(kSources[source_index]);
+                    break;
+                case AudioAction::Forget: a2dp.forget_last(); break;
+                case AudioAction::Back: audio_open = false; break;
+                default: break;
                 }
             }
-            menu_open = menu.open;
+#endif
+            if (bt_page_open) {
+                const BtUiPointer finger{t.pressed, t.raw_x, t.raw_y};
+                bt_input.poll(bt_page, bt_view, &finger);
+                if (bt_page.update()) page_redraw = true;
+                if (bt_page.closed()) bt_page_open = false;
+            }
+            menu_open = bt_page_open;
 #ifdef PRESTO_BT_A2DP
             menu_open = menu_open || audio_open;
             a2dp_status = !a2dp_ok ? Status::Failed
@@ -801,7 +755,8 @@ int main() {
                     backlight = 255.0f;
                     display.set_backlight(255);
                     break;
-                case 'a': a2dp.start_pairing(); break;
+                case 'a': bt_page.open(); bt_page_open = true; page_redraw = true; audio_open = false; break;
+                case 'A': audio_open = true; bt_page_open = false; break;
                 case 'c': a2dp.connect_last(); break;
                 case 'x': a2dp.disconnect(); break;
                 case 'F': a2dp.forget_last(); break;
@@ -879,9 +834,10 @@ int main() {
             mouse = hid.mouse_state();
             mouse_present = mouse.present;
             int mdx = 0, mdy = 0;
-            hid.consume_mouse_delta(mdx, mdy);
-            const int wheel = hid.consume_mouse_wheel();
+            hid_source.consume_mouse_delta(mdx, mdy);
+            const int wheel = hid_source.consume_mouse_wheel();
             if (mouse_present) {
+                if (bt_page_open && (mdx || mdy)) page_redraw = true;
                 mouse_x = std::clamp(mouse_x + mdx, 0, kSize - 1);
                 mouse_y = std::clamp(mouse_y + mdy, 0, kSize - 1);
                 if (wheel) {
@@ -935,6 +891,16 @@ int main() {
 
         if (lcd_ok) {
             display.flush(); // wait for vblank so the redraw trails the beam
+#ifndef PRESTO_NO_RADIO
+            if (bt_page_open) {
+                if (page_redraw) {
+                    page_redraw = false;
+                    bt_view.draw(display);
+                    if (mouse_present) draw_mouse_cursor();
+                }
+            } else
+#endif
+            {
             draw_status(display, 2, status(touch.bus_ok()));
             draw_ui(t);
             if (!menu_open && bme_ok) {
@@ -943,15 +909,14 @@ int main() {
             }
             if (!menu_open && ltr_ok) draw_gauge(display, 0, light.lux / 1000.0f, kColorWhite);
 #ifndef PRESTO_NO_RADIO
-            if (menu.open) draw_menu(display, menu);
 #ifdef PRESTO_BT_A2DP
             if (audio_open) draw_audio_page(display, a2dp, source_index);
-            else if (a2dp_ok && g_a2dp_message[0] && !menu.open &&
+            else if (a2dp_ok && g_a2dp_message[0] && !bt_page_open &&
                      (a2dp.state() == A2dpState::Pairing || a2dp.state() == A2dpState::Connecting ||
                       to_ms_since_boot(get_absolute_time()) - g_a2dp_event_ms < 3000))
                 draw_text_fit(display, 4, kStatusH + 6, g_a2dp_message, kColorWhite, kSize / 120 + 1);
 #endif
-            if (g_hid_busy || g_passkey >= 0) {
+            if ((g_hid_busy || g_passkey >= 0) && !bt_page_open) {
                 const int scale = kSize / 120 + 1;
                 int y = kStatusH + 6;
                 y += draw_text_fit(display, 4, y, g_hid_message, kColorWhite, scale);
@@ -969,23 +934,17 @@ int main() {
             }
 #endif
 #ifndef PRESTO_NO_RADIO
-            if (mouse_present && !menu_open) { // crosshair: green left, red right, blue middle, yellow thumb button
-                const Color c = mouse.left ? kColorGreen : mouse.right ? kColorRed : mouse.middle ? kColorBlue
-                              : (mouse.back || mouse.forward) ? Color(0xFFE0) : kColorWhite;
-                const int s = mouse_size;
-                display.fill_rect(mouse_x - s, mouse_y - 1, mouse_x + s, mouse_y + 1, c);
-                display.fill_rect(mouse_x - 1, mouse_y - s, mouse_x + 1, mouse_y + s, c);
-                display.fill_rect(mouse_x - 2, mouse_y - 2, mouse_x + 2, mouse_y + 2, kColorBlack);
-            }
+            if (mouse_present) draw_mouse_cursor();
 #endif
             if (pad_ok && !menu_open) {
                 const int r = kSize / 40;
                 display.fill_rect(pad_x - r, pad_y - r, pad_x + r, pad_y + r, kColorBlack);
                 display.fill_rect(pad_x - r + 2, pad_y - r + 2, pad_x + r - 2, pad_y + r - 2, kColorWhite);
             }
+            }
         }
 
-        if (t.pressed) {
+        if (t.pressed && !menu_open) {
             piezo.set_tone(200 + (t.raw_x * 1800u) / kSize);
         } else if (prev.pressed) {
             piezo.stop();

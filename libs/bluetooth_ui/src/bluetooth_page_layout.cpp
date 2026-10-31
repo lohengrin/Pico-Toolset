@@ -24,21 +24,23 @@ void bt_ui_compute_layout(const BluetoothPageController& page, const BtUiLayoutC
     out = BtUiLayout{};
     const BtUiRect& a = cfg.area;
     out.scale = pick_scale(a);
-    const int cell_h = 8 * out.scale;
-    const int pad = std::max(2, out.scale * 2);
+    out.text_scale = std::max(1, (out.scale + 1) / 2);
+    const int cell_h = 8 * out.text_scale;
+    const int pad = std::max(2, out.text_scale * 2);
+    const int title_pad = std::max(2, out.scale * 2);
     int row_h = cell_h + 2 * pad;
     if (cfg.input_caps & bt_ui_input::Direct) row_h = std::max(row_h, std::min(cfg.min_target_px, a.h / 8));
     out.row_h = row_h;
     out.show_focus = (cfg.input_caps & bt_ui_input::Navigate) != 0;
 
-    out.header = {a.x, a.y, a.w, row_h};
+    out.header = {a.x, a.y, a.w, 8 * out.scale + 2 * title_pad};
     out.footer = {a.x, a.y + a.h - row_h, a.w, row_h};
     out.status_in_header = a.h < 90;
     const int status_h = out.status_in_header ? 0 : cell_h + pad;
     out.status = out.status_in_header ? out.header : BtUiRect{a.x, out.footer.y - status_h, a.w, status_h};
     const int list_y = out.header.y + out.header.h;
     out.list = {a.x, list_y, a.w, std::max(0, out.footer.y - status_h - list_y)};
-    out.text_cols = std::max(0, (a.w - 2 * pad - cell_h - pad) / (6 * out.scale));
+    out.text_cols = std::max(0, (a.w - 2 * pad - cell_h - pad) / (6 * out.text_scale));
     out.visible_rows = static_cast<size_t>(out.list.h / row_h);
     out.info_lines = static_cast<size_t>(out.list.h / (cell_h + pad));
 

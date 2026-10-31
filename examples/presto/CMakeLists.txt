@@ -68,6 +68,7 @@ if(PRESTO_BT_A2DP)
     add_subdirectory(${TOOLSET_ROOT}/components/bluetooth_a2dp ${CMAKE_BINARY_DIR}/_toolset/bluetooth_a2dp)
 endif()
 add_subdirectory(${TOOLSET_ROOT}/libs/screen        ${CMAKE_BINARY_DIR}/_toolset/screen)
+add_subdirectory(${TOOLSET_ROOT}/libs/bluetooth_ui  ${CMAKE_BINARY_DIR}/_toolset/bluetooth_ui)
 
 add_executable(${EXAMPLE_OUTPUT_NAME} main.cpp)
 target_link_libraries(${EXAMPLE_OUTPUT_NAME} PRIVATE
@@ -121,6 +122,7 @@ else()
         pico_toolset_wifi
         pico_toolset_bluetooth
         pico_toolset_bluetooth_hid
+        pico_toolset_bluetooth_ui
         pico_toolset_https_client # only to satisfy lwIP's TLS layer (see above)
     )
     if(PRESTO_BT_A2DP)

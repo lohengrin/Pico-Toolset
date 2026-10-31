@@ -55,6 +55,15 @@ public:
     static void stop_inquiry(ClassicInquiryCallback callback);
     [[nodiscard]] static bool inquiry_active();
 
+    // Many Classic devices (headsets especially) leave their name out of the inquiry answer. While
+    // an inquiry runs, such a device is interrupted for a moment: the radio inquiry is paused, its
+    // name is asked for (a remote name request, a second or two each), then the inquiry resumes and
+    // the device is reported again with the name. Names are cached.
+    // request_name() asks for the name of any device (e.g. one just connected); the answer, from
+    // this or any other remote name request, goes to the name listeners (up to 3).
+    static void request_name(const uint8_t addr[6]);
+    static void add_name_listener(void (*callback)(const uint8_t addr[6], const char* name, void* user), void* user);
+
     // Paging a bonded device in the background interrupts an established link (audible as
     // dropouts in an A2DP stream): while any component holds this, the others should not page.
     // `owner` identifies the caller (any unique address): the flag stays up while any owner holds it.

@@ -143,7 +143,7 @@ attempt are logged.
 1. `cmake -S examples/presto -B build -DPRESTO_BT_A2DP=ON`, flash, open the serial console.
 2. Put the headset in pairing mode (keep it close, and unpair it from phones first; FreeBuds 6i: hold the case button until the LED blinks white;
    MDR-ZX770BN: hold the power button ~7 s until it announces pairing).
-3. Touch the status band, `AUDIO (HEADSET)`, `PAIR` (or press `a` on the console). Expect
+3. Touch the status band (the Bluetooth page opens; or press `a` on the console), `PAIR NEW`, then pick the headset from the list. Expect
    `found` -> `connecting` -> (a few seconds) -> `connected` -> `Capabilities` -> `Configured` ->
    `streaming`; a tone should play. Bonding is followed by a deliberate wait of up to ~6 s.
 4. `+`/`-`, `q` (quality), `w` (sound), `p` (pause), `s` (stats; `dropped` should stay ~0).

@@ -548,7 +548,19 @@ struct BluetoothHid::Impl {
         dev.addr_type = kClassicAddrType;
         std::memcpy(dev.name, r.name, sizeof(dev.name) < sizeof(r.name) ? sizeof(dev.name) : sizeof(r.name));
         dev.name[sizeof(dev.name) - 1] = '\0';
-        if (slot_by_addr(dev.addr) || seen_before(dev.addr)) return;
+        if (slot_by_addr(dev.addr)) return;
+        if (seen_before(dev.addr)) { // reported again, now perhaps with the name that was missing
+            if (dev.name[0]) {
+                for (size_t i = 0; i < found_count; ++i) {
+                    if (std::memcmp(found[i].addr, dev.addr, 6) == 0 && !found[i].name[0]) {
+                        std::memcpy(found[i].name, dev.name, sizeof(found[i].name));
+                        found[i].name[sizeof(found[i].name) - 1] = '\0';
+                        changes = changes + 1;
+                    }
+                }
+            }
+            return;
+        }
         const int8_t found_rssi = r.rssi_valid ? r.rssi : 0;
         record_found(dev, found_rssi);
         track(BtHidEventType::DeviceFound, 0, 0);

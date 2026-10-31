@@ -349,14 +349,15 @@ void check_layout(Rig& r, int w, int h, uint8_t caps) {
     BtUiLayout L;
     bt_ui_compute_layout(r.page, cfg, 0, L);
     CHECK(L.scale >= 1 && L.scale <= 4);
-    CHECK(L.row_h >= 8 * L.scale);
+    CHECK(L.text_scale >= 1 && L.text_scale <= L.scale);
+    CHECK(L.row_h >= 8 * L.text_scale);
     if (caps & bt_ui_input::Direct) CHECK(L.row_h >= std::min(28, h / 8));
     CHECK(L.show_focus == ((caps & bt_ui_input::Navigate) != 0));
     CHECK(L.visible_rows >= 1);
     for (size_t i = 0; i < r.page.item_count(); ++i) {
         if (!L.item_visible[i]) continue;
         CHECK(inside(L.item_rect[i], cfg.area));
-        CHECK(L.item_rect[i].h >= 8 * L.scale);
+        CHECK(L.item_rect[i].h >= 8 * L.text_scale);
         for (size_t k = i + 1; k < r.page.item_count(); ++k)
             if (L.item_visible[k]) CHECK(!overlap(L.item_rect[i], L.item_rect[k]));
         const BtUiRect& q = L.item_rect[i];

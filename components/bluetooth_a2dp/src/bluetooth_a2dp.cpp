@@ -451,6 +451,22 @@ void schedule_reconnect(uint32_t ms) {
     btstack_run_loop_add_timer(&g.reconnect_timer);
 }
 
+// A remote name request answered: complete the headset's stored name and the found list.
+void name_known(const uint8_t* addr, const char* name, void*) {
+    for (size_t i = 0; i < g.found_count; ++i) {
+        if (std::memcmp(g.found[i].addr, addr, 6) == 0 && !g.found[i].name[0]) {
+            std::strncpy(g.found[i].name, name, sizeof(g.found[i].name) - 1);
+            g.changes = g.changes + 1;
+        }
+    }
+    if (g.state != A2dpState::Idle && g.state != A2dpState::Pairing && std::memcmp(g.peer, addr, 6) == 0 &&
+        !g.peer_name[0]) {
+        std::strncpy(g.peer_name, name, sizeof(g.peer_name) - 1);
+        if (g.have_last && std::memcmp(g.last.addr, addr, 6) == 0) save_last();
+        g.changes = g.changes + 1;
+    }
+}
+
 void inquiry_result(const ClassicInquiryResult& r, void*) {
     if (!g.pairing || g.state != A2dpState::Pairing) return;
     std::memcpy(g.peer, r.addr, 6);
@@ -459,10 +475,17 @@ void inquiry_result(const ClassicInquiryResult& r, void*) {
     A2dpDevice d = device_info();
     d.rssi = r.rssi_valid ? r.rssi : 0;
     d.class_of_device = r.class_of_device;
-    if (is_audio_sink_class(r.class_of_device) && g.found_count < BluetoothA2dp::kMaxFound) {
+    if (is_audio_sink_class(r.class_of_device)) {
         bool known = false;
-        for (size_t i = 0; i < g.found_count; ++i) known |= std::memcmp(g.found[i].addr, d.addr, 6) == 0;
-        if (!known) { g.found[g.found_count++] = d; g.changes = g.changes + 1; }
+        for (size_t i = 0; i < g.found_count; ++i) {
+            if (std::memcmp(g.found[i].addr, d.addr, 6) != 0) continue;
+            known = true;
+            if (!g.found[i].name[0] && d.name[0]) { // the name arrived with a later report
+                std::memcpy(g.found[i].name, d.name, sizeof(g.found[i].name));
+                g.changes = g.changes + 1;
+            }
+        }
+        if (!known && g.found_count < BluetoothA2dp::kMaxFound) { g.found[g.found_count++] = d; g.changes = g.changes + 1; }
     }
     if (g.cfg.callback) {
         A2dpEvent e{};
@@ -514,6 +537,7 @@ void a2dp_handler(uint8_t packet_type, uint16_t, uint8_t* packet, uint16_t) {
         set_state(A2dpState::Connected);
         save_last();
         emit(A2dpEventType::Connected);
+        if (!g.peer_name[0]) BluetoothClassic::request_name(g.peer); // not in its inquiry answer: ask
         break;
     }
     case A2DP_SUBEVENT_SIGNALING_MEDIA_CODEC_SBC_CAPABILITY: {
@@ -738,6 +762,7 @@ bool BluetoothA2dp::init(const A2dpConfig& config) {
 
     ContextLock lock;
     BluetoothClassic::init(config.pin);
+    BluetoothClassic::add_name_listener(name_known, nullptr);
     BluetoothClassic::add_pairing_gate([](void*) { return g.state != A2dpState::Idle; }, nullptr);
     g.hci_reg.callback = &hci_handler;
     hci_add_event_handler(&g.hci_reg);
