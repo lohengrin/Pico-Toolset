@@ -4,19 +4,20 @@ A device page any application can drop in: pair new devices (HID or audio), list
 their name and connection state, connect, disconnect and forget them. It lives in `libs/` because the
 view uses `libs/screen`; it only depends on components.
 
-> **Status: phase 4 of 5, plus the LVGL view.** The logic, the layout, the view and the input are written and unit-tested on
-> a PC (the view renders into a fake display, input comes from fakes), and the Presto example now uses
-> the page instead of its own device menu (it builds; **not yet run on the board**).
+> **Status: complete.** The logic, the layout, the view and the input are unit-tested on a PC (the view
+> renders into a fake display, input comes from fakes). The pixel view is **validated on the Presto**
+> (`examples/presto`): touch, mouse, text size, device names and flicker-free cursor. The LVGL view runs
+> in PicoBoot (Presto). Keyboard and pad navigation and the forget flow are not yet checked on hardware.
 
 ## Layers
 
 | Layer | Where | Status |
 |---|---|---|
-| Backends: what a component exposes | `bluetooth_ui_hid.h`, `bluetooth_ui_a2dp.h` (header-only adaptors over `BluetoothHid` / `BluetoothA2dp`) | compiled, not run on hardware |
+| Backends: what a component exposes | `bluetooth_ui_hid.h`, `bluetooth_ui_a2dp.h` (header-only adaptors over `BluetoothHid` / `BluetoothA2dp`) | validated on the Presto (HID and A2DP) |
 | Model: merged list and commands | `BluetoothDevices` | host-tested |
 | Controller: the page's state machine | `BluetoothPageController` | host-tested |
 | Layout: where everything goes, hit-testing | `bluetooth_page_layout.h` (pure arithmetic) | host-tested |
-| View, drawn on any `DisplayDriver` | `BluetoothPageView` | rendered in host tests, not on hardware |
+| View, drawn on any `DisplayDriver` | `BluetoothPageView` | host-tested; validated on the Presto |
 | Input: touch, mouse, keyboard, pad, buttons | `BluetoothPageInput` | host-tested with a fake `HidSource` |
 | Words shared by every view | `bluetooth_page_text.h` (titles, status, labels, row and detail text) | host-tested through both views |
 | **Alternative view, drawn with LVGL** | `libs/bluetooth_ui_lvgl`: `BluetoothPageLvgl` | host-tested on a headless LVGL; running in PicoBoot (Presto) |

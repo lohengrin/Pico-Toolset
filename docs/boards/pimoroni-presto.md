@@ -233,8 +233,8 @@ Not yet done or not yet verified on hardware:
 - **Bluetooth audio (A2DP):** validated with a Sony MDR-ZX770BN and a HUAWEI FreeBuds 6i, with no audible
   cuts in real conditions (see the component page).
 - **Bluetooth page:** the common page (`libs/bluetooth_ui`) replaced the example's own device manager;
-  it is built and unit-tested on a PC but **not yet run on the board** (touch, mouse, keyboard and pad
-  input, pairing by choice, forgetting). The audio page (play, volume, quality, sound) is unchanged.
+  touch, mouse, text size, device names and pairing are validated on the board; keyboard and pad
+  navigation and forgetting are only unit-tested on a PC. The audio page (play, volume, quality, sound) is unchanged.
 - **HID output** (keyboard LEDs, gamepad rumble) is not implemented.
 - **Memory:** lwIP buffers are not placed in PSRAM; 480x480 RGB565 cannot run with the radio.
 - **Unverified pins:** LCD reset (GPIO44) and touch reset (GPIO42) are not driven by Pimoroni's firmware
