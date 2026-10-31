@@ -4,9 +4,9 @@ A device page any application can drop in: pair new devices (HID or audio), list
 their name and connection state, connect, disconnect and forget them. It lives in `libs/` because the
 view uses `libs/screen`; it only depends on components.
 
-> **Status: phase 1 of 5.** The platform-independent logic is written and unit-tested on a PC. The
-> on-screen view, the input adaptors and the Presto integration are not written yet, so there is
-> nothing to see on a display so far, and nothing here has run on hardware.
+> **Status: phase 2 of 5.** The logic, the layout and the view are written and unit-tested on a PC
+> (the view renders into a fake display). The input adaptors and the Presto integration are not written
+> yet, and nothing here has run on real hardware.
 
 ## Layers
 
@@ -15,7 +15,8 @@ view uses `libs/screen`; it only depends on components.
 | Backends: what a component exposes | `bluetooth_ui_hid.h`, `bluetooth_ui_a2dp.h` (header-only adaptors over `BluetoothHid` / `BluetoothA2dp`) | compiled, not run on hardware |
 | Model: merged list and commands | `BluetoothDevices` | host-tested |
 | Controller: the page's state machine | `BluetoothPageController` | host-tested |
-| View, sized to the screen | `libs/screen` `DisplayDriver` | phase 2 |
+| Layout: where everything goes, hit-testing | `bluetooth_page_layout.h` (pure arithmetic) | host-tested |
+| View, drawn on any `DisplayDriver` | `BluetoothPageView` | rendered in host tests, not on hardware |
 | Input adaptors (touch, pointer, keyboard, pad, buttons) | | phase 3 |
 
 ## Model
@@ -40,6 +41,31 @@ once it shows up bonded the page returns to the list with `BtUiNotice::Paired`; 
 reports an error it stays on Scan with `PairFailed` and the status code. A keyboard's passkey is
 available from `passkey()` while it is pairing.
 
+## View and layout
+
+```cpp
+BluetoothPageView view(controller, {.area = {0, 0, 480, 480}, .input_caps = bt_ui_input::Touch});
+if (controller.update()) view.draw(display);                 // whole area, any DisplayDriver
+controller.activate(view.hit_test(x, y));                    // a tap (ignore -1)
+```
+
+The area can be the whole display or a pane. Everything follows from it and from `input_caps`:
+
+- **Text scale** 1 / 2 / 3 / 4 for widths under 200 / 360 / 560 / more pixels (smaller if the height
+  would leave fewer than about six text lines). 128x64 gets about 19 columns, 240 px 17, 480 px 24.
+- **Touch and pointer** (`Touch`, `Pointer`) make every row and button at least 28 px high; with only
+  `Keyboard`, `Pad` or `Buttons` they keep the compact size and a focus highlight appears (and a
+  "Up/Down Enter Esc" hint when nothing else is said). `set_input_caps()` can change this at run time,
+  for example when a keyboard connects.
+- **Rows** scroll to keep the focused one visible, with a `^` / `v` marker when there are more.
+  Below 90 px of height there is no separate status line: its text goes on the right of the header
+  when the title leaves room.
+- **Row content** grows with the width: marker dot and name; plus the kind tag (KBD, MOUSE, K+M, PAD,
+  AUDIO) from 16 columns; plus the state (or signal strength for found devices) from 26.
+- **1-bit panels** (`is_monochrome()`): white on black, outlined buttons, the focus is inverted, an
+  offline device is a hollow marker.
+- Colours come from `BtUiTheme` (a dark default); the text is the 5x8 font of `libs/screen`.
+
 ## What the components gained for this
 
 `BluetoothHid` and `BluetoothA2dp` now expose, without any callback:
@@ -56,5 +82,8 @@ For the user to choose what to pair, configure the components with `auto_pair = 
 
 `tests/host/test_bluetooth_ui.cpp` drives the model and controller with fake backends (merge and
 de-duplication, navigation and clamped focus, detail and forget with the safe default, external forget,
-pairing success and failure, passkey, scan stop on leaving, focus kept across list changes). Run them
+pairing success and failure, passkey, scan stop on leaving, focus kept across list changes), the layout at
+128x64, 240, 320x240, 480 and 480x800 (controls inside the area, no overlap, touch size, hit-testing, scrolling)
+and the view, rendered into a fake display (nothing drawn outside the area, in a pane too). `BT_UI_DUMP=1` prints
+the 128x64 and 240 px frames as text. Run them
 with the command in AGENTS.md.

@@ -1,9 +1,11 @@
 // Host tests for the common Bluetooth page: device merging and the page state machine.
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <vector>
 
-#include "pico_toolset/bluetooth_page_controller.h"
+#include "pico_toolset/bluetooth_page_view.h"
 
 using namespace pico_toolset;
 
@@ -307,6 +309,154 @@ void test_focus_follows_item() {
     CHECK(r.page.item(r.page.focus()).action == BtUiAction::Back); // focus stays on Back
 }
 
+class FakeDisplay final : public DisplayDriver {
+public:
+    FakeDisplay(int w, int h, bool mono) : w_(w), h_(h), mono_(mono), px_(static_cast<size_t>(w * h), 0) {}
+    int width() const override { return w_; }
+    int height() const override { return h_; }
+    bool is_monochrome() const override { return mono_; }
+    void set_pixel(int x, int y, Color c) override {
+        if (x < 0 || y < 0 || x >= w_ || y >= h_) { ++oob; return; }
+        px_[static_cast<size_t>(y * w_ + x)] = c.rgb565;
+    }
+    uint16_t at(int x, int y) const { return px_[static_cast<size_t>(y * w_ + x)]; }
+    int oob = 0;
+    // 0 = unset, '#' lit, '.' other colour (as a 1-bit view for eyeballing).
+    void dump(const BtUiRect& r, int step) const {
+        for (int y = r.y; y < r.y + r.h; y += step) {
+            for (int x = r.x; x < r.x + r.w; x += step) std::putchar(at(x, y) == 0 ? ' ' : at(x, y) == 0xFFFF ? '#' : '+');
+            std::putchar('\n');
+        }
+    }
+private:
+    int w_, h_;
+    bool mono_;
+    std::vector<uint16_t> px_;
+};
+
+bool inside(const BtUiRect& r, const BtUiRect& area) {
+    return r.x >= area.x && r.y >= area.y && r.x + r.w <= area.x + area.w && r.y + r.h <= area.y + area.h;
+}
+bool overlap(const BtUiRect& a, const BtUiRect& b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+void check_layout(Rig& r, int w, int h, uint8_t caps) {
+    BtUiLayoutConfig cfg;
+    cfg.area = {0, 0, w, h};
+    cfg.input_caps = caps;
+    BtUiLayout L;
+    bt_ui_compute_layout(r.page, cfg, 0, L);
+    CHECK(L.scale >= 1 && L.scale <= 4);
+    CHECK(L.row_h >= 8 * L.scale);
+    if (caps & bt_ui_input::Direct) CHECK(L.row_h >= std::min(28, h / 8));
+    CHECK(L.show_focus == ((caps & bt_ui_input::Navigate) != 0));
+    CHECK(L.visible_rows >= 1);
+    for (size_t i = 0; i < r.page.item_count(); ++i) {
+        if (!L.item_visible[i]) continue;
+        CHECK(inside(L.item_rect[i], cfg.area));
+        CHECK(L.item_rect[i].h >= 8 * L.scale);
+        for (size_t k = i + 1; k < r.page.item_count(); ++k)
+            if (L.item_visible[k]) CHECK(!overlap(L.item_rect[i], L.item_rect[k]));
+        const BtUiRect& q = L.item_rect[i];
+        CHECK(bt_ui_hit_test(L, r.page.item_count(), q.x + q.w / 2, q.y + q.h / 2) == static_cast<int>(i));
+    }
+}
+
+void test_layout_sizes() {
+    const struct { int w, h; uint8_t caps; } sizes[] = {
+        {128, 64, bt_ui_input::Buttons}, {128, 64, bt_ui_input::Keyboard}, {240, 240, bt_ui_input::Touch},
+        {320, 240, bt_ui_input::Touch | bt_ui_input::Keyboard}, {480, 480, bt_ui_input::Touch},
+        {480, 480, bt_ui_input::Pointer | bt_ui_input::Pad}, {480, 800, bt_ui_input::Keyboard}};
+    for (const auto& z : sizes) {
+        Rig r;
+        check_layout(r, z.w, z.h, z.caps);          // list
+        r.page.activate(0);
+        check_layout(r, z.w, z.h, z.caps);          // detail
+        r.page.handle(BtUiInput::Back);
+        r.select(BtUiAction::StartScan);
+        r.hid.seen = {make(BtUiSource::Hid, 5, "Mouse", BtUiKind::Mouse)};
+        ++r.hid.counter;
+        r.page.update();
+        check_layout(r, z.w, z.h, z.caps);          // scan
+    }
+    Rig a, b;
+    BtUiLayout small, big;
+    bt_ui_compute_layout(a.page, {{0, 0, 128, 64}, bt_ui_input::Buttons, 28}, 0, small);
+    bt_ui_compute_layout(b.page, {{0, 0, 480, 480}, bt_ui_input::Touch, 28}, 0, big);
+    CHECK(big.scale > small.scale);
+    CHECK(big.text_cols >= 24 && small.text_cols >= 14);
+}
+
+void test_layout_scrolls_to_focus() {
+    Rig r;
+    r.select(BtUiAction::StartScan);
+    for (int i = 0; i < 12; ++i)
+        r.hid.seen.push_back(make(BtUiSource::Hid, static_cast<uint8_t>(20 + i), "Dev", BtUiKind::Gamepad));
+    ++r.hid.counter;
+    r.page.update();
+    BtUiLayoutConfig cfg{{0, 0, 128, 64}, bt_ui_input::Buttons, 28};
+    BtUiLayout L;
+    bt_ui_compute_layout(r.page, cfg, 0, L);
+    CHECK(L.visible_rows < 12 && L.more_below && !L.more_above);
+    r.page.set_focus(11);   // the last found device
+    size_t scroll = 0;
+    for (int i = 0; i < 11; ++i) {
+        bt_ui_compute_layout(r.page, cfg, scroll, L);
+        scroll = L.first_row;
+    }
+    bt_ui_compute_layout(r.page, cfg, scroll, L);
+    CHECK(L.item_visible[r.page.focus()]);
+    CHECK(L.more_above && !L.more_below);
+    r.page.set_focus(0);
+    bt_ui_compute_layout(r.page, cfg, L.first_row, L);
+    CHECK(L.first_row == 0 && L.item_visible[0]);
+}
+
+void render_checks(int dw, int dh, BtUiRect area, bool mono, uint8_t caps, bool dump) {
+    Rig r;
+    r.audio.paired[0].state = BtUiState::Streaming;
+    r.page.update();
+    FakeDisplay d(dw, dh, mono);
+    BluetoothPageView view(r.page, {area, caps});
+    view.draw(d);
+    CHECK(d.oob == 0);
+    int drawn = 0;
+    for (int y = 0; y < dh; ++y)
+        for (int x = 0; x < dw; ++x) {
+            const bool in = x >= area.x && x < area.x + area.w && y >= area.y && y < area.y + area.h;
+            if (!in) CHECK(d.at(x, y) == 0);
+            if (in && d.at(x, y) == 0xFFFF) ++drawn;
+        }
+    CHECK(drawn > 50); // text was drawn
+    if (dump) d.dump(area, mono ? 1 : 3);
+    // every screen draws inside the area too
+    r.page.activate(0);
+    view.draw(d);
+    r.select(BtUiAction::Forget);
+    view.draw(d);
+    r.page.handle(BtUiInput::Back);
+    r.page.handle(BtUiInput::Back);
+    r.select(BtUiAction::StartScan);
+    r.hid.seen = {make(BtUiSource::Hid, 5, "A rather long device name here", BtUiKind::Keyboard)};
+    r.hid.seen[0].rssi = -60;
+    ++r.hid.counter;
+    r.page.update();
+    view.draw(d);
+    if (dump) { std::puts("--- scan"); d.dump(area, mono ? 1 : 3); }
+    CHECK(d.oob == 0);
+    const int hit = view.hit_test(area.x + area.w / 2, area.y + area.h - 2);
+    CHECK(hit >= 0 && r.page.item(static_cast<size_t>(hit)).action != BtUiAction::PickFound);
+}
+
+void test_view_render() {
+    const bool dump = std::getenv("BT_UI_DUMP") != nullptr;
+    render_checks(128, 64, {0, 0, 128, 64}, true, bt_ui_input::Buttons, dump);
+    render_checks(240, 240, {0, 0, 240, 240}, false, bt_ui_input::Touch, dump);
+    render_checks(400, 300, {40, 30, 320, 240}, false, bt_ui_input::Touch | bt_ui_input::Keyboard, false); // a pane
+    render_checks(480, 480, {0, 0, 480, 480}, false, bt_ui_input::Pointer, false);
+}
+
 } // namespace
 
 int run_bluetooth_ui_tests() {
@@ -319,5 +469,8 @@ int run_bluetooth_ui_tests() {
     test_passkey_shown();
     test_back_stops_scan();
     test_focus_follows_item();
+    test_layout_sizes();
+    test_layout_scrolls_to_focus();
+    test_view_render();
     return g_failures;
 }
