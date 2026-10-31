@@ -169,6 +169,12 @@ void BluetoothPageLvgl::build_items() {
             lv_obj_set_style_pad_all(obj, 4, 0);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            // The theme only highlights buttons: give a focused row (keyboard / pad) a visible mark.
+            lv_obj_set_style_outline_width(obj, 3, LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_outline_color(obj, lv_palette_main(LV_PALETTE_BLUE), LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_outline_opa(obj, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_bg_color(obj, lv_palette_darken(LV_PALETTE_BLUE, 3), LV_STATE_FOCUS_KEY);
+            lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_STATE_FOCUS_KEY);
             lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_ROW);
             lv_obj_set_flex_align(obj, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
             lv_obj_set_style_pad_column(obj, cfg_.pad / 2, 0);
