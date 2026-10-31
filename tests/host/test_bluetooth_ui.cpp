@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "fake_bt_backend.h"
 #include "pico_toolset/bluetooth_page_input.h"
 #include "pico_toolset/bluetooth_page_view.h"
 
@@ -21,89 +22,14 @@ int g_failures = 0;
         }                                                                                 \
     } while (0)
 
-BtUiDevice make(BtUiSource src, uint8_t id, const char* name, BtUiKind kind, BtUiState state = BtUiState::Offline) {
-    BtUiDevice d{};
-    d.addr[5] = id;
-    std::strncpy(d.name, name, sizeof(d.name) - 1);
-    d.source = src;
-    d.kind = kind;
-    d.state = state;
-    return d;
-}
-
-class FakeBackend final : public BtUiBackend {
-public:
-    FakeBackend(BtUiSource s, bool can_disc) : src(s), can_disc(can_disc) {}
-    BtUiSource src;
-    bool can_disc;
-    std::vector<BtUiDevice> paired, seen;
-    bool scan = false, busy = false;
-    uint8_t error = 0;
-    uint32_t counter = 0;
-    bool pair_succeeds = true;
-    int connects = 0, forgets = 0, disconnects = 0;
-
-    BtUiSource source() const override { return src; }
-    uint32_t change_counter() const override { return counter; }
-    size_t bonded(BtUiDevice* out, size_t max) override {
-        size_t n = 0;
-        for (; n < paired.size() && n < max; ++n) out[n] = paired[n];
-        return n;
-    }
-    size_t found(BtUiDevice* out, size_t max) override {
-        size_t n = 0;
-        for (; n < seen.size() && n < max; ++n) out[n] = seen[n];
-        return n;
-    }
-    bool scanning() const override { return scan; }
-    void start_scan() override { scan = true; seen.clear(); ++counter; }
-    void stop_scan() override { scan = false; ++counter; }
-    bool connect(const BtUiDevice& d) override {
-        ++connects;
-        scan = false;
-        error = 0;
-        for (auto& p : paired)
-            if (bt_ui_same_device(p, d)) { p.state = BtUiState::Connected; ++counter; return true; }
-        if (pair_succeeds) {
-            BtUiDevice p = d;
-            p.state = BtUiState::Connected;
-            paired.push_back(p);
-        } else {
-            error = 0x05;
-        }
-        ++counter;
-        return true;
-    }
-    bool can_disconnect(const BtUiDevice&) const override { return can_disc; }
-    void disconnect(const BtUiDevice& d) override {
-        ++disconnects;
-        for (auto& p : paired) if (bt_ui_same_device(p, d)) p.state = BtUiState::Offline;
-        ++counter;
-    }
-    bool forget(const BtUiDevice& d) override {
-        ++forgets;
-        for (size_t i = 0; i < paired.size(); ++i)
-            if (bt_ui_same_device(paired[i], d)) { paired.erase(paired.begin() + i); ++counter; return true; }
-        return false;
-    }
-    bool connecting() const override { return busy; }
-    bool passkey(uint32_t* c) const override {
-        if (!passkey_value) return false;
-        if (c) *c = passkey_value;
-        return true;
-    }
-    uint8_t last_error() const override { return error; }
-    uint32_t passkey_value = 0;
-};
-
 void test_devices_merge() {
     FakeBackend hid(BtUiSource::Hid, false), audio(BtUiSource::Audio, true);
     BluetoothDevices devs;
     CHECK(devs.add_backend(hid));
     CHECK(devs.add_backend(audio));
-    hid.paired = {make(BtUiSource::Hid, 1, "Keys", BtUiKind::Keyboard, BtUiState::Connected),
-                  make(BtUiSource::Hid, 2, "Pad", BtUiKind::Gamepad)};
-    audio.paired = {make(BtUiSource::Audio, 9, "Headset", BtUiKind::Headset)};
+    hid.paired = {make_device(BtUiSource::Hid, 1, "Keys", BtUiKind::Keyboard, BtUiState::Connected),
+                  make_device(BtUiSource::Hid, 2, "Pad", BtUiKind::Gamepad)};
+    audio.paired = {make_device(BtUiSource::Audio, 9, "Headset", BtUiKind::Headset)};
 
     BtUiDevice out[8];
     CHECK(devs.bonded(out, 8) == 3);
@@ -112,10 +38,10 @@ void test_devices_merge() {
 
     devs.start_scan();
     CHECK(devs.scanning() && hid.scan && audio.scan);
-    hid.seen = {make(BtUiSource::Hid, 1, "Keys", BtUiKind::Keyboard), // already bonded: hidden
-                make(BtUiSource::Hid, 5, "Mouse", BtUiKind::Mouse)};
-    audio.seen = {make(BtUiSource::Audio, 5, "Mouse again", BtUiKind::Headset), // same address as the HID one
-                  make(BtUiSource::Audio, 7, "Speaker", BtUiKind::Headset)};
+    hid.seen = {make_device(BtUiSource::Hid, 1, "Keys", BtUiKind::Keyboard), // already bonded: hidden
+                make_device(BtUiSource::Hid, 5, "Mouse", BtUiKind::Mouse)};
+    audio.seen = {make_device(BtUiSource::Audio, 5, "Mouse again", BtUiKind::Headset), // same address as the HID one
+                  make_device(BtUiSource::Audio, 7, "Speaker", BtUiKind::Headset)};
     BtUiDevice f[16];
     const size_t n = devs.found(f, 16);
     CHECK(n == 2);
@@ -140,8 +66,8 @@ struct Rig {
     Rig() {
         devs.add_backend(hid);
         devs.add_backend(audio);
-        hid.paired = {make(BtUiSource::Hid, 1, "Keys", BtUiKind::Keyboard, BtUiState::Connected)};
-        audio.paired = {make(BtUiSource::Audio, 9, "Headset", BtUiKind::Headset)};
+        hid.paired = {make_device(BtUiSource::Hid, 1, "Keys", BtUiKind::Keyboard, BtUiState::Connected)};
+        audio.paired = {make_device(BtUiSource::Audio, 9, "Headset", BtUiKind::Headset)};
         page.open();
         page.update();
     }
@@ -232,8 +158,8 @@ void test_pairing_success() {
     CHECK(r.hid.scan && r.audio.scan);
     CHECK(r.page.scanning());
     CHECK(r.has(BtUiAction::StopScan) && !r.has(BtUiAction::StartScan));
-    r.hid.seen = {make(BtUiSource::Hid, 5, "Mouse", BtUiKind::Mouse)};
-    r.audio.seen = {make(BtUiSource::Audio, 7, "Speaker", BtUiKind::Headset)};
+    r.hid.seen = {make_device(BtUiSource::Hid, 5, "Mouse", BtUiKind::Mouse)};
+    r.audio.seen = {make_device(BtUiSource::Audio, 7, "Speaker", BtUiKind::Headset)};
     ++r.hid.counter;
     CHECK(r.page.update());
     CHECK(r.page.found_count() == 2);
@@ -251,7 +177,7 @@ void test_pairing_failure_and_passkey() {
     Rig r;
     r.hid.pair_succeeds = false;
     r.select(BtUiAction::StartScan);
-    r.hid.seen = {make(BtUiSource::Hid, 5, "Keys2", BtUiKind::Keyboard)};
+    r.hid.seen = {make_device(BtUiSource::Hid, 5, "Keys2", BtUiKind::Keyboard)};
     ++r.hid.counter;
     r.page.update();
     r.select(BtUiAction::PickFound, 0);
@@ -267,7 +193,7 @@ void test_pairing_failure_and_passkey() {
 void test_passkey_shown() {
     Rig r;
     r.select(BtUiAction::StartScan);
-    r.hid.seen = {make(BtUiSource::Hid, 5, "Keys2", BtUiKind::Keyboard)};
+    r.hid.seen = {make_device(BtUiSource::Hid, 5, "Keys2", BtUiKind::Keyboard)};
     ++r.hid.counter;
     r.page.update();
     r.hid.busy = true;
@@ -300,11 +226,11 @@ void test_back_stops_scan() {
 void test_focus_follows_item() {
     Rig r;
     r.select(BtUiAction::StartScan);
-    r.hid.seen = {make(BtUiSource::Hid, 5, "A", BtUiKind::Mouse)};
+    r.hid.seen = {make_device(BtUiSource::Hid, 5, "A", BtUiKind::Mouse)};
     ++r.hid.counter;
     r.page.update();
     r.focus_on(BtUiAction::Back);
-    r.hid.seen.push_back(make(BtUiSource::Hid, 6, "B", BtUiKind::Mouse)); // a new row appears above
+    r.hid.seen.push_back(make_device(BtUiSource::Hid, 6, "B", BtUiKind::Mouse)); // a new row appears above
     ++r.hid.counter;
     r.page.update();
     CHECK(r.page.item(r.page.focus()).action == BtUiAction::Back); // focus stays on Back
@@ -377,7 +303,7 @@ void test_layout_sizes() {
         check_layout(r, z.w, z.h, z.caps);          // detail
         r.page.handle(BtUiInput::Back);
         r.select(BtUiAction::StartScan);
-        r.hid.seen = {make(BtUiSource::Hid, 5, "Mouse", BtUiKind::Mouse)};
+        r.hid.seen = {make_device(BtUiSource::Hid, 5, "Mouse", BtUiKind::Mouse)};
         ++r.hid.counter;
         r.page.update();
         check_layout(r, z.w, z.h, z.caps);          // scan
@@ -394,7 +320,7 @@ void test_layout_scrolls_to_focus() {
     Rig r;
     r.select(BtUiAction::StartScan);
     for (int i = 0; i < 12; ++i)
-        r.hid.seen.push_back(make(BtUiSource::Hid, static_cast<uint8_t>(20 + i), "Dev", BtUiKind::Gamepad));
+        r.hid.seen.push_back(make_device(BtUiSource::Hid, static_cast<uint8_t>(20 + i), "Dev", BtUiKind::Gamepad));
     ++r.hid.counter;
     r.page.update();
     BtUiLayoutConfig cfg{{0, 0, 128, 64}, bt_ui_input::Buttons, 28};
@@ -440,7 +366,7 @@ void render_checks(int dw, int dh, BtUiRect area, bool mono, uint8_t caps, bool 
     r.page.handle(BtUiInput::Back);
     r.page.handle(BtUiInput::Back);
     r.select(BtUiAction::StartScan);
-    r.hid.seen = {make(BtUiSource::Hid, 5, "A rather long device name here", BtUiKind::Keyboard)};
+    r.hid.seen = {make_device(BtUiSource::Hid, 5, "A rather long device name here", BtUiKind::Keyboard)};
     r.hid.seen[0].rssi = -60;
     ++r.hid.counter;
     r.page.update();

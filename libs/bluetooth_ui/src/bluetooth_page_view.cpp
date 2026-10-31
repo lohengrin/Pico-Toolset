@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "pico_toolset/bluetooth_page_text.h"
 #include "pico_toolset/simple_font.h"
 #include "pico_toolset/widget.h"
 
@@ -49,45 +50,17 @@ void outline(DisplayDriver& d, const BtUiRect& r, Color c) {
     d.fill_rect(r.x + r.w - 1, r.y, r.x + r.w - 1, r.y + r.h - 1, c);
 }
 
-const char* kind_tag(BtUiKind k) {
-    switch (k) {
-    case BtUiKind::Keyboard: return "KBD";
-    case BtUiKind::Mouse: return "MOUSE";
-    case BtUiKind::KeyboardMouse: return "K+M";
-    case BtUiKind::Gamepad: return "PAD";
-    case BtUiKind::Headset: return "AUDIO";
-    default: return "DEV";
+Color tone_color(const Palette& p, BtUiTone t) {
+    switch (t) {
+    case BtUiTone::Dim: return p.dim;
+    case BtUiTone::Ok: return p.ok;
+    case BtUiTone::Warn: return p.warn;
+    case BtUiTone::Bad: return p.bad;
+    default: return p.text;
     }
 }
 
-void display_name(const BtUiDevice& dev, char* out, size_t cap) {
-    if (dev.name[0]) std::snprintf(out, cap, "%s", dev.name);
-    else std::snprintf(out, cap, "%02X:%02X:%02X", dev.addr[3], dev.addr[4], dev.addr[5]);
-}
-
-Color state_color(const Palette& p, BtUiState s) {
-    switch (s) {
-    case BtUiState::Connected:
-    case BtUiState::Streaming: return p.ok;
-    case BtUiState::Connecting: return p.warn;
-    default: return p.dim;
-    }
-}
-
-const char* action_label(BtUiAction a, BtUiScreen screen, bool shortened) {
-    switch (a) {
-    case BtUiAction::StartScan: return screen == BtUiScreen::Scan ? "SCAN" : (shortened ? "PAIR" : "PAIR NEW");
-    case BtUiAction::StopScan: return "STOP";
-    case BtUiAction::Close: return "CLOSE";
-    case BtUiAction::Back: return "BACK";
-    case BtUiAction::Connect: return shortened ? "CONN" : "CONNECT";
-    case BtUiAction::Disconnect: return shortened ? "DISC" : "DISCONNECT";
-    case BtUiAction::Forget: return "FORGET";
-    case BtUiAction::ConfirmForget: return "YES";
-    case BtUiAction::Cancel: return "NO";
-    default: return "";
-    }
-}
+Color state_color(const Palette& p, BtUiState s) { return tone_color(p, bt_ui_state_tone(s)); }
 
 } // namespace
 
@@ -153,27 +126,17 @@ void BluetoothPageView::draw_all(DisplayDriver& d) {
     char buf[64], name[32];
     fill(d, L.header, p.header);
     const BtUiScreen screen = page_.screen();
-    const char* title = cfg_.title;
-    if (screen == BtUiScreen::Scan) title = "Pair new";
-    else if (screen == BtUiScreen::Detail) { display_name(page_.selected(), name, sizeof(name)); title = name; }
-    else if (screen == BtUiScreen::ConfirmForget) title = "Forget?";
-    else if (page_.bonded_count() > 0) { std::snprintf(buf, sizeof(buf), "%s (%u)", cfg_.title, static_cast<unsigned>(page_.bonded_count())); title = buf; }
+    bt_ui_page_title(page_, cfg_.title, buf, sizeof(buf));
+    const char* title = buf;
     const int header_y = L.header.y + (L.header.h - 8 * ts) / 2;
     draw_text(d, L.header.x + title_pad, header_y, title, p.text, p.header, ts, (L.header.w - 2 * title_pad) / (6 * ts));
     if (p.mono) d.fill_rect(L.header.x, L.header.y + L.header.h - 1, L.header.x + L.header.w - 1, L.header.y + L.header.h - 1, p.text);
 
     // ---- status (a separate line, or the header's right part on small displays) ----
-    char status[48] = "";
-    Color status_color = p.dim;
-    uint32_t code = 0;
-    if (page_.passkey(&code)) { std::snprintf(status, sizeof(status), "Type %06lu on the device", static_cast<unsigned long>(code)); status_color = p.warn; }
-    else if (page_.connecting()) { std::snprintf(status, sizeof(status), "Connecting..."); status_color = p.warn; }
-    else if (page_.notice() == BtUiNotice::Paired) { std::snprintf(status, sizeof(status), "Paired"); status_color = p.ok; }
-    else if (page_.notice() == BtUiNotice::PairFailed) { std::snprintf(status, sizeof(status), "Failed (0x%02X)", page_.error()); status_color = p.bad; }
-    else if (page_.notice() == BtUiNotice::Forgotten) { std::snprintf(status, sizeof(status), "Forgotten"); status_color = p.ok; }
-    else if (page_.scanning()) std::snprintf(status, sizeof(status), "Scanning... %u found", static_cast<unsigned>(page_.found_count()));
-    else if (screen == BtUiScreen::Scan) std::snprintf(status, sizeof(status), "Scan ended");
-    else if (L.show_focus && !(cfg_.input_caps & bt_ui_input::Direct)) std::snprintf(status, sizeof(status), "Up/Down  Enter  Esc");
+    const bool key_hint = L.show_focus && !(cfg_.input_caps & bt_ui_input::Direct);
+    const BtUiText st = bt_ui_status(page_, key_hint ? "Up/Down  Enter  Esc" : "");
+    const char* status = st.text;
+    const Color status_color = tone_color(p, st.tone);
     if (status[0]) {
         if (L.status_in_header) {
             const int w = static_cast<int>(std::strlen(status)) * char_w;
@@ -188,31 +151,15 @@ void BluetoothPageView::draw_all(DisplayDriver& d) {
 
     // ---- list / info ----
     const int info_h = cell_h + pad;
-    auto info = [&](size_t line, const char* text, Color c) {
-        if (line >= L.info_lines) return;
-        draw_text(d, L.list.x + pad, L.list.y + static_cast<int>(line) * info_h + pad / 2, text, c, p.bg, s, (L.list.w - 2 * pad) / char_w);
-    };
+    BtUiText lines[3];
+    const size_t line_count = bt_ui_info_lines(page_, lines, 3);
+    for (size_t i = 0; i < line_count && i < L.info_lines; ++i)
+        draw_text(d, L.list.x + pad, L.list.y + static_cast<int>(i) * info_h + pad / 2, lines[i].text,
+                  tone_color(p, lines[i].tone), p.bg, s, (L.list.w - 2 * pad) / char_w);
 
-    if (screen == BtUiScreen::Detail || screen == BtUiScreen::ConfirmForget) {
-        const BtUiDevice& dev = page_.selected();
-        if (screen == BtUiScreen::Detail) {
-            std::snprintf(buf, sizeof(buf), "Kind: %s", bt_ui_kind_name(dev.kind));
-            info(0, buf, p.text);
-            std::snprintf(buf, sizeof(buf), "State: %s", bt_ui_state_name(dev.state));
-            info(1, buf, state_color(p, dev.state));
-            std::snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", dev.addr[0], dev.addr[1], dev.addr[2], dev.addr[3], dev.addr[4], dev.addr[5]);
-            info(2, buf, p.dim);
-        } else {
-            display_name(dev, name, sizeof(name));
-            std::snprintf(buf, sizeof(buf), "Forget %s?", name);
-            info(0, buf, p.text);
-            info(1, "Pair it again to use it.", p.dim);
-        }
-    } else {
-        bool any_row = false;
+    if (screen != BtUiScreen::Detail && screen != BtUiScreen::ConfirmForget) {
         for (size_t i = 0; i < page_.item_count(); ++i) {
             if (!bt_ui_item_is_row(page_.item(i).action)) continue;
-            any_row = true;
             if (!L.item_visible[i]) continue;
             const BtUiRect& r = L.item_rect[i];
             const BtUiItem it = page_.item(i);
@@ -230,29 +177,20 @@ void BluetoothPageView::draw_all(DisplayDriver& d) {
             }
             int cols = L.text_cols;
             int tx = dot_x + dot + pad;
-            display_name(dev, name, sizeof(name));
+            bt_ui_display_name(dev, name, sizeof(name));
             char state[16] = "";
-            if (it.action == BtUiAction::OpenDevice && cols >= 26) std::snprintf(state, sizeof(state), "%s", bt_ui_state_name(dev.state));
-            else if (it.action == BtUiAction::PickFound && dev.rssi != 0 && cols >= 26) std::snprintf(state, sizeof(state), "%d dBm", dev.rssi);
+            if (cols >= 26) bt_ui_row_state(it, dev, state, sizeof(state));
             const int state_cols = static_cast<int>(std::strlen(state));
             int name_cols = cols - (state_cols ? state_cols + 1 : 0);
             const int ty = r.y + (r.h - cell_h) / 2;
             if (cols >= 16) {
-                const char* tag = kind_tag(dev.kind);
+                const char* tag = bt_ui_kind_tag(dev.kind);
                 draw_text(d, tx, ty, tag, p.mono ? row_fg : (focused ? p.text : p.dim), row_bg, s, 5);
                 tx += 6 * char_w;
                 name_cols -= 6;
             }
             draw_text(d, tx, ty, name, row_fg, row_bg, s, name_cols);
             if (state_cols) draw_text(d, r.x + r.w - pad - text_px(state_cols, s), ty, state, it.action == BtUiAction::OpenDevice ? (focused && p.mono ? p.bg : state_color(p, dev.state)) : row_fg, row_bg, s, state_cols);
-        }
-        if (!any_row) {
-            if (screen == BtUiScreen::Scan) {
-                info(0, page_.scanning() ? "Looking for devices..." : "Nothing found.", p.text);
-                info(1, "Put the device in pairing mode.", p.dim);
-            } else {
-                info(0, "No paired devices.", p.dim);
-            }
         }
         if (L.more_above) draw_text(d, L.list.x + L.list.w - char_w - pad / 2, L.list.y, "^", p.dim, p.bg, s, 1);
         if (L.more_below) draw_text(d, L.list.x + L.list.w - char_w - pad / 2, L.list.y + L.list.h - cell_h, "v", p.dim, p.bg, s, 1);
@@ -268,10 +206,10 @@ void BluetoothPageView::draw_all(DisplayDriver& d) {
         const BtUiRect inner{r.x + 1, r.y + 1, r.w - 2, r.h - 2};
         fill(d, inner, bg);
         if (p.mono) outline(d, r, p.text);
-        const char* label = action_label(page_.item(i).action, screen, false);
+        const char* label = bt_ui_action_label(page_.item(i).action, screen, false);
         int ls = s;
         int chars = static_cast<int>(std::strlen(label));
-        if (text_px(chars, ls) > inner.w - 2) label = action_label(page_.item(i).action, screen, true), chars = static_cast<int>(std::strlen(label));
+        if (text_px(chars, ls) > inner.w - 2) label = bt_ui_action_label(page_.item(i).action, screen, true), chars = static_cast<int>(std::strlen(label));
         if (text_px(chars, ls) > inner.w - 2 && ls > 1) ls = 1;
         const int w = text_px(chars, ls);
         draw_text(d, inner.x + (inner.w - w) / 2, inner.y + (inner.h - 8 * ls) / 2, label, fg, bg, ls, (inner.w - 2) / (6 * ls));

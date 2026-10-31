@@ -169,6 +169,8 @@ A2DP SBC quality arithmetic, HID report parsing) have PC unit tests:
 
 ```sh
 cmake -S tests/host -B tests-build && cmake --build tests-build && ctest --test-dir tests-build
+# the LVGL view of the Bluetooth page (needs an LVGL v9 checkout):
+cmake -S tests/host_lvgl -B tests-lvgl-build -DLVGL_DIR=<lvgl> && cmake --build tests-lvgl-build && ctest --test-dir tests-lvgl-build
 ```
 
 Keep new logic that needs no radio (parsers, arithmetic, state machines) in

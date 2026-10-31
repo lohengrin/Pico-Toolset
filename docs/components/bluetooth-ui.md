@@ -4,7 +4,7 @@ A device page any application can drop in: pair new devices (HID or audio), list
 their name and connection state, connect, disconnect and forget them. It lives in `libs/` because the
 view uses `libs/screen`; it only depends on components.
 
-> **Status: phase 4 of 5.** The logic, the layout, the view and the input are written and unit-tested on
+> **Status: phase 4 of 5, plus the LVGL view.** The logic, the layout, the view and the input are written and unit-tested on
 > a PC (the view renders into a fake display, input comes from fakes), and the Presto example now uses
 > the page instead of its own device menu (it builds; **not yet run on the board**).
 
@@ -18,6 +18,38 @@ view uses `libs/screen`; it only depends on components.
 | Layout: where everything goes, hit-testing | `bluetooth_page_layout.h` (pure arithmetic) | host-tested |
 | View, drawn on any `DisplayDriver` | `BluetoothPageView` | rendered in host tests, not on hardware |
 | Input: touch, mouse, keyboard, pad, buttons | `BluetoothPageInput` | host-tested with a fake `HidSource` |
+| Words shared by every view | `bluetooth_page_text.h` (titles, status, labels, row and detail text) | host-tested through both views |
+| **Alternative view, drawn with LVGL** | `libs/bluetooth_ui_lvgl`: `BluetoothPageLvgl` | host-tested on a headless LVGL; running in PicoBoot (Presto) |
+
+## Choosing a view
+
+The logic (model, controller, texts) is the same for both; an application picks the view that matches
+how it draws:
+
+| | `BluetoothPageView` (+ `BluetoothPageInput`) | `BluetoothPageLvgl` |
+|---|---|---|
+| For | applications that draw on a `DisplayDriver` (libs/screen): OLED, e-paper, ST77xx, Presto without LVGL | applications that already run LVGL |
+| Link | `pico_toolset_bluetooth_ui` (with `pico_toolset_screen` present) | `pico_toolset_bluetooth_ui_lvgl` (needs the `lvgl` target; it brings the logic) |
+| Input | `BluetoothPageInput` polls a `HidSource`, touch and buttons | LVGL's own: touch / pointer indevs click the objects, a keypad / encoder indev drives the page's `lv_group` |
+| Look | the 5x8 font scaled to the area, theme `BtUiTheme` | the application's LVGL theme and fonts (`BluetoothPageLvglConfig`) |
+| Screens, actions, texts | List, Scan, Detail, ConfirmForget | the same |
+
+```cpp
+BluetoothPageController controller(devices);
+BluetoothPageLvgl page(controller, {.title = LV_SYMBOL_BLUETOOTH " Bluetooth",
+                                    .title_font = &lv_font_montserrat_28, .body_font = &lv_font_montserrat_20});
+controller.open();
+page.create(lv_layer_top());                    // fills its parent; a full-screen overlay, a pane, ...
+lv_indev_set_group(keypad, page.group());       // keyboard / pad / encoder navigate the page
+// every few tens of ms:
+page.update();
+if (controller.closed()) page.destroy();
+```
+
+Keys reach the page as LVGL keys: `LV_KEY_PREV` / `LV_KEY_NEXT` (arrows, Tab, d-pad) move, `LV_KEY_ENTER`
+selects and `LV_KEY_ESC` or `LV_KEY_BACKSPACE` go back. `update()` rebuilds the widgets only when what
+they show changes (not on every scan result), so a tap or the focus is not lost. The pointer cursor
+and the keypad indev are the application's; `BluetoothPageLvgl` never touches them.
 
 ## Model
 
@@ -103,6 +135,8 @@ For the user to choose what to pair, configure the components with `auto_pair = 
 `auto_connect = false` (A2DP).
 
 ## Tests
+
+`tests/host_lvgl` builds the LVGL view on a headless LVGL (`-DLVGL_DIR=<lvgl v9 checkout>`) and checks its structure and behaviour: items and focus group, taps, keys, focus following, no rebuild on unchanged scan results, passkey and forget flows, destroy / recreate.
 
 `tests/host/test_bluetooth_ui.cpp` drives the model and controller with fake backends (merge and
 de-duplication, navigation and clamped focus, detail and forget with the safe default, external forget,

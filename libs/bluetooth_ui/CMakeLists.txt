@@ -6,6 +6,7 @@ target_sources(pico_toolset_bluetooth_ui INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/src/bluetooth_devices.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/bluetooth_page_controller.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/bluetooth_page_layout.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/bluetooth_page_text.cpp
 )
 target_include_directories(pico_toolset_bluetooth_ui INTERFACE ${CMAKE_CURRENT_LIST_DIR}/include)
 target_compile_features(pico_toolset_bluetooth_ui INTERFACE cxx_std_20)

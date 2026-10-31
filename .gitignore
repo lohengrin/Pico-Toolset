@@ -60,3 +60,4 @@ config.local.h
 # Bluetooth packet captures (btmon -w)
 *.btsnoop
 tests-build/
+tests-lvgl-build/
