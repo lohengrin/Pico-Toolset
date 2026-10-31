@@ -493,6 +493,9 @@ int main() {
     bool menu_open = false; // the Bluetooth / audio page covers the bars
     bool bt_page_open = false;
     bool page_redraw = true; // the page draws only when it changed (it owns the whole screen)
+    bool cursor_dirty = false;                       // the mouse moved or changed colour over the page
+    bool cursor_drawn = false;                       // where the cursor was last painted on the page:
+    int cursor_x = 0, cursor_y = 0, cursor_size = 0; // its old spot is repainted from the page, clipped
     auto draw_ui = [&](const TouchSample& t) {
         if (!menu_open) draw_bars(display);
         draw_status(display, 0, status(psram.present && psram.test_ok));
@@ -669,6 +672,10 @@ int main() {
         display.fill_rect(mouse_x - s, mouse_y - 1, mouse_x + s, mouse_y + 1, c);
         display.fill_rect(mouse_x - 1, mouse_y - s, mouse_x + 1, mouse_y + s, c);
         display.fill_rect(mouse_x - 2, mouse_y - 2, mouse_x + 2, mouse_y + 2, kColorBlack);
+        cursor_drawn = true;
+        cursor_x = mouse_x;
+        cursor_y = mouse_y;
+        cursor_size = s;
     };
 #endif
     TouchSample prev{};
@@ -837,7 +844,7 @@ int main() {
             hid_source.consume_mouse_delta(mdx, mdy);
             const int wheel = hid_source.consume_mouse_wheel();
             if (mouse_present) {
-                if (bt_page_open && (mdx || mdy)) page_redraw = true;
+                if (bt_page_open && (mdx || mdy)) cursor_dirty = true;
                 mouse_x = std::clamp(mouse_x + mdx, 0, kSize - 1);
                 mouse_y = std::clamp(mouse_y + mdy, 0, kSize - 1);
                 if (wheel) {
@@ -847,6 +854,7 @@ int main() {
                 const uint8_t bits = static_cast<uint8_t>(mouse.left | mouse.right << 1 | mouse.middle << 2 |
                                                           mouse.back << 3 | mouse.forward << 4);
                 if (bits != mouse_buttons_prev) { // button changes are logged, motion is not (too chatty)
+                    if (bt_page_open) cursor_dirty = true;
                     std::printf("[mouse] buttons%s%s%s%s%s at (%d,%d)\n", mouse.left ? " LEFT" : "",
                                 mouse.right ? " RIGHT" : "", mouse.middle ? " MIDDLE" : "", mouse.back ? " BACK" : "",
                                 mouse.forward ? " FORWARD" : "", mouse_x, mouse_y);
@@ -894,8 +902,18 @@ int main() {
 #ifndef PRESTO_NO_RADIO
             if (bt_page_open) {
                 if (page_redraw) {
-                    page_redraw = false;
+                    page_redraw = cursor_dirty = false;
+                    cursor_drawn = false;
                     bt_view.draw(display);
+                    if (mouse_present) draw_mouse_cursor();
+                } else if (cursor_dirty) { // only the old cursor spot is repainted, so nothing else flickers
+                    cursor_dirty = false;
+                    if (cursor_drawn) {
+                        const int r = cursor_size + 2;
+                        const BtUiRect old_spot{cursor_x - r, cursor_y - r, 2 * r + 1, 2 * r + 1};
+                        bt_view.draw(display, &old_spot);
+                        cursor_drawn = false;
+                    }
                     if (mouse_present) draw_mouse_cursor();
                 }
             } else

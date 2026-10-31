@@ -451,6 +451,24 @@ void render_checks(int dw, int dh, BtUiRect area, bool mono, uint8_t caps, bool 
     CHECK(hit >= 0 && r.page.item(static_cast<size_t>(hit)).action != BtUiAction::PickFound);
 }
 
+void test_view_clipped_draw() {
+    Rig r;
+    FakeDisplay full(240, 240, false), part(240, 240, false);
+    BluetoothPageView view(r.page, {{0, 0, 240, 240}, bt_ui_input::Touch});
+    view.draw(full);
+    // Start from a blank-ish screen, then repaint only a rectangle: it matches the full draw there, nothing else.
+    const BtUiRect clip{20, 40, 60, 50};
+    view.draw(part, &clip);
+    int inside = 0;
+    for (int y = 0; y < 240; ++y)
+        for (int x = 0; x < 240; ++x) {
+            if (clip.contains(x, y)) { CHECK(part.at(x, y) == full.at(x, y)); inside += part.at(x, y) != 0; }
+            else CHECK(part.at(x, y) == 0);
+        }
+    CHECK(inside > 0);
+    CHECK(part.oob == 0);
+}
+
 void test_view_render() {
     const bool dump = std::getenv("BT_UI_DUMP") != nullptr;
     render_checks(128, 64, {0, 0, 128, 64}, true, bt_ui_input::Buttons, dump);
@@ -664,6 +682,7 @@ int run_bluetooth_ui_tests() {
     test_layout_sizes();
     test_layout_scrolls_to_focus();
     test_view_render();
+    test_view_clipped_draw();
     test_input_keyboard();
     test_input_pad();
     test_input_touch_tap();

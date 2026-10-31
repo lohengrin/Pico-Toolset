@@ -33,7 +33,9 @@ public:
     void set_area(const BtUiRect& area) { cfg_.area = area; }
 
     // Redraws the whole area. Call it when BluetoothPageController::update() returns true.
-    void draw(DisplayDriver& display);
+    // With `clip`, only the pixels inside that rectangle are written: use it to repaint what a
+    // moving cursor uncovered without redrawing (and flickering) the rest of the page.
+    void draw(DisplayDriver& display, const BtUiRect* clip = nullptr);
 
     // The item under a touch / pointer position, or -1; pass it to BluetoothPageController::activate().
     [[nodiscard]] int hit_test(int x, int y);
@@ -42,6 +44,7 @@ public:
 
 private:
     void recompute();
+    void draw_all(DisplayDriver& display);
 
     BluetoothPageController& page_;
     BluetoothPageConfig cfg_;

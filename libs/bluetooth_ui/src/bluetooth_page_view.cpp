@@ -101,7 +101,43 @@ int BluetoothPageView::hit_test(int x, int y) {
     return bt_ui_hit_test(layout_, page_.item_count(), x, y);
 }
 
-void BluetoothPageView::draw(DisplayDriver& d) {
+namespace {
+
+// Passes through only what lands inside `clip`.
+class ClipDisplay final : public DisplayDriver {
+public:
+    ClipDisplay(DisplayDriver& target, const BtUiRect& clip) : t_(target), c_(clip) {}
+    int width() const override { return t_.width(); }
+    int height() const override { return t_.height(); }
+    bool is_monochrome() const override { return t_.is_monochrome(); }
+    void set_pixel(int x, int y, Color color) override {
+        if (c_.contains(x, y)) t_.set_pixel(x, y, color);
+    }
+    void fill_rect(int x0, int y0, int x1, int y1, Color color) override {
+        x0 = std::max(x0, c_.x);
+        y0 = std::max(y0, c_.y);
+        x1 = std::min(x1, c_.x + c_.w - 1);
+        y1 = std::min(y1, c_.y + c_.h - 1);
+        if (x0 <= x1 && y0 <= y1) t_.fill_rect(x0, y0, x1, y1, color);
+    }
+
+private:
+    DisplayDriver& t_;
+    BtUiRect c_;
+};
+
+} // namespace
+
+void BluetoothPageView::draw(DisplayDriver& d, const BtUiRect* clip) {
+    if (!clip) {
+        draw_all(d);
+        return;
+    }
+    ClipDisplay clipped(d, *clip);
+    draw_all(clipped);
+}
+
+void BluetoothPageView::draw_all(DisplayDriver& d) {
     recompute();
     const BtUiLayout& L = layout_;
     const Palette p = make_palette(cfg_.theme, d.is_monochrome());
