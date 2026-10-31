@@ -187,6 +187,7 @@ void BluetoothPageLvgl::build_items() {
             lv_obj_t* tag = make_label(obj, cfg_.body_font);
             lv_label_set_text(tag, bt_ui_kind_tag(d.kind));
             lv_obj_set_width(tag, 56);
+            lv_label_set_long_mode(tag, LV_LABEL_LONG_CLIP); // never wrap onto a second line
             set_tone(tag, BtUiTone::Dim, root_);
             lv_obj_t* nm = make_label(obj, cfg_.body_font);
             lv_label_set_text(nm, name);

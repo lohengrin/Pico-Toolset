@@ -94,7 +94,7 @@ The area can be the whole display or a pane. Everything follows from it and from
   Below 90 px of height there is no separate status line: its text goes on the right of the header
   when the title leaves room.
 - **Row content** grows with the width: marker dot and name; plus the kind tag (KBD, MOUSE, K+M, PAD,
-  AUDIO) from 16 columns; plus the state (or signal strength for found devices) from 26.
+  AUD) from 16 columns; plus the state (or signal strength for found devices) from 26.
 - **1-bit panels** (`is_monochrome()`): white on black, outlined buttons, the focus is inverted, an
   offline device is a hollow marker.
 - Colours come from `BtUiTheme` (a dark default); the text is the 5x8 font of `libs/screen`.

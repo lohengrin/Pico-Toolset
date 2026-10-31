@@ -10,7 +10,7 @@ const char* bt_ui_kind_tag(BtUiKind k) {
     case BtUiKind::Mouse: return "MOUSE";
     case BtUiKind::KeyboardMouse: return "K+M";
     case BtUiKind::Gamepad: return "PAD";
-    case BtUiKind::Headset: return "AUDIO";
+    case BtUiKind::Headset: return "AUD";
     default: return "DEV";
     }
 }

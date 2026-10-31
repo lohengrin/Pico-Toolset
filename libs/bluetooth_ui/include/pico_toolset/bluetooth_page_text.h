@@ -17,7 +17,7 @@ struct BtUiText {
     BtUiTone tone;
 };
 
-[[nodiscard]] const char* bt_ui_kind_tag(BtUiKind kind);             // "KBD", "MOUSE", "K+M", "PAD", "AUDIO", "DEV"
+[[nodiscard]] const char* bt_ui_kind_tag(BtUiKind kind);             // "KBD", "MOUSE", "K+M", "PAD", "AUD", "DEV"
 [[nodiscard]] BtUiTone bt_ui_state_tone(BtUiState state);             // Connected / Streaming ok, Connecting warn
 void bt_ui_display_name(const BtUiDevice& device, char* out, size_t cap); // the name, or the address tail
 
