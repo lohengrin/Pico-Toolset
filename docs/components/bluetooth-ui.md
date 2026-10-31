@@ -4,9 +4,9 @@ A device page any application can drop in: pair new devices (HID or audio), list
 their name and connection state, connect, disconnect and forget them. It lives in `libs/` because the
 view uses `libs/screen`; it only depends on components.
 
-> **Status: phase 2 of 5.** The logic, the layout and the view are written and unit-tested on a PC
-> (the view renders into a fake display). The input adaptors and the Presto integration are not written
-> yet, and nothing here has run on real hardware.
+> **Status: phase 3 of 5.** The logic, the layout, the view and the input are written and unit-tested on
+> a PC (the view renders into a fake display, input comes from fakes). The Presto integration is not
+> written yet, and nothing here has run on real hardware.
 
 ## Layers
 
@@ -17,7 +17,7 @@ view uses `libs/screen`; it only depends on components.
 | Controller: the page's state machine | `BluetoothPageController` | host-tested |
 | Layout: where everything goes, hit-testing | `bluetooth_page_layout.h` (pure arithmetic) | host-tested |
 | View, drawn on any `DisplayDriver` | `BluetoothPageView` | rendered in host tests, not on hardware |
-| Input adaptors (touch, pointer, keyboard, pad, buttons) | | phase 3 |
+| Input: touch, mouse, keyboard, pad, buttons | `BluetoothPageInput` | host-tested with a fake `HidSource` |
 
 ## Model
 
@@ -66,6 +66,29 @@ The area can be the whole display or a pane. Everything follows from it and from
   offline device is a hollow marker.
 - Colours come from `BtUiTheme` (a dark default); the text is the 5x8 font of `libs/screen`.
 
+## Input
+
+```cpp
+BluetoothPageInput input({.hid = &hid_source, .has_touch = true, .buttons = {0, 1, 2, 3}});
+// about 60 times a second:
+BtUiPointer touch{pressed, x, y};                       // display pixels (calibrate a resistive panel first)
+input.poll(controller, view, has_touch ? &touch : nullptr, buttons.poll());
+if (controller.update()) view.draw(display);
+```
+
+`hid` is any `HidSource` (`BluetoothHidSource`, `UsbHidSource` or an application merge), so keyboards,
+mice and gamepads need nothing more. `poll()` also tells the view which inputs are present
+(`capabilities()`), so controls become touch-sized when a mouse connects and get a focus highlight
+when a keyboard or pad does.
+
+| Input | Does |
+|---|---|
+| Keyboard | arrows and Tab (Shift+Tab backwards) move, Enter / Space select, Esc / Backspace go back; holding repeats |
+| Gamepad | d-pad or left stick move, A selects, B or Back goes back; any connected pad |
+| Mouse | a click on a control (the wheel moves the focus); the cursor is the application's to draw |
+| Touch | a tap: press and release on the same control; the press already focuses it, dragging off cancels |
+| Buttons | `BtUiButtonMap` maps button indices (e.g. from `DebouncedButtons::poll()`) to previous / next / select / back |
+
 ## What the components gained for this
 
 `BluetoothHid` and `BluetoothA2dp` now expose, without any callback:
@@ -84,6 +107,6 @@ For the user to choose what to pair, configure the components with `auto_pair = 
 de-duplication, navigation and clamped focus, detail and forget with the safe default, external forget,
 pairing success and failure, passkey, scan stop on leaving, focus kept across list changes), the layout at
 128x64, 240, 320x240, 480 and 480x800 (controls inside the area, no overlap, touch size, hit-testing, scrolling)
-and the view, rendered into a fake display (nothing drawn outside the area, in a pane too). `BT_UI_DUMP=1` prints
+the input adaptors (key repeat, edges, tap cancel, capability flags), and the view, rendered into a fake display (nothing drawn outside the area, in a pane too). `BT_UI_DUMP=1` prints
 the 128x64 and 240 px frames as text. Run them
 with the command in AGENTS.md.

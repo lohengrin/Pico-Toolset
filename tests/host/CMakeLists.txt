@@ -22,6 +22,7 @@ add_executable(bluetooth_host_tests
     ${TOOLSET_ROOT}/libs/bluetooth_ui/src/bluetooth_page_controller.cpp
     ${TOOLSET_ROOT}/libs/bluetooth_ui/src/bluetooth_page_layout.cpp
     ${TOOLSET_ROOT}/libs/bluetooth_ui/src/bluetooth_page_view.cpp
+    ${TOOLSET_ROOT}/libs/bluetooth_ui/src/bluetooth_page_input.cpp
     ${TOOLSET_ROOT}/components/audio_synth/src/mus_player.cpp
     ${TOOLSET_ROOT}/components/bluetooth_a2dp/src/a2dp_quality.cpp
     ${TOOLSET_ROOT}/components/bluetooth_hid/src/hid_report.cpp

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "pico_toolset/bluetooth_page_input.h"
 #include "pico_toolset/bluetooth_page_view.h"
 
 using namespace pico_toolset;
@@ -457,6 +458,196 @@ void test_view_render() {
     render_checks(480, 480, {0, 0, 480, 480}, false, bt_ui_input::Pointer, false);
 }
 
+class FakeHid final : public HidSource {
+public:
+    bool keys[256]{};
+    uint8_t modifiers = 0;
+    uint8_t keyboards = 0;
+    HidMouse mouse;
+    int wheel = 0;
+    GamepadState pad;
+    bool is_key_down(uint8_t u) const override { return keys[u]; }
+    bool is_modifier_down(uint8_t m) const override { return (modifiers & m) != 0; }
+    HidMouse mouse_state() const override { return mouse; }
+    void consume_mouse_delta(int&, int&) override {}
+    int consume_mouse_wheel() override { int w = wheel; wheel = 0; return w; }
+    GamepadState gamepad_state(size_t i) const override { return i == 0 ? pad : GamepadState{}; }
+    uint8_t connected_keyboard_count() const override { return keyboards; }
+};
+
+struct InputRig {
+    Rig rig;
+    FakeHid hid;
+    BluetoothPageView view{rig.page, {{0, 0, 240, 240}, bt_ui_input::Touch}};
+    BluetoothPageInput input;
+    explicit InputRig(BluetoothPageInputConfig cfg = {}) : input((cfg.hid = &hid, cfg)) {
+        view.draw(dummy);
+    }
+    struct Null final : DisplayDriver {
+        int width() const override { return 240; }
+        int height() const override { return 240; }
+        void set_pixel(int, int, Color) override {}
+        void fill_rect(int, int, int, int, Color) override {}
+    } dummy;
+    void poll(const BtUiPointer* touch = nullptr, int button = -1) { input.poll(rig.page, view, touch, button); }
+    BtUiRect rect_of(BtUiAction a, int idx = -1) {
+        view.draw(dummy);
+        for (size_t i = 0; i < rig.page.item_count(); ++i)
+            if (rig.page.item(i).action == a && rig.page.item(i).index == idx) return view.layout().item_rect[i];
+        return {};
+    }
+};
+
+void test_input_keyboard() {
+    InputRig r;
+    CHECK(!(r.input.capabilities() & bt_ui_input::Keyboard));
+    r.hid.keyboards = 1;
+    r.poll();
+    CHECK(r.input.capabilities() & bt_ui_input::Keyboard);
+    r.hid.keys[0x51] = true;           // down
+    r.poll();
+    CHECK(r.rig.page.focus() == 1);
+    for (int i = 0; i < 10; ++i) r.poll();   // held, not yet repeating
+    CHECK(r.rig.page.focus() == 1);
+    for (int i = 0; i < 30; ++i) r.poll();   // repeating
+    CHECK(r.rig.page.focus() > 1);
+    r.hid.keys[0x51] = false;
+    r.poll();
+    const size_t f = r.rig.page.focus();
+    r.hid.keys[0x52] = true;           // up
+    r.poll();
+    r.hid.keys[0x52] = false;
+    r.poll();
+    CHECK(r.rig.page.focus() == f - 1);
+    r.hid.keys[0x2B] = true;           // tab = next, shift+tab = previous
+    r.poll();
+    r.hid.keys[0x2B] = false;
+    r.poll();
+    CHECK(r.rig.page.focus() == f);
+    r.hid.modifiers = 0x02;
+    r.hid.keys[0x2B] = true;
+    r.poll();
+    r.hid.keys[0x2B] = false;
+    r.hid.modifiers = 0;
+    r.poll();
+    CHECK(r.rig.page.focus() == f - 1);
+
+    r.rig.page.set_focus(0);
+    r.hid.keys[0x28] = true;           // enter on the first device
+    r.poll();
+    r.poll();                           // held: selects once
+    CHECK(r.rig.page.screen() == BtUiScreen::Detail);
+    r.hid.keys[0x28] = false;
+    r.poll();
+    r.hid.keys[0x29] = true;           // escape
+    r.poll();
+    CHECK(r.rig.page.screen() == BtUiScreen::List);
+    r.hid.keys[0x29] = false;
+    r.poll();
+    r.hid.keyboards = 0;
+    r.poll();
+    CHECK(!(r.input.capabilities() & bt_ui_input::Keyboard));
+}
+
+void test_input_pad() {
+    InputRig r;
+    r.hid.pad.present = true;
+    r.poll();
+    CHECK(r.input.capabilities() & bt_ui_input::Pad);
+    r.hid.pad.buttons = kBtDown;
+    r.poll();
+    r.hid.pad.buttons = 0;
+    r.poll();
+    CHECK(r.rig.page.focus() == 1);
+    r.hid.pad.ly = 255;                // stick down
+    r.poll();
+    r.hid.pad.ly = 128;
+    r.poll();
+    CHECK(r.rig.page.focus() == 2);
+    r.rig.page.set_focus(0);
+    r.hid.pad.buttons = kBtA;
+    r.poll();
+    r.hid.pad.buttons = 0;
+    r.poll();
+    CHECK(r.rig.page.screen() == BtUiScreen::Detail);
+    r.hid.pad.buttons = kBtB;
+    r.poll();
+    CHECK(r.rig.page.screen() == BtUiScreen::List);
+}
+
+void test_input_touch_tap() {
+    BluetoothPageInputConfig cfg;
+    cfg.has_touch = true;
+    InputRig r(cfg);
+    r.poll();
+    CHECK(r.input.capabilities() & bt_ui_input::Touch);
+    const BtUiRect dev = r.rect_of(BtUiAction::OpenDevice, 1);
+    BtUiPointer p{true, dev.x + 10, dev.y + dev.h / 2};
+    r.poll(&p);
+    CHECK(r.rig.page.screen() == BtUiScreen::List);     // nothing until the finger lifts
+    CHECK(r.rig.page.focus() == 1);                      // but the press focuses it
+    p.down = false;
+    r.poll(&p);
+    CHECK(r.rig.page.screen() == BtUiScreen::Detail);
+    CHECK(std::strcmp(r.rig.page.selected().name, "Headset") == 0);
+
+    r.rig.page.handle(BtUiInput::Back);
+    const BtUiRect dev0 = r.rect_of(BtUiAction::OpenDevice, 0);
+    p = {true, dev0.x + 10, dev0.y + 5};
+    r.poll(&p);
+    p = {true, 5, 238};                                  // dragged off onto another control, then up
+    r.poll(&p);
+    p.down = false;
+    r.poll(&p);
+    CHECK(r.rig.page.screen() == BtUiScreen::List);     // cancelled
+    p = {false, 0, 0};
+    r.poll(&p);
+
+    p = {true, 1, 200};                                  // empty list area / outside any control
+    const BtUiRect close = r.rect_of(BtUiAction::Close);
+    p = {true, close.x + 3, close.y + 3};
+    r.poll(&p);
+    p.down = false;
+    r.poll(&p);
+    CHECK(r.rig.page.closed());
+}
+
+void test_input_mouse_and_buttons() {
+    BluetoothPageInputConfig cfg;
+    cfg.buttons = {0, 1, 2, 3};
+    InputRig r(cfg);
+    r.poll();
+    CHECK(r.input.capabilities() & bt_ui_input::Buttons);
+    r.poll(nullptr, 1);                                  // next
+    CHECK(r.rig.page.focus() == 1);
+    r.poll(nullptr, 0);                                  // prev
+    CHECK(r.rig.page.focus() == 0);
+    r.poll(nullptr, 2);                                  // select
+    CHECK(r.rig.page.screen() == BtUiScreen::Detail);
+    r.poll(nullptr, 3);                                  // back
+    CHECK(r.rig.page.screen() == BtUiScreen::List);
+    r.poll(nullptr, 9);                                  // unmapped
+    CHECK(r.rig.page.screen() == BtUiScreen::List);
+
+    const BtUiRect dev = r.rect_of(BtUiAction::OpenDevice, 0);
+    r.hid.mouse.present = true;
+    r.hid.mouse.x = dev.x + 20;
+    r.hid.mouse.y = dev.y + dev.h / 2;
+    r.poll();
+    CHECK(r.input.capabilities() & bt_ui_input::Pointer);
+    r.hid.mouse.left = true;
+    r.poll();
+    r.hid.mouse.left = false;
+    r.poll();
+    CHECK(r.rig.page.screen() == BtUiScreen::Detail);
+    r.hid.wheel = -1;                                    // wheel down = next
+    r.poll();
+    CHECK(r.rig.page.focus() == 1);
+    r.hid.wheel = 1;
+    r.poll();
+    CHECK(r.rig.page.focus() == 0);
+}
+
 } // namespace
 
 int run_bluetooth_ui_tests() {
@@ -472,5 +663,9 @@ int run_bluetooth_ui_tests() {
     test_layout_sizes();
     test_layout_scrolls_to_focus();
     test_view_render();
+    test_input_keyboard();
+    test_input_pad();
+    test_input_touch_tap();
+    test_input_mouse_and_buttons();
     return g_failures;
 }
