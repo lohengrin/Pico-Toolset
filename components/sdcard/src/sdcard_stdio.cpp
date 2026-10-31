@@ -28,7 +28,10 @@
 
 #include "ff.h"
 
+// Open files at once (stdio shim); each costs ~600 bytes (FatFs FIL with its sector buffer).
+#ifndef PICO_TOOLSET_SDCARD_STDIO_MAX_FDS
 #define PICO_TOOLSET_SDCARD_STDIO_MAX_FDS 12
+#endif
 
 namespace {
 
