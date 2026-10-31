@@ -228,8 +228,8 @@ Not yet done or not yet verified on hardware:
 - **Coexistence:** a BLE keyboard, the Classic "SFR Gamepad" (including reconnect after a reset) and
   an A2DP headset were validated working together on `PRESTO_BT_A2DP=ON`. The gamepad sometimes needs
   a second try to connect after a reset (not diagnosed).
-- **Bluetooth audio (A2DP):** validated with a Sony MDR-ZX770BN; the HUAWEI FreeBuds 6i, headset
-  volume buttons and reconnect-after-reset are untested (see the component page).
+- **Bluetooth audio (A2DP):** validated with a Sony MDR-ZX770BN and a HUAWEI FreeBuds 6i, with no audible
+  cuts in real conditions (see the component page).
 - **Device manager:** PAIR NEW and the AUDIO page are used on hardware; forgetting a connected
   device and the list refresh while connections change are not specifically tested.
 - **HID output** (keyboard LEDs, gamepad rumble) is not implemented.

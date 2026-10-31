@@ -66,7 +66,8 @@ persist their bonds too.
 - **Two records can disagree.** BTstack evicts keys by recency while `PHID` evicts by age and has fewer
   slots (4 against 8): a device can be listed without its key, or keyed without being listed (for
   example when it was paired by an application that does not use the toolset). Re-pair it in that case.
-  A single registry that fixes this is planned (phase 2 of the shared-store proposal).
+  A single registry that would fix this is deliberately not planned: the contract above is the whole
+  design.
 
 ## Inspecting and clearing it
 

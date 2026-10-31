@@ -4,11 +4,10 @@ Bluetooth **A2DP source**: streams generated audio (an [`AudioSource`](audio-syn
 Bluetooth headset or speaker, with SBC bit-rate presets, volume control, pairing and
 reconnect to the last headset. Playback only: no microphone / hands-free, no file playback.
 
-> **Status: validated on the Presto with a Sony MDR-ZX770BN** (pairing, SBC negotiation at 44.1 kHz
-> joint stereo / bitpool 25 = 173 kbps, continuous generated tone, no dropped frames, ~0.33 ms
-> encode time per SBC frame at the default 150 MHz clock). Not yet tested: the HUAWEI FreeBuds 6i,
-> volume control on a headset (the Sony's remote volume was not exercised), the other quality
-> presets, and a reconnect after a reset. At the first connect the example logs the headset's SBC
+> **Status: validated on the Presto with a Sony MDR-ZX770BN and a HUAWEI FreeBuds 6i** (pairing, SBC
+> negotiation at 44.1 kHz joint stereo / bitpool 25 = 173 kbps, continuous generated tone, no audible
+> cuts in real use alongside the keyboard, gamepad and mouse, ~0.33 ms encode time per SBC frame at the
+> default 150 MHz clock), including the headset buttons (AVRCP). At the first connect the example logs the headset's SBC
 > capabilities; paste that log if something is off.
 
 | | |
