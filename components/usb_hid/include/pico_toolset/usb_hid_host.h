@@ -1,5 +1,6 @@
 #pragma once
 
+#include "pico_toolset/usb_mouse_layout.h"
 #include <cstdint>
 #include <cstddef>
 
@@ -115,9 +116,11 @@ public:
     void consume_mouse_delta(int& dx, int& dy);
 
     // Wheel detents accumulated since the last call (positive = scrolled
-    // away from the user / "up"), then reset. Read from the 4th byte of the
-    // boot-protocol report when the mouse sends one (len >= 4); mice that
-    // don't send it simply report 0.
+    // away from the user / "up"), then reset. The boot protocol has no wheel:
+    // a mouse whose report descriptor declares one is switched to the report
+    // protocol at mount and its reports are read through the layout found in
+    // that descriptor (usb_mouse_layout.h); a mouse without a wheel stays in
+    // boot protocol and reports 0.
     int consume_mouse_wheel();
 
     // --- Gamepad (HID + XInput merged) ---
@@ -133,6 +136,9 @@ public:
     void on_mount(uint8_t dev_addr, uint8_t instance, bool is_keyboard, bool is_joystick_like, bool is_mouse,
                   bool is_dualsense = false);
     void on_hid_unmount(uint8_t dev_addr, uint8_t instance, bool is_keyboard);
+    // The mouse's report descriptor, right after on_mount(): a wheel makes it switch to the report protocol.
+    void on_mouse_descriptor(uint8_t dev_addr, uint8_t instance, const uint8_t* descriptor, uint16_t len);
+    void on_protocol_set(uint8_t dev_addr, uint8_t instance, uint8_t protocol);
     void on_keyboard_report(const uint8_t* report, uint16_t len);
     void on_mouse_report(const uint8_t* report, uint16_t len);
     void on_gamepad_report(const uint8_t* report, uint16_t len, uint8_t dev_addr, uint8_t instance);
@@ -206,6 +212,8 @@ private:
     MouseState m_mouse{};
     uint8_t m_mouse_dev_addr = 0;
     uint8_t m_mouse_instance = 0;
+    UsbMouseLayout m_mouse_layout{};  // from the descriptor, used once the mouse is in report protocol
+    bool m_mouse_report_mode = false; // the report protocol is active: reports follow m_mouse_layout
     // Raw accumulator for consume_mouse_delta() -- on_mouse_report() adds
     // into it every report (same core as the host stack), consume_mouse_delta()
     // reads and resets it from the caller's core. Plain volatile ints, no

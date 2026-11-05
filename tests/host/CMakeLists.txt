@@ -27,6 +27,7 @@ add_executable(bluetooth_host_tests
     ${TOOLSET_ROOT}/components/audio_synth/src/mus_player.cpp
     ${TOOLSET_ROOT}/components/bluetooth_a2dp/src/a2dp_quality.cpp
     ${TOOLSET_ROOT}/components/bluetooth_hid/src/hid_report.cpp
+    ${TOOLSET_ROOT}/components/usb_hid/src/usb_mouse_layout.cpp
     ${BTSTACK_DIR}/src/btstack_hid_parser.c
     ${BTSTACK_DIR}/src/btstack_util.c
 )
@@ -37,6 +38,7 @@ target_include_directories(bluetooth_host_tests PRIVATE
     ${TOOLSET_ROOT}/components/bluetooth_hid/include
     ${TOOLSET_ROOT}/components/bluetooth_hid/src
     ${TOOLSET_ROOT}/components/hid_input/include
+    ${TOOLSET_ROOT}/components/usb_hid/include
     ${TOOLSET_ROOT}/libs/bluetooth_ui/include
     ${TOOLSET_ROOT}/libs/screen/include
     ${TOOLSET_ROOT}/components/st7701/include

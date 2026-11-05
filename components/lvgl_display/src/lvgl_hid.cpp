@@ -1,4 +1,5 @@
 #include "pico_toolset/lvgl_hid.h"
+#include "pico_toolset/lvgl_wheel.h"
 #include "pico_toolset/usb_hid_source.h"
 
 namespace pico_toolset {
@@ -42,6 +43,7 @@ void mouse_read_cb(lv_indev_t* indev, lv_indev_data_t* data) {
     }
     data->point.x = mouse.x;
     data->point.y = mouse.y;
+    lvgl_scroll_under(data->point, usb->consume_mouse_wheel()); // wheel up (positive) shows what is above
     data->state = (mouse.left || mouse.right || mouse.middle) ? LV_INDEV_STATE_PRESSED
                                                                                     : LV_INDEV_STATE_RELEASED;
 }

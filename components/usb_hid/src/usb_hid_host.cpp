@@ -315,12 +315,19 @@ extern "C" void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t con
     bool is_mouse = !is_keyboard && !is_joystick &&
                     (itf_protocol == HID_ITF_PROTOCOL_MOUSE ||
                      looks_like_mouse_report_descriptor(desc_report, desc_len));
-    if (auto* self = UsbHidHost::instance())
+    if (auto* self = UsbHidHost::instance()) {
         self->on_mount(dev_addr, instance, is_keyboard, is_joystick, is_mouse, is_dualsense);
+        if (self->matches_mouse(dev_addr, instance)) self->on_mouse_descriptor(dev_addr, instance, desc_report, desc_len);
+    }
     // Re-arm the report queue unconditionally (matching the original) -- or
     // no reports (not even the first) will ever be delivered, including for
     // an interface on_mount() didn't recognize as anything.
     tuh_hid_receive_report(dev_addr, instance);
+}
+
+// The report protocol was selected (see on_mouse_descriptor()).
+extern "C" void tuh_hid_set_protocol_complete_cb(uint8_t dev_addr, uint8_t instance, uint8_t protocol) {
+    if (auto* self = UsbHidHost::instance()) self->on_protocol_set(dev_addr, instance, protocol);
 }
 
 extern "C" void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
@@ -548,12 +555,28 @@ void UsbHidHost::on_mount(uint8_t dev_addr, uint8_t instance, bool is_keyboard, 
     }
 }
 
+void UsbHidHost::on_mouse_descriptor(uint8_t dev_addr, uint8_t instance, const uint8_t* descriptor, uint16_t len) {
+    m_mouse_report_mode = false;
+    m_mouse_layout = UsbMouseLayout{};
+    // Only a mouse that declares a wheel leaves the boot protocol (the one every mouse supports and
+    // this driver has always used): the others keep working exactly as before.
+    if (usb_mouse_parse_descriptor(descriptor, len, m_mouse_layout) && m_mouse_layout.has_wheel)
+        tuh_hid_set_protocol(dev_addr, instance, HID_PROTOCOL_REPORT);
+}
+
+void UsbHidHost::on_protocol_set(uint8_t dev_addr, uint8_t instance, uint8_t protocol) {
+    if (matches_mouse(dev_addr, instance) && protocol == HID_PROTOCOL_REPORT && m_mouse_layout.valid && m_mouse_layout.has_wheel)
+        m_mouse_report_mode = true;
+}
+
 void UsbHidHost::on_hid_unmount(uint8_t dev_addr, uint8_t instance, bool is_keyboard) {
     if (is_keyboard) {
         __atomic_fetch_sub(&m_keyboard_count, 1, __ATOMIC_RELAXED);
     }
     if (m_mouse_dev_addr == dev_addr && m_mouse_instance == instance) {
         m_mouse = MouseState{};
+        m_mouse_report_mode = false;
+        m_mouse_layout = UsbMouseLayout{};
         m_mouse_dev_addr = 0;
         m_mouse_instance = 0;
     }
@@ -666,10 +689,22 @@ void UsbHidHost::on_mouse_report(const uint8_t* report, uint16_t len) {
     // dx/dy from bytes 1-2 but buttons from byte 3 (gated behind len>=5),
     // which never matches a real boot-protocol mouse -- left-click never
     // registered because that byte offset is never populated.
-    if (len < 3) return;
-    uint8_t buttons = report[0];
-    int8_t dx = static_cast<int8_t>(report[1]);
-    int8_t dy = static_cast<int8_t>(report[2]);
+    uint8_t buttons;
+    int dx, dy;
+    if (m_mouse_report_mode) { // report protocol: the layout from the descriptor says where everything is
+        UsbMouseReport r;
+        if (!usb_mouse_parse_report(m_mouse_layout, report, len, r)) return;
+        buttons = r.buttons;
+        dx = r.dx;
+        dy = r.dy;
+        m_mouse_wheel += r.wheel;
+    } else {
+        if (len < 3) return;
+        buttons = report[0];
+        dx = static_cast<int8_t>(report[1]);
+        dy = static_cast<int8_t>(report[2]);
+        if (len >= 4) m_mouse_wheel += static_cast<int8_t>(report[3]);
+    }
     m_mouse.left_button = (buttons & 0x01) != 0;
     m_mouse.right_button = (buttons & 0x02) != 0;
     m_mouse.middle_button = (buttons & 0x04) != 0;
@@ -681,7 +716,6 @@ void UsbHidHost::on_mouse_report(const uint8_t* report, uint16_t len) {
     if (m_mouse.y > m_config.mouse_max_y) m_mouse.y = m_config.mouse_max_y;
     m_mouse_delta_x += dx;
     m_mouse_delta_y += dy;
-    if (len >= 4) m_mouse_wheel += static_cast<int8_t>(report[3]);
 }
 
 UsbHidHost::MouseState UsbHidHost::mouse_state() const { return m_mouse; }

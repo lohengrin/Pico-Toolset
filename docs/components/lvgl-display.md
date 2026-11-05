@@ -32,6 +32,7 @@ keyboard/mouse. The component's own
   `lvgl_gpio_keys_init(cfg)`. `kAuto` detects polarity from an idle pull-up/pull-down
   pair changing, independent of wiring (used for the Pico DV buttons).
 - `lvgl_hid.h`: `lvgl_hid_init(UsbHidHost&)`.
+- `lvgl_wheel.h`: `lvgl_scroll_under(point, notches, step_px)`: the mouse wheel scrolls the scrollable object under the pointer (top layer first, then the screen). `lvgl_hid_init` does it for its mouse; an application with its own mouse indev calls it from the read callback.
 
 ## Notes
 

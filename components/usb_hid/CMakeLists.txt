@@ -50,6 +50,7 @@ list(FIND PICO_TOOLSET_USB_HID_KEYMAPS ${PICO_TOOLSET_USB_HID_DEFAULT_KEYMAP} us
 add_library(pico_toolset_usb_hid STATIC
     src/usb_hid_host.cpp
     src/usb_hid_keymap.cpp
+    src/usb_mouse_layout.cpp
 )
 target_include_directories(pico_toolset_usb_hid PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/include

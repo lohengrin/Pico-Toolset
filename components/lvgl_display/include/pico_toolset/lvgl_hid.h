@@ -11,7 +11,8 @@ namespace pico_toolset {
 //  - keypad: arrows / Tab / Enter / Esc (keyboard) and D-pad / A / B / Start
 //    (gamepad) drive LVGL's focus navigation on a default lv_group;
 //  - pointer: mouse with a visible cursor, in canvas coordinates (configure
-//    UsbHidConfig::mouse_max_x/y to canvas size - 1 so no scaling is needed).
+//    UsbHidConfig::mouse_max_x/y to canvas size - 1 so no scaling is needed); the wheel scrolls the
+//    list under the cursor (lvgl_wheel.h).
 // Creates a new lv_group and makes it the default: call BEFORE building the
 // widgets that should be keyboard-navigable.
 void lvgl_hid_init(UsbHidHost& hid);
