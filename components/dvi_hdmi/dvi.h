@@ -44,6 +44,7 @@ struct dvi_inst {
 	// Remember how far behind the source is on TMDS scanlines, so we can output
 	// solid colour until they catch up (rather than dying spectacularly)
 	uint late_scanline_ctr;
+	volatile uint32_t late_scanlines_total; // cumulative count of active lines shown without a ready TMDS buffer (red line)
 
 	// Encoded scanlines:
 	queue_t q_tmds_valid;

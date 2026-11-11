@@ -54,6 +54,7 @@ void dvi_init(struct dvi_inst *inst, uint spinlock_tmds_queue, uint spinlock_col
 		inst->dma_cfg[i].dreq = pio_get_dreq(inst->ser_cfg.pio, inst->ser_cfg.sm_tmds[i], true);
 	}
 	inst->late_scanline_ctr = 0;
+	inst->late_scanlines_total = 0;
 	inst->tmds_buf_release_next = NULL;
 	inst->tmds_buf_release = NULL;
 #if DVI_ENABLE_AUDIO
@@ -91,7 +92,8 @@ void dvi_init(struct dvi_inst *inst, uint spinlock_tmds_queue, uint spinlock_col
 	// shuichitakano's pico_lib DVI constructor (MIT License), which sets
 	// this exact InfoFrame the same way.
 	data_packet_set_avi_info_frame(&inst->avi_info_frame, SCAN_INFO_UNDERSCAN, PIXEL_FORMAT_RGB, COLORIMETRY_ITU601,
-		PICTURE_ASPECT_RATIO_4_3, ACTIVE_FORMAT_ASPECT_RATIO_SAME_AS_PAR, RGB_QUANTIZATION_FULL, VIDEO_CODE_640x480P60);
+		PICTURE_ASPECT_RATIO_4_3, ACTIVE_FORMAT_ASPECT_RATIO_SAME_AS_PAR, RGB_QUANTIZATION_FULL,
+		inst->timing == &dvi_timing_640x480p_60hz ? VIDEO_CODE_640x480P60 : (video_code_t)0 /* no VIC: not a CEA mode */);
 #else
 	dvi_setup_scanline_for_vblank(inst->timing, inst->dma_cfg, true, &inst->dma_list_vblank_sync);
 	dvi_setup_scanline_for_vblank(inst->timing, inst->dma_cfg, false, &inst->dma_list_vblank_nosync);
@@ -277,6 +279,7 @@ static void __dvi_func(dvi_dma_irq_handler)(struct dvi_inst *inst) {
 	else {
 		// No valid scanline was ready (generates solid red scanline)
 		tmdsbuf = NULL;
+		++inst->late_scanlines_total;
 		if (inst->timing_state.v_ctr % DVI_VERTICAL_REPEAT == DVI_VERTICAL_REPEAT - 1)
 			++inst->late_scanline_ctr;
 	}

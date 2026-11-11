@@ -31,6 +31,25 @@ const struct dvi_timing __dvi_const(dvi_timing_640x480p_60hz) = {
 	.bit_clk_khz       = 252000
 };
 
+// 640x400 70 Hz (VGA mode 13h / DOOM's native 320x200 doubled): 800 x 450 total at exactly 25.2 MHz, so it
+// runs on the same 252 MHz clk_sys and HDMI audio clock values as 640x480p60. Not a CEA mode: sinks that
+// only take standard TV timings may refuse it (monitors normally accept it). 70 Hz = 2 x 35 Hz tics.
+const struct dvi_timing __dvi_const(dvi_timing_640x400p_70hz) = {
+	.h_sync_polarity   = false,
+	.h_front_porch     = 16,
+	.h_sync_width      = 96,
+	.h_back_porch      = 48,
+	.h_active_pixels   = 640,
+
+	.v_sync_polarity   = true,
+	.v_front_porch     = 12,
+	.v_sync_width      = 2,
+	.v_back_porch      = 36,
+	.v_active_lines    = 400,
+
+	.bit_clk_khz       = 252000
+};
+
 // 720x480p 60 Hz -- Required by CEA for EDTV/HDTV displays. Convenient for
 // emulating NTSC machines with visible overscan and reasonable clk_sys (270 MHz).
 const struct dvi_timing __dvi_const(dvi_timing_720x480p_60hz) = {
